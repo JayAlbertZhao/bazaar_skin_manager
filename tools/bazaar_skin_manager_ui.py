@@ -258,6 +258,11 @@ class ModManagerStudio:
             style="Danger.TButton",
             command=self._undeploy,
         ).pack(side="right", padx=(8, 4))
+        ttk.Button(
+            header,
+            text="清空已加载皮肤",
+            command=self._clear_loaded_skin,
+        ).pack(side="right", padx=(4, 0))
         self.play_button = ttk.Button(
             header,
             text="启动游戏",
@@ -293,11 +298,6 @@ class ModManagerStudio:
             command=self._deploy,
         )
         self.deploy_button.pack(fill="x", pady=(0, 8))
-        ttk.Button(
-            actions,
-            text="一键清空已加载皮肤",
-            command=self._clear_loaded_skin,
-        ).pack(fill="x", pady=(0, 8))
         ttk.Button(
             actions,
             text="取消部署 / 恢复原版",

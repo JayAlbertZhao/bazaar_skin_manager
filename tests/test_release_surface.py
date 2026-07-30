@@ -55,7 +55,7 @@ class ReleaseSurfaceTests(unittest.TestCase):
             encoding="utf-8"
         )
         self.assertIn('self.root.title("The Bazaar 皮肤管理器")', ui)
-        self.assertIn('text="一键清空已加载皮肤"', ui)
+        self.assertIn('text="清空已加载皮肤"', ui)
         self.assertIn("def _clear_loaded_skin(self)", ui)
         self.assertIn("--self-test-fmod", ui)
         self.assertIn("--smoke-import", ui)
