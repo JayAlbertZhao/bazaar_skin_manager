@@ -1495,9 +1495,13 @@ def main() -> int:
         except Exception:
             return 2
         return 0
-    if "--self-test-fmod" in sys.argv:
+    if "--self-test-release-runtime" in sys.argv:
         try:
+            from archspec.cpu import host
             import fmod_toolkit.fmod  # noqa: F401
+
+            if not host().name:
+                return 5
         except Exception:
             return 3
         return 0
@@ -1514,6 +1518,31 @@ def main() -> int:
         except Exception:
             return 4
         return 0
+    if "--smoke-deploy" in sys.argv:
+        workspace = None
+        deployed = False
+        try:
+            index = sys.argv.index("--smoke-deploy")
+            archive = Path(sys.argv[index + 1])
+            game_dir = Path(sys.argv[index + 2])
+            with tempfile.TemporaryDirectory() as temp:
+                workspace = StudioWorkspace.create(
+                    "release.deploy-smoke",
+                    root=Path(temp),
+                )
+                workspace.import_zip(archive)
+                workspace.deploy(game_dir)
+                deployed = True
+                workspace.undeploy()
+                deployed = False
+        except Exception:
+            if workspace is not None:
+                try:
+                    workspace.undeploy()
+                except Exception:
+                    return 8
+            return 7
+        return 0 if not deployed else 9
     ModManagerStudio().run()
     return 0
 

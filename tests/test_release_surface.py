@@ -48,7 +48,10 @@ class ReleaseSurfaceTests(unittest.TestCase):
         build = (ROOT / "build-manager.ps1").read_text(encoding="utf-8")
         self.assertIn("fmod_toolkit\\libfmod\\Windows\\x64\\fmod.dll", build)
         self.assertIn("--add-binary", build)
+        self.assertIn("--collect-all archspec", build)
         self.assertIn("FMOD runtime required by UnityPy is missing", build)
+        self.assertIn("--self-test-release-runtime", build)
+        self.assertIn("Frozen release runtime self-test failed", build)
 
     def test_manager_release_ui_is_chinese_and_has_clear_action(self) -> None:
         ui = (ROOT / "tools" / "bazaar_skin_manager_ui.py").read_text(
@@ -57,8 +60,9 @@ class ReleaseSurfaceTests(unittest.TestCase):
         self.assertIn('self.root.title("The Bazaar 皮肤管理器")', ui)
         self.assertIn('text="清空已加载皮肤"', ui)
         self.assertIn("def _clear_loaded_skin(self)", ui)
-        self.assertIn("--self-test-fmod", ui)
+        self.assertIn("--self-test-release-runtime", ui)
         self.assertIn("--smoke-import", ui)
+        self.assertIn("--smoke-deploy", ui)
 
 
 if __name__ == "__main__":

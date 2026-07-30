@@ -41,7 +41,7 @@ if (-not (Test-Path -LiteralPath $runtime)) {
     throw "Release runtime is missing: manager\runtime\BazaarSkinManager.Runtime.dll"
 }
 
-& $python -c "import PIL, PyInstaller, tkinterdnd2, UnityPy"
+& $python -c "import archspec, PIL, PyInstaller, tkinterdnd2, UnityPy"
 if ($LASTEXITCODE -ne 0) {
     throw "Manager build dependencies are incomplete. Install manager\requirements-build.txt into .venv-manager."
 }
@@ -59,6 +59,7 @@ New-Item -ItemType Directory -Force -Path $output, $work, $spec | Out-Null
     --specpath $spec `
     --collect-all tkinterdnd2 `
     --collect-all UnityPy `
+    --collect-all archspec `
     --hidden-import unity_bundle_texture_patch `
     --add-binary "$fmodDll;fmod_toolkit\libfmod\Windows\x64" `
     --add-data "$root\manager\hero-catalog.json;manager" `
@@ -74,6 +75,15 @@ if ($LASTEXITCODE -ne 0) {
 $exe = Join-Path $output "TheBazaarModManager.exe"
 if (-not (Test-Path -LiteralPath $exe)) {
     throw "Manager executable was not produced: $exe"
+}
+$selfTest = Start-Process `
+    -FilePath $exe `
+    -ArgumentList "--self-test-release-runtime" `
+    -Wait `
+    -PassThru `
+    -WindowStyle Hidden
+if ($selfTest.ExitCode -ne 0) {
+    throw "Frozen release runtime self-test failed with exit code $($selfTest.ExitCode)"
 }
 
 $metadata = [ordered]@{
