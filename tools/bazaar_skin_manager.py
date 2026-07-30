@@ -10,6 +10,7 @@ import json
 import os
 import re
 import shutil
+import struct
 import subprocess
 import sys
 import tempfile
@@ -618,6 +619,16 @@ def native_patch_target(game: GameInstall, deployment: dict) -> Path:
     return target
 
 
+def addressables_catalog_path(game: GameInstall) -> Path:
+    return (
+        game.game_dir
+        / "TheBazaar_Data"
+        / "StreamingAssets"
+        / "aa"
+        / "catalog.bin"
+    )
+
+
 def existing_install_record() -> dict | None:
     path = manager_root() / "install-manifest.json"
     if not path.is_file():
@@ -640,6 +651,11 @@ def native_patch_plan_issues(pack: Path, game: GameInstall) -> list[str]:
         deployment = replacement["deployment"]
         target = native_patch_target(game, deployment)
         grouped.setdefault(str(target).casefold(), []).append(replacement)
+    if grouped and not addressables_catalog_path(game).is_file():
+        issues.append(
+            "Addressables catalog is missing for deploy-time bundle "
+            f"replacement: {addressables_catalog_path(game)}"
+        )
     for replacements in grouped.values():
         replacement = replacements[0]
         slot_names = ", ".join(item["slot"] for item in replacements)
@@ -728,6 +744,18 @@ def prepare_native_patches(
             texture_replacements,
             unity_version=deployment["unity_version"],
         )
+        source_crc32 = str(result.get("source_crc32") or "").casefold()
+        output_crc32 = str(result.get("output_crc32") or "").casefold()
+        if not re.fullmatch(r"[0-9a-f]{8}", source_crc32):
+            raise RuntimeError(
+                f"Bundle patcher did not return a valid source CRC for "
+                f"{target.name}."
+            )
+        if not re.fullmatch(r"[0-9a-f]{8}", output_crc32):
+            raise RuntimeError(
+                f"Bundle patcher did not return a valid output CRC for "
+                f"{target.name}."
+            )
         backup = (
             manager_root()
             / "native-backups"
@@ -742,6 +770,8 @@ def prepare_native_patches(
                 "backup": str(backup),
                 "original_sha256": original_sha256,
                 "patched_sha256": result["output_sha256"],
+                "original_crc32": source_crc32,
+                "patched_crc32": output_crc32,
                 "staged": str(output),
                 "asset_names": [
                     item["deployment"]["asset_name"]
@@ -751,6 +781,84 @@ def prepare_native_patches(
             }
         )
     return prepared
+
+
+def prepare_native_catalog_patch(
+    prepared_patches: list[dict],
+    game: GameInstall,
+    staging: Path,
+) -> dict | None:
+    if not prepared_patches:
+        return None
+    catalog = addressables_catalog_path(game)
+    if not catalog.is_file():
+        raise RuntimeError(f"Addressables catalog is missing: {catalog}")
+
+    original = catalog.read_bytes()
+    patched = bytearray(original)
+    entries: list[dict] = []
+    for item in prepared_patches:
+        bundle_name = Path(item["target"]).name
+        encoded_name = bundle_name.encode("utf-8")
+        name_positions = [
+            match.start()
+            for match in re.finditer(re.escape(encoded_name), original)
+        ]
+        if len(name_positions) != 1:
+            raise RuntimeError(
+                f"Expected exactly one catalog entry for {bundle_name}; "
+                f"found {len(name_positions)}."
+            )
+        search_start = name_positions[0] + len(encoded_name)
+        search_end = min(len(original), search_start + 128)
+        original_crc = int(item["original_crc32"], 16)
+        patched_crc = int(item["patched_crc32"], 16)
+        encoded_crc = struct.pack("<I", original_crc)
+        crc_positions = []
+        cursor = search_start
+        while True:
+            position = original.find(encoded_crc, cursor, search_end)
+            if position < 0:
+                break
+            crc_positions.append(position)
+            cursor = position + 1
+        if len(crc_positions) != 1:
+            raise RuntimeError(
+                f"Expected one CRC field near catalog entry {bundle_name}; "
+                f"found {len(crc_positions)}."
+            )
+        crc_position = crc_positions[0]
+        patched[crc_position : crc_position + 4] = struct.pack(
+            "<I",
+            patched_crc,
+        )
+        entries.append(
+            {
+                "bundle": bundle_name,
+                "offset": crc_position,
+                "original_crc32": item["original_crc32"],
+                "patched_crc32": item["patched_crc32"],
+            }
+        )
+
+    staged = staging / "catalog.bin"
+    staged.write_bytes(patched)
+    original_sha256 = hashlib.sha256(original).hexdigest()
+    patched_sha256 = hashlib.sha256(patched).hexdigest()
+    backup = (
+        manager_root()
+        / "native-backups"
+        / original_sha256
+        / "catalog.bin"
+    )
+    return {
+        "target": str(catalog),
+        "backup": str(backup),
+        "original_sha256": original_sha256,
+        "patched_sha256": patched_sha256,
+        "staged": str(staged),
+        "entries": entries,
+    }
 
 
 def apply_native_patches(prepared: list[dict]) -> list[dict]:
@@ -790,6 +898,39 @@ def apply_native_patches(prepared: list[dict]) -> list[dict]:
     ]
 
 
+def apply_native_catalog_patch(prepared: dict | None) -> dict | None:
+    if prepared is None:
+        return None
+    target = Path(prepared["target"])
+    backup = Path(prepared["backup"])
+    staged = Path(prepared["staged"])
+    if backup.is_file():
+        if sha256_file(backup) != prepared["original_sha256"]:
+            raise RuntimeError(
+                f"Addressables catalog backup hash mismatch: {backup}"
+            )
+    else:
+        atomic_copy_file(target, backup)
+    if sha256_file(backup) != prepared["original_sha256"]:
+        raise RuntimeError(
+            f"Addressables catalog backup verification failed: {backup}"
+        )
+    try:
+        atomic_copy_file(staged, target)
+        if sha256_file(target) != prepared["patched_sha256"]:
+            raise RuntimeError(
+                f"Addressables catalog patch verification failed: {target}"
+            )
+    except Exception:
+        atomic_copy_file(backup, target)
+        raise
+    return {
+        key: value
+        for key, value in prepared.items()
+        if key != "staged"
+    }
+
+
 def install(runtime: Path, pack: Path, game: GameInstall) -> dict:
     if not game.complete:
         raise RuntimeError(f"incomplete game installation: {game.game_dir}")
@@ -820,10 +961,19 @@ def install(runtime: Path, pack: Path, game: GameInstall) -> dict:
     atomic_copy_tree(pack, pack_dest)
 
     applied_native_patches: list[dict] = []
+    applied_catalog_patch: dict | None = None
     try:
         with tempfile.TemporaryDirectory() as temp:
             prepared = prepare_native_patches(pack, game, Path(temp))
+            prepared_catalog = prepare_native_catalog_patch(
+                prepared,
+                game,
+                Path(temp),
+            )
             applied_native_patches = apply_native_patches(prepared)
+            applied_catalog_patch = apply_native_catalog_patch(
+                prepared_catalog
+            )
 
         compatibility = runtime_compatibility_payload(game)
         compatibility_text = serialized_json(compatibility)
@@ -848,8 +998,14 @@ def install(runtime: Path, pack: Path, game: GameInstall) -> dict:
                 "sha256": compatibility_sha256,
             },
             "native_patches": applied_native_patches,
+            "native_catalog_patch": applied_catalog_patch,
         }
     except Exception:
+        if applied_catalog_patch:
+            backup = Path(applied_catalog_patch["backup"])
+            target = Path(applied_catalog_patch["target"])
+            if backup.is_file():
+                atomic_copy_file(backup, target)
         for item in reversed(applied_native_patches):
             backup = Path(item["backup"])
             target = Path(item["target"])
@@ -930,6 +1086,15 @@ def plan_install(runtime: Path, pack: Path, game: GameInstall) -> dict:
             )
             if game.complete and not pack_errors
             else [],
+            "addressables_catalog": (
+                str(addressables_catalog_path(game))
+                if (
+                    game.complete
+                    and not pack_errors
+                    and native_patch_specs(pack)
+                )
+                else None
+            ),
         },
     }
 
@@ -1026,6 +1191,23 @@ def installation_diagnostics() -> dict:
         and sha256_file(Path(item["backup"])) == item.get("original_sha256")
         for item in native_patches
     )
+    catalog_patch = record.get("native_catalog_patch")
+    catalog_target_patched = (
+        not catalog_patch
+        or (
+            Path(catalog_patch["target"]).is_file()
+            and sha256_file(Path(catalog_patch["target"]))
+            == catalog_patch.get("patched_sha256")
+        )
+    )
+    catalog_backup_valid = (
+        not catalog_patch
+        or (
+            Path(catalog_patch["backup"]).is_file()
+            and sha256_file(Path(catalog_patch["backup"]))
+            == catalog_patch.get("original_sha256")
+        )
+    )
     checks = {
         "game_complete": game.complete,
         "bepinex_present": (
@@ -1040,6 +1222,8 @@ def installation_diagnostics() -> dict:
         "runtime_compatibility_matches_current": not compatibility_errors,
         "native_patch_targets_patched": native_targets_patched,
         "native_patch_backups_valid": native_backups_valid,
+        "addressables_catalog_patched": catalog_target_patched,
+        "addressables_catalog_backup_valid": catalog_backup_valid,
         "game_update_detected": update_detected,
     }
     positive_checks = {
@@ -1096,6 +1280,24 @@ def uninstall() -> list[str]:
         return []
     record = json.loads(record_path.read_text(encoding="utf-8"))
     removed: list[str] = []
+    catalog_patch = record.get("native_catalog_patch")
+    if catalog_patch:
+        target = Path(catalog_patch["target"])
+        backup = Path(catalog_patch["backup"])
+        current_hash = sha256_file(target) if target.is_file() else None
+        if (
+            backup.is_file()
+            and sha256_file(backup) == catalog_patch.get("original_sha256")
+            and (
+                current_hash is None
+                or current_hash == catalog_patch.get("patched_sha256")
+            )
+        ):
+            atomic_copy_file(backup, target)
+            removed.append(str(target))
+        if backup.is_file():
+            backup.unlink()
+            removed.append(str(backup))
     for item in reversed(record.get("native_patches") or []):
         target = Path(item["target"])
         backup = Path(item["backup"])

@@ -117,6 +117,19 @@ class ManagerTests(unittest.TestCase):
         target = game / target_relative
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(original)
+        catalog = (
+            game
+            / "TheBazaar_Data"
+            / "StreamingAssets"
+            / "aa"
+            / "catalog.bin"
+        )
+        catalog.parent.mkdir(parents=True, exist_ok=True)
+        catalog.write_bytes(
+            target.name.encode("utf-8")
+            + (b"\x00" * 59)
+            + bytes.fromhex("11111111")[::-1]
+        )
         runtime = root / "BazaarSkinManager.Runtime.dll"
         runtime.write_bytes(b"runtime")
         return pack, game, runtime
@@ -258,7 +271,11 @@ class ManagerTests(unittest.TestCase):
 
             def fake_patcher(_source, output, _image, **_kwargs):
                 output.write_bytes(b"prepatched-unity-bundle")
-                return {"output_sha256": manager.sha256_file(output)}
+                return {
+                    "output_sha256": manager.sha256_file(output),
+                    "source_crc32": "11111111",
+                    "output_crc32": "22222222",
+                }
 
             with (
                 mock.patch.dict("os.environ", {"LOCALAPPDATA": str(local)}),
@@ -274,15 +291,25 @@ class ManagerTests(unittest.TestCase):
                     manager.explicit_install(game),
                 )
                 patch = record["native_patches"][0]
+                catalog_patch = record["native_catalog_patch"]
                 self.assertEqual(
                     target.read_bytes(),
                     b"prepatched-unity-bundle",
                 )
                 self.assertEqual(Path(patch["backup"]).read_bytes(), original)
+                self.assertEqual(
+                    Path(catalog_patch["target"]).read_bytes()[-4:],
+                    bytes.fromhex("22222222")[::-1],
+                )
                 self.assertTrue(manager.installation_diagnostics()["healthy"])
                 manager.uninstall()
             self.assertEqual(target.read_bytes(), original)
             self.assertFalse(Path(patch["backup"]).exists())
+            self.assertEqual(
+                Path(catalog_patch["target"]).read_bytes()[-4:],
+                bytes.fromhex("11111111")[::-1],
+            )
+            self.assertFalse(Path(catalog_patch["backup"]).exists())
 
     def test_uninstall_does_not_overwrite_a_steam_updated_bundle(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
@@ -293,7 +320,11 @@ class ManagerTests(unittest.TestCase):
 
             def fake_patcher(_source, output, _image, **_kwargs):
                 output.write_bytes(b"prepatched-unity-bundle")
-                return {"output_sha256": manager.sha256_file(output)}
+                return {
+                    "output_sha256": manager.sha256_file(output),
+                    "source_crc32": "11111111",
+                    "output_crc32": "22222222",
+                }
 
             with (
                 mock.patch.dict("os.environ", {"LOCALAPPDATA": str(local)}),

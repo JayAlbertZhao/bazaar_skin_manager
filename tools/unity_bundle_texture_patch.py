@@ -7,6 +7,7 @@ import argparse
 import hashlib
 import os
 import tempfile
+import zlib
 from pathlib import Path
 
 from PIL import Image, ImageChops
@@ -54,6 +55,16 @@ def _texture(environment, asset_name: str):
             f"found {len(matches)}."
         )
     return matches[0]
+
+
+def bundle_crc32(environment) -> int:
+    """Return the CRC Unity validates for an AssetBundle's raw node stream."""
+    bundle = environment.file
+    checksum = 0
+    for node in bundle.files.values():
+        data = node.reader.bytes if hasattr(node, "reader") else node.bytes
+        checksum = zlib.crc32(data, checksum)
+    return checksum & 0xFFFFFFFF
 
 
 def patch_texture_bundle(
@@ -116,6 +127,7 @@ def patch_texture_bundle_many(
     # Load from bytes so UnityPy cannot retain a Windows file handle that
     # would block the manager's later atomic replace or temp cleanup.
     environment = UnityPy.load(source_bundle.read_bytes())
+    source_crc32 = bundle_crc32(environment)
     for asset_name, expected in expected_by_asset.items():
         target_size = expected.size
         texture = _texture(environment, asset_name)
@@ -139,6 +151,7 @@ def patch_texture_bundle_many(
     os.replace(temporary, output_bundle)
 
     verification = UnityPy.load(output_bundle.read_bytes())
+    output_crc32 = bundle_crc32(verification)
     measurements = []
     for asset_name, expected in expected_by_asset.items():
         target_size = expected.size
@@ -203,6 +216,8 @@ def patch_texture_bundle_many(
     return {
         "source_sha256": sha256_file(source_bundle),
         "output_sha256": sha256_file(output_bundle),
+        "source_crc32": f"{source_crc32:08x}",
+        "output_crc32": f"{output_crc32:08x}",
         "textures": measurements,
     }
 
