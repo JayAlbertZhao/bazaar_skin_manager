@@ -1,0 +1,154 @@
+{
+  "schema_version": 1,
+  "game": "The Bazaar",
+  "steam_build": "24001960",
+  "heroes": [
+    {
+      "id": "Mak",
+      "display_name": "Mak",
+      "runtime_supported": true,
+      "audio_supported": true,
+      "skins": [
+        {
+          "id": "Skin_MAK_01/A",
+          "display_name": "Default",
+          "name_contains": "MAK_01a"
+        }
+      ]
+    },
+    {
+      "id": "Vanessa",
+      "display_name": "Vanessa",
+      "runtime_supported": false,
+      "audio_supported": false,
+      "skins": [
+        {
+          "id": "Skin_VAN_01/A",
+          "display_name": "Default",
+          "name_contains": "VAN_01a"
+        }
+      ]
+    },
+    {
+      "id": "Pygmalien",
+      "display_name": "Pygmalien",
+      "runtime_supported": false,
+      "audio_supported": false,
+      "skins": [
+        {
+          "id": "Skin_PYG_01/A",
+          "display_name": "Default",
+          "name_contains": "PYG_01a"
+        }
+      ]
+    },
+    {
+      "id": "Dooley",
+      "display_name": "Dooley",
+      "runtime_supported": false,
+      "audio_supported": false,
+      "skins": [
+        {
+          "id": "Skin_DOO_01/A",
+          "display_name": "Default",
+          "name_contains": "DOO_01a"
+        }
+      ]
+    },
+    {
+      "id": "Jules",
+      "display_name": "Jules",
+      "runtime_supported": false,
+      "audio_supported": false,
+      "skins": [
+        {
+          "id": "Skin_JUL_01/A",
+          "display_name": "Default",
+          "name_contains": "JUL_01a"
+        }
+      ]
+    }
+  ],
+  "visual_slots": [
+    {
+      "id": "portrait_gameplay",
+      "name": "Gameplay portrait",
+      "description": "Board/merchant portrait; transparent PNG recommended.",
+      "accept": [".png", ".jpg", ".jpeg", ".webp"]
+    },
+    {
+      "id": "standing_overlay",
+      "name": "Standing character",
+      "description": "Transparent full-body image for menus and transitions.",
+      "accept": [".png", ".webp"]
+    },
+    {
+      "id": "hero_select",
+      "name": "Hero-select icon",
+      "description": "Framed hero-select image.",
+      "accept": [".png", ".webp"]
+    },
+    {
+      "id": "hero_icon_small",
+      "name": "Small hero icon",
+      "description": "Small/rough hero icon used by game UI.",
+      "accept": [".png", ".webp"]
+    },
+    {
+      "id": "portrait_small",
+      "name": "Small portrait",
+      "description": "Compact portrait used by smaller UI surfaces.",
+      "accept": [".png", ".jpg", ".jpeg", ".webp"]
+    },
+    {
+      "id": "store_image",
+      "name": "Store image",
+      "description": "Skin store image.",
+      "accept": [".png", ".jpg", ".jpeg", ".webp"]
+    },
+    {
+      "id": "collection_list",
+      "name": "Collection list",
+      "description": "Collection list preview.",
+      "accept": [".png", ".jpg", ".jpeg", ".webp"]
+    },
+    {
+      "id": "collection_details",
+      "name": "Collection details",
+      "description": "Collection detail presentation.",
+      "accept": [".png", ".jpg", ".jpeg", ".webp"]
+    },
+    {
+      "id": "marketplace_list",
+      "name": "Marketplace list",
+      "description": "Marketplace list thumbnail.",
+      "accept": [".png", ".jpg", ".jpeg", ".webp"]
+    },
+    {
+      "id": "marketplace_details",
+      "name": "Marketplace details",
+      "description": "Marketplace detail image.",
+      "accept": [".png", ".jpg", ".jpeg", ".webp"]
+    },
+    {
+      "id": "daily_weekly",
+      "name": "Daily/weekly",
+      "description": "Daily and weekly mode presentation.",
+      "accept": [".png", ".jpg", ".jpeg", ".webp"]
+    }
+  ],
+  "animation_formats": [
+    {
+      "id": "spine_source",
+      "name": "Spine source set",
+      "extensions": [".skel", ".json", ".atlas", ".png"],
+      "runtime_ready": false
+    },
+    {
+      "id": "unity_asset_bundle",
+      "name": "Unity AssetBundle prefab",
+      "extensions": [".bundle", ".assetbundle"],
+      "runtime_ready": false
+    }
+  ]
+}

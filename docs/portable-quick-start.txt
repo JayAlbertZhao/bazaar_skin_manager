@@ -1,0 +1,14 @@
+The Bazaar Skin Manager - Portable quick start
+
+1. Extract the entire portable ZIP to a normal folder.
+2. Run TheBazaarModManager.exe.
+3. Confirm the detected Steam installation or choose the game folder manually.
+4. Obtain a compatible skin-pack ZIP from its creator.
+5. Drag the ZIP onto the package area and review the imported slots.
+6. Close The Bazaar and select DEPLOY.
+7. Select START GAME or launch The Bazaar from Steam.
+8. Use Undeploy / restore original before removing a pack.
+
+Unfilled slots continue using original game assets. After a Steam update, open
+the manager and review deployment status before redeploying. The manager
+restores only files recorded in its verified install manifest.

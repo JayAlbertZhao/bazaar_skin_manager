@@ -1,0 +1,448 @@
+{
+  "schema_version": 1,
+  "id": "mak-default",
+  "target": {
+    "game": "the-bazaar",
+    "hero": "Mak",
+    "skin": "Skin_MAK_01/A",
+    "skin_name_contains": "MAK_01a"
+  },
+  "visual_replacements": [
+    {
+      "slot": "portrait_gameplay",
+      "pixels_per_unit": 256,
+      "deployment": {
+        "mode": "preload_unity_texture2d",
+        "target": "TheBazaar_Data/StreamingAssets/aa/StandaloneWindows64/skin_mak_01_assets_all.bundle",
+        "asset_name": "Skin_MAK_01a_Portrait",
+        "unity_version": "6000.3.11f1",
+        "target_size": [
+          1024,
+          1024
+        ],
+        "supported_original_sha256": [
+          "29c0bb812b91c453aee56620f09a64cf49c57458210975f230becb8e95f3cd55"
+        ]
+      },
+      "match_mode": "exact",
+      "match_names": [
+        "Skin_MAK_01a_Portrait"
+      ]
+    },
+    {
+      "slot": "store_image",
+      "deployment": {
+        "mode": "preload_unity_texture2d",
+        "target": "TheBazaar_Data/StreamingAssets/aa/StandaloneWindows64/skin_mak_01_assets_all.bundle",
+        "asset_name": "Skin_MAK_01a_StoreImage",
+        "unity_version": "6000.3.11f1",
+        "target_size": [
+          2048,
+          2048
+        ],
+        "supported_original_sha256": [
+          "29c0bb812b91c453aee56620f09a64cf49c57458210975f230becb8e95f3cd55"
+        ]
+      },
+      "match_names": [
+        "Skin_MAK_01a_StoreImage"
+      ]
+    },
+    {
+      "slot": "collection_list",
+      "deployment": {
+        "mode": "preload_unity_texture2d",
+        "target": "TheBazaar_Data/StreamingAssets/aa/StandaloneWindows64/skin_mak_01_assets_all.bundle",
+        "asset_name": "Skin_MAK_01a_PreviewCollection_TUI",
+        "unity_version": "6000.3.11f1",
+        "target_size": [
+          512,
+          512
+        ],
+        "supported_original_sha256": [
+          "29c0bb812b91c453aee56620f09a64cf49c57458210975f230becb8e95f3cd55"
+        ]
+      },
+      "match_names": [
+        "Skin_MAK_01a_PreviewCollection_TUI"
+      ]
+    },
+    {
+      "slot": "collection_details",
+      "match_names": [
+        "Skin_MAK_01a_Base_P",
+        "Skin_MAK_01a_P"
+      ]
+    },
+    {
+      "slot": "marketplace_list",
+      "deployment": {
+        "mode": "preload_unity_texture2d",
+        "target": "TheBazaar_Data/StreamingAssets/aa/StandaloneWindows64/skin_mak_01_assets_all.bundle",
+        "asset_name": "Skin_MAK_01a_StoreImage",
+        "unity_version": "6000.3.11f1",
+        "target_size": [
+          2048,
+          2048
+        ],
+        "supported_original_sha256": [
+          "29c0bb812b91c453aee56620f09a64cf49c57458210975f230becb8e95f3cd55"
+        ]
+      },
+      "match_names": [
+        "Skin_MAK_01a_StoreImage"
+      ]
+    },
+    {
+      "slot": "marketplace_details",
+      "deployment": {
+        "mode": "preload_unity_texture2d",
+        "target": "TheBazaar_Data/StreamingAssets/aa/StandaloneWindows64/skin_mak_01_assets_all.bundle",
+        "asset_name": "Skin_MAK_01a_StoreImage",
+        "unity_version": "6000.3.11f1",
+        "target_size": [
+          2048,
+          2048
+        ],
+        "supported_original_sha256": [
+          "29c0bb812b91c453aee56620f09a64cf49c57458210975f230becb8e95f3cd55"
+        ]
+      },
+      "match_names": [
+        "Skin_MAK_01a_StoreImage"
+      ]
+    },
+    {
+      "slot": "daily_weekly",
+      "deployment": {
+        "mode": "preload_unity_texture2d",
+        "target": "TheBazaar_Data/StreamingAssets/aa/StandaloneWindows64/skin_mak_01_assets_all.bundle",
+        "asset_name": "Skin_MAK_01a_PreviewCollection_TUI",
+        "unity_version": "6000.3.11f1",
+        "target_size": [
+          512,
+          512
+        ],
+        "supported_original_sha256": [
+          "29c0bb812b91c453aee56620f09a64cf49c57458210975f230becb8e95f3cd55"
+        ]
+      },
+      "match_names": [
+        "Skin_MAK_01a_Portrait",
+        "Skin_MAK_01a_StoreImage"
+      ]
+    },
+    {
+      "slot": "portrait_small",
+      "match_names": [
+        "Skin_MAK_01a_Portrait"
+      ]
+    },
+    {
+      "slot": "standing_overlay",
+      "match_names": [
+        "Skin_MAK_01a_Base_P",
+        "Skin_MAK_01a_UI_Base_P",
+        "Skin_MAK_01a_SE_P",
+        "Skin_MAK_01a_SkeletonData"
+      ]
+    },
+    {
+      "slot": "hero_select",
+      "deployment": {
+        "mode": "preload_unity_texture2d",
+        "target": "TheBazaar_Data/StreamingAssets/aa/StandaloneWindows64/defaultlocalgroup_assets_assets_thebazaar_art_mainmenu_heroselect_hero_button_mak.png.bundle",
+        "asset_name": "Mak",
+        "unity_version": "6000.3.11f1",
+        "target_size": [
+          512,
+          512
+        ],
+        "supported_original_sha256": [
+          "d9fd4171ac4ff05c8587af620b3c52cf9b6cdd1d8043541031bd225793355b52"
+        ]
+      },
+      "direct_only": true,
+      "match_names": []
+    },
+    {
+      "slot": "hero_icon_small",
+      "deployment": {
+        "mode": "preload_unity_texture2d",
+        "target": "TheBazaar_Data/StreamingAssets/aa/StandaloneWindows64/defaultlocalgroup_assets_assets_thebazaar_art_ui_icons_heros_rough_icon_flatrough_mak_tui.png.bundle",
+        "asset_name": "Icon_FlatRough_MAK_TUI",
+        "unity_version": "6000.3.11f1",
+        "target_size": [
+          256,
+          256
+        ],
+        "supported_original_sha256": [
+          "792a71ccee0b9cd5739b4216e95a6ce173db317dc4faaea2c372172ccccb1bb9"
+        ]
+      },
+      "match_names": [
+        "flatrough_mak_tui",
+        "Icon_FlatRough_MAK_TUI"
+      ]
+    }
+  ],
+  "audio_template": {
+    "schema_version": 1,
+    "enabled": true,
+    "target": {
+      "game": "The Bazaar",
+      "steam_build": "24001960",
+      "hero": "Mak"
+    },
+    "fallback": "original",
+    "audio_format": {
+      "encoding": "wav_pcm16",
+      "sample_rate_hz": 22050,
+      "channels": 1,
+      "sample_width_bytes": 2
+    },
+    "playback": {
+      "gain": 0.8,
+      "single_dialogue_channel": true
+    },
+    "routes": [
+      {
+        "logical_slot": "Hit_React.default",
+        "category": "hero_voice",
+        "event_guid": "1c5b69f7-281f-4acd-bb84-1213d8700783",
+        "event_path": "event:/VO/Hero/Mak/VO_Mak_HitReact",
+        "selectors": [],
+        "variants": []
+      },
+      {
+        "logical_slot": "Idle.default",
+        "category": "hero_voice",
+        "event_guid": "c6f1a013-0da1-49dc-bba2-3d82c0845557",
+        "event_path": "event:/VO/Hero/Mak/VO_Mak_Idle",
+        "selectors": [],
+        "variants": []
+      },
+      {
+        "logical_slot": "Last_Life.default",
+        "category": "hero_voice",
+        "event_guid": "bdcce163-3d62-4fab-b570-dfeb5d35a455",
+        "event_path": "event:/VO/Hero/Mak/VO_Mak_LastLife",
+        "selectors": [],
+        "variants": []
+      },
+      {
+        "logical_slot": "Level_Up.default",
+        "category": "hero_voice",
+        "event_guid": "dd8e38dc-0041-4484-bb48-f574b57e0b14",
+        "event_path": "event:/VO/Hero/Mak/VO_Mak_LevelUp",
+        "selectors": [],
+        "variants": []
+      },
+      {
+        "logical_slot": "Menu.CharacterSelect",
+        "category": "menu_voice",
+        "event_guid": "91d85ccb-0008-47ee-88eb-2dd7decea859",
+        "event_path": "event:/VO/Hero/Menu/VO_Menu_Select_Character",
+        "selectors": [],
+        "variants": []
+      },
+      {
+        "logical_slot": "Menu.EquipMusic",
+        "category": "menu_voice",
+        "event_guid": "79dac3ba-05d4-4517-9271-21d63def8262",
+        "event_path": "event:/VO/Hero/Menu/VO_Menu_Equip_Music",
+        "selectors": [],
+        "variants": []
+      },
+      {
+        "logical_slot": "Merchant.BuyItem",
+        "category": "merchant_voice",
+        "event_guid": "240e7acf-34e8-47a9-8380-bd376177c7f0",
+        "event_path": "event:/VO/Merchant/MakMerchant/VO_MakMerchant_BuyItem",
+        "selectors": [],
+        "variants": []
+      },
+      {
+        "logical_slot": "Merchant.EnterShop",
+        "category": "merchant_voice",
+        "event_guid": "93479204-2568-4ebf-843d-e4db01a80dee",
+        "event_path": "event:/VO/Merchant/MakMerchant/VO_MakMerchant_EnterShop",
+        "selectors": [],
+        "variants": []
+      },
+      {
+        "logical_slot": "Merchant.Exit",
+        "category": "merchant_voice",
+        "event_guid": "df1a40ef-c884-49a0-8c1b-a3eabc7d2257",
+        "event_path": "event:/VO/Merchant/MakMerchant/VO_MakMerchant_Exit",
+        "selectors": [],
+        "variants": []
+      },
+      {
+        "logical_slot": "Merchant.Idle",
+        "category": "merchant_voice",
+        "event_guid": "41dc2c6d-06e8-4649-9986-8ce58afbf33a",
+        "event_path": "event:/VO/Merchant/MakMerchant/VO_MakMerchant_Idle",
+        "selectors": [],
+        "variants": []
+      },
+      {
+        "logical_slot": "Merchant.MultiClick",
+        "category": "merchant_voice",
+        "event_guid": "62df4abf-e765-4296-a98a-f437ae0e7219",
+        "event_path": "event:/VO/Merchant/MakMerchant/VO_MakMerchant_MultiClick",
+        "selectors": [],
+        "variants": []
+      },
+      {
+        "logical_slot": "MultiClick.default",
+        "category": "hero_voice",
+        "event_guid": "1ee063c6-4072-40d5-aea2-e36700a5b45a",
+        "event_path": "event:/VO/Hero/Mak/VO_Mak_MultiClick",
+        "selectors": [],
+        "variants": []
+      },
+      {
+        "logical_slot": "No_Buy_Gold.default",
+        "category": "hero_voice",
+        "event_guid": "fee2d60c-3afd-4333-bbb0-743efe3611d3",
+        "event_path": "event:/VO/Hero/Mak/VO_Mak_NoBuyGold",
+        "selectors": [],
+        "variants": []
+      },
+      {
+        "logical_slot": "No_Buy_Space.default",
+        "category": "hero_voice",
+        "event_guid": "cde3ffec-ef8a-4d40-9b44-b368f22d69d3",
+        "event_path": "event:/VO/Hero/Mak/VO_Mak_NoBuySpace",
+        "selectors": [],
+        "variants": []
+      },
+      {
+        "logical_slot": "PvE_VictoryDefeat.Defeat",
+        "category": "hero_voice",
+        "event_guid": "384a1533-8dd0-4920-b91c-3f9c05771860",
+        "event_path": "event:/VO/Hero/Mak/VO_Mak_PvE_VictoryDefeat",
+        "selectors": [
+          {
+            "parameter": "VO_Hero_VictoryDefeat",
+            "label": "Defeat"
+          }
+        ],
+        "variants": []
+      },
+      {
+        "logical_slot": "PvE_VictoryDefeat.Victory",
+        "category": "hero_voice",
+        "event_guid": "384a1533-8dd0-4920-b91c-3f9c05771860",
+        "event_path": "event:/VO/Hero/Mak/VO_Mak_PvE_VictoryDefeat",
+        "selectors": [
+          {
+            "parameter": "VO_Hero_VictoryDefeat",
+            "label": "Victory"
+          }
+        ],
+        "variants": []
+      },
+      {
+        "logical_slot": "PvP_Intro.Left",
+        "category": "hero_voice",
+        "event_guid": "efb3cb04-cb8c-4a9c-a18b-ed1ef6efbf23",
+        "event_path": "event:/VO/Hero/Mak/VO_Mak_PvP_Intro",
+        "selectors": [
+          {
+            "parameter": "VO_Hero_PvPIntro_Pan",
+            "label": "Left"
+          }
+        ],
+        "variants": []
+      },
+      {
+        "logical_slot": "PvP_Intro.Right",
+        "category": "hero_voice",
+        "event_guid": "efb3cb04-cb8c-4a9c-a18b-ed1ef6efbf23",
+        "event_path": "event:/VO/Hero/Mak/VO_Mak_PvP_Intro",
+        "selectors": [
+          {
+            "parameter": "VO_Hero_PvPIntro_Pan",
+            "label": "Right"
+          }
+        ],
+        "variants": []
+      },
+      {
+        "logical_slot": "PvP_VictoryDefeat.Defeat",
+        "category": "hero_voice",
+        "event_guid": "aa704b55-116b-4470-9700-c2899caa5461",
+        "event_path": "event:/VO/Hero/Mak/VO_Mak_PvP_VictoryDefeat",
+        "selectors": [
+          {
+            "parameter": "VO_Hero_VictoryDefeat",
+            "label": "Defeat"
+          }
+        ],
+        "variants": []
+      },
+      {
+        "logical_slot": "PvP_VictoryDefeat.Victory",
+        "category": "hero_voice",
+        "event_guid": "aa704b55-116b-4470-9700-c2899caa5461",
+        "event_path": "event:/VO/Hero/Mak/VO_Mak_PvP_VictoryDefeat",
+        "selectors": [
+          {
+            "parameter": "VO_Hero_VictoryDefeat",
+            "label": "Victory"
+          }
+        ],
+        "variants": []
+      },
+      {
+        "logical_slot": "Run_VictoryDefeat.Defeat",
+        "category": "hero_voice",
+        "event_guid": "8d141a19-cd95-4b7f-831e-c2fd2f90c65e",
+        "event_path": "event:/VO/Hero/Mak/VO_Mak_Run_VictoryDefeat",
+        "selectors": [
+          {
+            "parameter": "VO_Hero_VictoryDefeat",
+            "label": "Defeat"
+          }
+        ],
+        "variants": []
+      },
+      {
+        "logical_slot": "Run_VictoryDefeat.Perfect",
+        "category": "hero_voice",
+        "event_guid": "8d141a19-cd95-4b7f-831e-c2fd2f90c65e",
+        "event_path": "event:/VO/Hero/Mak/VO_Mak_Run_VictoryDefeat",
+        "selectors": [
+          {
+            "parameter": "VO_Hero_VictoryDefeat",
+            "label": "Perfect"
+          }
+        ],
+        "variants": []
+      },
+      {
+        "logical_slot": "Run_VictoryDefeat.Victory",
+        "category": "hero_voice",
+        "event_guid": "8d141a19-cd95-4b7f-831e-c2fd2f90c65e",
+        "event_path": "event:/VO/Hero/Mak/VO_Mak_Run_VictoryDefeat",
+        "selectors": [
+          {
+            "parameter": "VO_Hero_VictoryDefeat",
+            "label": "Victory"
+          }
+        ],
+        "variants": []
+      },
+      {
+        "logical_slot": "Upgrade.default",
+        "category": "hero_voice",
+        "event_guid": "9b7f636a-9b4d-44a6-acf6-a41dd19bd650",
+        "event_path": "event:/VO/Hero/Mak/VO_Mak_Upgrade",
+        "selectors": [],
+        "variants": []
+      }
+    ]
+  }
+}

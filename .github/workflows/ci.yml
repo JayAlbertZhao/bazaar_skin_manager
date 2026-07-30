@@ -1,0 +1,27 @@
+name: Source validation
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  release-surface:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: manager/requirements-build.txt
+      - run: python -m pip install -r manager/requirements-build.txt
+      - run: python -m py_compile tools/bazaar_skin_manager.py tools/mod_studio_core.py tools/bazaar_skin_manager_ui.py
+      - shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist/runtime | Out-Null
+          Copy-Item manager/runtime/BazaarSkinManager.Runtime.dll dist/runtime/BazaarSkinManager.Runtime.dll
+      - run: python -m unittest discover -s tests -v

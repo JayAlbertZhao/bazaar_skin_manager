@@ -1,0 +1,208 @@
+{
+  "schema_version": 2,
+  "pack_id": "example.mak.voice-pack",
+  "enabled": false,
+  "coverage": "complete_hero",
+  "target": {
+    "game": "The Bazaar",
+    "steam_build": "24001960",
+    "hero": "Mak"
+  },
+  "fallback": "original",
+  "asset_contract": {
+    "formats": ["wav_pcm16", "wav_pcm24", "ogg_vorbis"],
+    "sample_rate_hz": 48000,
+    "channels": 1,
+    "integrated_lufs": {
+      "target": -16.0,
+      "tolerance": 1.0
+    },
+    "true_peak_dbtp": -1.0,
+    "max_leading_silence_ms": 50,
+    "max_trailing_silence_ms": 150
+  },
+  "logical_slots": [
+    {
+      "logical_slot": "Idle.default",
+      "category": "hero_voice",
+      "hook_type": "Idle",
+      "event_guid": "c6f1a013-0da1-49dc-bba2-3d82c0845557",
+      "event_path": "event:/VO/Hero/Mak/VO_Mak_Idle",
+      "selectors": [],
+      "variants": []
+    },
+    {
+      "logical_slot": "Last_Life.default",
+      "category": "hero_voice",
+      "hook_type": "LastLife",
+      "event_guid": "bdcce163-3d62-4fab-b570-dfeb5d35a455",
+      "event_path": "event:/VO/Hero/Mak/VO_Mak_LastLife",
+      "selectors": [],
+      "variants": []
+    },
+    {
+      "logical_slot": "MultiClick.default",
+      "category": "hero_voice",
+      "hook_type": "MultiClick",
+      "event_guid": "1ee063c6-4072-40d5-aea2-e36700a5b45a",
+      "event_path": "event:/VO/Hero/Mak/VO_Mak_MultiClick",
+      "selectors": [],
+      "variants": []
+    },
+    {
+      "logical_slot": "No_Buy_Gold.default",
+      "category": "hero_voice",
+      "hook_type": "NoBuyGold",
+      "event_guid": "fee2d60c-3afd-4333-bbb0-743efe3611d3",
+      "event_path": "event:/VO/Hero/Mak/VO_Mak_NoBuyGold",
+      "selectors": [],
+      "variants": []
+    },
+    {
+      "logical_slot": "No_Buy_Space.default",
+      "category": "hero_voice",
+      "hook_type": "NoBuySpace",
+      "event_guid": "cde3ffec-ef8a-4d40-9b44-b368f22d69d3",
+      "event_path": "event:/VO/Hero/Mak/VO_Mak_NoBuySpace",
+      "selectors": [],
+      "variants": []
+    },
+    {
+      "logical_slot": "Level_Up.default",
+      "category": "hero_voice",
+      "hook_type": "LevelUp",
+      "event_guid": "dd8e38dc-0041-4484-bb48-f574b57e0b14",
+      "event_path": "event:/VO/Hero/Mak/VO_Mak_LevelUp",
+      "selectors": [],
+      "variants": []
+    },
+    {
+      "logical_slot": "Upgrade.default",
+      "category": "hero_voice",
+      "hook_type": "Upgrade",
+      "event_guid": "9b7f636a-9b4d-44a6-acf6-a41dd19bd650",
+      "event_path": "event:/VO/Hero/Mak/VO_Mak_Upgrade",
+      "selectors": [],
+      "variants": []
+    },
+    {
+      "logical_slot": "Hit_React.default",
+      "category": "hero_voice",
+      "hook_type": "HitReact",
+      "event_guid": "1c5b69f7-281f-4acd-bb84-1213d8700783",
+      "event_path": "event:/VO/Hero/Mak/VO_Mak_HitReact",
+      "selectors": [],
+      "variants": []
+    },
+    {
+      "logical_slot": "PvP_Intro.Left",
+      "category": "hero_voice",
+      "hook_type": "PvP_Intro",
+      "event_guid": "efb3cb04-cb8c-4a9c-a18b-ed1ef6efbf23",
+      "event_path": "event:/VO/Hero/Mak/VO_Mak_PvP_Intro",
+      "selectors": [
+        { "parameter": "VO_Hero_PvPIntro_Pan", "label": "Left" }
+      ],
+      "variants": [
+        {
+          "file": "audio/pvp-intro-left-01.wav",
+          "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+          "weight": 1
+        },
+        {
+          "file": "audio/pvp-intro-left-02.ogg",
+          "sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+          "weight": 2
+        }
+      ]
+    },
+    {
+      "logical_slot": "PvP_Intro.Right",
+      "category": "hero_voice",
+      "hook_type": "PvP_Intro",
+      "event_guid": "efb3cb04-cb8c-4a9c-a18b-ed1ef6efbf23",
+      "event_path": "event:/VO/Hero/Mak/VO_Mak_PvP_Intro",
+      "selectors": [
+        { "parameter": "VO_Hero_PvPIntro_Pan", "label": "Right" }
+      ],
+      "variants": []
+    },
+    {
+      "logical_slot": "PvE_VictoryDefeat.Victory",
+      "category": "hero_voice",
+      "hook_type": "PvE_VictoryDefeat",
+      "event_guid": "384a1533-8dd0-4920-b91c-3f9c05771860",
+      "event_path": "event:/VO/Hero/Mak/VO_Mak_PvE_VictoryDefeat",
+      "selectors": [
+        { "parameter": "VO_Hero_VictoryDefeat", "label": "Victory" }
+      ],
+      "variants": []
+    },
+    {
+      "logical_slot": "PvE_VictoryDefeat.Defeat",
+      "category": "hero_voice",
+      "hook_type": "PvE_VictoryDefeat",
+      "event_guid": "384a1533-8dd0-4920-b91c-3f9c05771860",
+      "event_path": "event:/VO/Hero/Mak/VO_Mak_PvE_VictoryDefeat",
+      "selectors": [
+        { "parameter": "VO_Hero_VictoryDefeat", "label": "Defeat" }
+      ],
+      "variants": []
+    },
+    {
+      "logical_slot": "PvP_VictoryDefeat.Victory",
+      "category": "hero_voice",
+      "hook_type": "PvP_VictoryDefeat",
+      "event_guid": "aa704b55-116b-4470-9700-c2899caa5461",
+      "event_path": "event:/VO/Hero/Mak/VO_Mak_PvP_VictoryDefeat",
+      "selectors": [
+        { "parameter": "VO_Hero_VictoryDefeat", "label": "Victory" }
+      ],
+      "variants": []
+    },
+    {
+      "logical_slot": "PvP_VictoryDefeat.Defeat",
+      "category": "hero_voice",
+      "hook_type": "PvP_VictoryDefeat",
+      "event_guid": "aa704b55-116b-4470-9700-c2899caa5461",
+      "event_path": "event:/VO/Hero/Mak/VO_Mak_PvP_VictoryDefeat",
+      "selectors": [
+        { "parameter": "VO_Hero_VictoryDefeat", "label": "Defeat" }
+      ],
+      "variants": []
+    },
+    {
+      "logical_slot": "Run_VictoryDefeat.Victory",
+      "category": "hero_voice",
+      "hook_type": "Run_VictoryDefeat",
+      "event_guid": "8d141a19-cd95-4b7f-831e-c2fd2f90c65e",
+      "event_path": "event:/VO/Hero/Mak/VO_Mak_Run_VictoryDefeat",
+      "selectors": [
+        { "parameter": "VO_Hero_VictoryDefeat", "label": "Victory" }
+      ],
+      "variants": []
+    },
+    {
+      "logical_slot": "Run_VictoryDefeat.Defeat",
+      "category": "hero_voice",
+      "hook_type": "Run_VictoryDefeat",
+      "event_guid": "8d141a19-cd95-4b7f-831e-c2fd2f90c65e",
+      "event_path": "event:/VO/Hero/Mak/VO_Mak_Run_VictoryDefeat",
+      "selectors": [
+        { "parameter": "VO_Hero_VictoryDefeat", "label": "Defeat" }
+      ],
+      "variants": []
+    },
+    {
+      "logical_slot": "Run_VictoryDefeat.Perfect",
+      "category": "hero_voice",
+      "hook_type": "Run_VictoryDefeat",
+      "event_guid": "8d141a19-cd95-4b7f-831e-c2fd2f90c65e",
+      "event_path": "event:/VO/Hero/Mak/VO_Mak_Run_VictoryDefeat",
+      "selectors": [
+        { "parameter": "VO_Hero_VictoryDefeat", "label": "Perfect" }
+      ],
+      "variants": []
+    }
+  ]
+}

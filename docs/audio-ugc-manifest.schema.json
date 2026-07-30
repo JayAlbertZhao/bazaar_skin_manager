@@ -1,0 +1,205 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bazaar-skin-manager.local/schemas/audio-ugc-manifest.schema.json",
+  "title": "The Bazaar Skin Manager audio UGC manifest",
+  "description": "Structural shape only. Build-specific identity, exact-set, path, file, and SHA-256 semantics require tools/validate_audio_manifest.py.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "pack_id",
+    "enabled",
+    "coverage",
+    "target",
+    "fallback",
+    "asset_contract",
+    "logical_slots"
+  ],
+  "properties": {
+    "schema_version": { "const": 2 },
+    "pack_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._-]{2,63}$"
+    },
+    "enabled": { "type": "boolean" },
+    "coverage": {
+      "enum": ["partial", "complete_hero"]
+    },
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["game", "steam_build", "hero"],
+      "properties": {
+        "game": { "const": "The Bazaar" },
+        "steam_build": { "type": "string", "pattern": "^[0-9]+$" },
+        "hero": { "const": "Mak" }
+      }
+    },
+    "fallback": { "const": "original" },
+    "asset_contract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "formats",
+        "sample_rate_hz",
+        "channels",
+        "integrated_lufs",
+        "true_peak_dbtp",
+        "max_leading_silence_ms",
+        "max_trailing_silence_ms"
+      ],
+      "properties": {
+        "formats": {
+          "type": "array",
+          "const": ["wav_pcm16", "wav_pcm24", "ogg_vorbis"]
+        },
+        "sample_rate_hz": { "const": 48000 },
+        "channels": { "const": 1 },
+        "integrated_lufs": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["target", "tolerance"],
+          "properties": {
+            "target": { "const": -16.0 },
+            "tolerance": { "const": 1.0 }
+          }
+        },
+        "true_peak_dbtp": { "const": -1.0 },
+        "max_leading_silence_ms": { "const": 50 },
+        "max_trailing_silence_ms": { "const": 150 }
+      }
+    },
+    "logical_slots": {
+      "type": "array",
+      "description": "Cross-field equality and exact complete_hero membership are enforced by the inventory-backed semantic validator, not JSON Schema.",
+      "items": { "$ref": "#/$defs/logical_slot" }
+    }
+  },
+  "$defs": {
+    "selector": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["parameter", "label"],
+      "properties": {
+        "parameter": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_]+$"
+        },
+        "label": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_]+$"
+        }
+      }
+    },
+    "variant": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["file", "sha256", "weight"],
+      "properties": {
+        "file": {
+          "type": "string",
+          "pattern": "^audio/(?!.*\\.\\.(?:/|$))[A-Za-z0-9][A-Za-z0-9._/-]*\\.(wav|ogg)$"
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "weight": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10000
+        }
+      }
+    },
+    "logical_slot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "logical_slot",
+        "category",
+        "hook_type",
+        "event_guid",
+        "event_path",
+        "selectors",
+        "variants"
+      ],
+      "properties": {
+        "logical_slot": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_]+\\.(default|[A-Za-z0-9_]+(?:\\.[A-Za-z0-9_]+)*)$"
+        },
+        "category": { "const": "hero_voice" },
+        "hook_type": {
+          "enum": [
+            "Idle",
+            "LastLife",
+            "MultiClick",
+            "NoBuyGold",
+            "NoBuySpace",
+            "PvE_VictoryDefeat",
+            "PvP_Intro",
+            "PvP_VictoryDefeat",
+            "Run_VictoryDefeat",
+            "LevelUp",
+            "Upgrade",
+            "HitReact"
+          ]
+        },
+        "event_guid": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "event_path": {
+          "type": "string",
+          "pattern": "^event:/VO/Hero/Mak/VO_Mak_[A-Za-z0-9_]+$"
+        },
+        "selectors": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/selector" },
+          "uniqueItems": true
+        },
+        "variants": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/variant" }
+        }
+      }
+    },
+    "enabled_logical_slot": {
+      "allOf": [
+        { "$ref": "#/$defs/logical_slot" },
+        {
+          "properties": {
+            "variants": { "minItems": 1 }
+          }
+        }
+      ]
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "enabled": { "const": true } },
+        "required": ["enabled"]
+      },
+      "then": {
+        "properties": {
+          "logical_slots": {
+            "minItems": 1,
+            "items": { "$ref": "#/$defs/enabled_logical_slot" }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": { "coverage": { "const": "complete_hero" } },
+        "required": ["coverage"]
+      },
+      "then": {
+        "properties": {
+          "logical_slots": { "minItems": 17 }
+        }
+      }
+    }
+  ]
+}
