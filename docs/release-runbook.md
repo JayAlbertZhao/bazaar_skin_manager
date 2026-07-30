@@ -2,12 +2,12 @@
 
 ## What GitHub publishes
 
-A version tag such as `v0.9.1` produces:
+A version tag such as `v0.9.2` produces:
 
 - GitHub's automatic source ZIP and source tarball for the tag;
-- `TheBazaarModManager-Setup-0.9.1.exe`;
+- `TheBazaarModManager-Setup-0.9.2.exe`;
 - the installer's SHA-256 file;
-- `TheBazaarModManager-Portable-0.9.1.zip`.
+- `TheBazaarModManager-Portable-0.9.2.zip`.
 
 The public workflow does not package a skin's art or audio. Complete asset
 packs remain ordinary ZIP inputs to the manager and can be distributed through
@@ -15,7 +15,8 @@ any separate channel.
 
 ## Maintainer release
 
-1. Update the manager/runtime version and changelog.
+1. Update the manager and runtime-adapter versions independently, then update
+   the changelog. Asset-pack versions remain in each external `mod.json`.
 2. Copy the audited runtime DLL to
    `manager/runtime/BazaarSkinManager.Runtime.dll`.
 3. Run `python -m unittest discover -s tests -v`.
@@ -24,8 +25,8 @@ any separate channel.
 5. Commit the source, create an immutable semantic tag, and push it:
 
    ```powershell
-   git tag v0.9.1
-   git push origin main v0.9.1
+   git tag v0.9.2
+   git push origin main v0.9.2
    ```
 
 6. The release workflow builds on `windows-latest`, uploads its workflow

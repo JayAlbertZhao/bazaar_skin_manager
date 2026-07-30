@@ -127,6 +127,9 @@ class RuntimeStructureTests(unittest.TestCase):
         ):
             self.assertIn(field_name, STANDING_STATE)
         self.assertIn("SkinPatchTargets.ShouldReplace(loadedAsset)", STANDING_STATE)
+        self.assertIn("IsSupportedCentralDisplay(component)", STANDING_STATE)
+        self.assertIn('"Hero_Placeholder"', STANDING_STATE)
+        self.assertIn('"HeroSelect"', STANDING_STATE)
         self.assertIn("component.gameObject.activeInHierarchy", STANDING_STATE)
         self.assertIn("makGraphic.gameObject.activeInHierarchy", STANDING_STATE)
         self.assertIn('"Common"', STANDING_STATE)
@@ -136,7 +139,7 @@ class RuntimeStructureTests(unittest.TestCase):
         self.assertIn("StandingOverlay.RemoveFromGraphic", STANDING_STATE)
         self.assertIn("StandingOverlay.RemoveFromWorld", STANDING_STATE)
 
-    def test_runtime_version_is_0_9_1(self) -> None:
+    def test_runtime_version_is_0_9_2(self) -> None:
         plugin = (
             ROOT / "src" / "BazaarSkinManager.Runtime" / "Plugin.cs"
         ).read_text(encoding="utf-8")
@@ -144,8 +147,8 @@ class RuntimeStructureTests(unittest.TestCase):
             ROOT / "src" / "BazaarSkinManager.Runtime" / "AssemblyInfo.cs"
         ).read_text(encoding="utf-8")
 
-        self.assertIn('PluginVersion = "0.9.1"', plugin)
-        self.assertIn('AssemblyVersion("0.9.1.0")', assembly)
+        self.assertIn('PluginVersion = "0.9.2"', plugin)
+        self.assertIn('AssemblyVersion("0.9.2.0")', assembly)
 
     def test_audio_replacement_is_exact_predecoded_and_fail_open(self) -> None:
         root = ROOT / "src" / "BazaarSkinManager.Runtime"

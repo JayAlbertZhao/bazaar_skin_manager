@@ -160,9 +160,9 @@ dist/manager/TheBazaarModManager.exe
 Portable release:
 
 ```powershell
-.\package-manager-portable.ps1 -Version 0.9.1
+.\package-manager-portable.ps1 -Version 0.9.2
 ```
 
-This writes `dist/TheBazaarModManager-Portable-0.9.1.zip`, containing only the
+This writes `dist/TheBazaarModManager-Portable-0.9.2.zip`, containing only the
 standalone executable, hashes, and a quick-start guide. Skin packs are imported
 from separately distributed ZIP files.

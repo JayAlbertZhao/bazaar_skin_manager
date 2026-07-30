@@ -1,5 +1,5 @@
 param(
-    [string]$Version = "0.9.1"
+    [string]$Version = "0.9.2"
 )
 
 $ErrorActionPreference = "Stop"
@@ -40,6 +40,10 @@ if (-not (Test-Path -LiteralPath $runtime)) {
 if (-not (Test-Path -LiteralPath $runtime)) {
     throw "Release runtime is missing: manager\runtime\BazaarSkinManager.Runtime.dll"
 }
+$runtimeMetadata = Join-Path (Split-Path -Parent $runtime) "runtime-build.json"
+if (-not (Test-Path -LiteralPath $runtimeMetadata)) {
+    throw "Release runtime metadata is missing: $runtimeMetadata"
+}
 
 & $python -c "import archspec, PIL, PyInstaller, tkinterdnd2, UnityPy"
 if ($LASTEXITCODE -ne 0) {
@@ -65,6 +69,7 @@ New-Item -ItemType Directory -Force -Path $output, $work, $spec | Out-Null
     --add-data "$root\manager\hero-catalog.json;manager" `
     --add-data "$root\manager\adapters\mak-default.json;manager\adapters" `
     --add-data "$runtime;dist\runtime" `
+    --add-data "$runtimeMetadata;dist\runtime" `
     --add-data "$root\tools\unity_bundle_texture_patch.py;tools" `
     $entry
 

@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.9.2
+
+- Track manager, runtime-adapter, and external asset-pack versions and hashes
+  as independent deployment components.
+- Bundle verified runtime metadata with frozen manager releases.
+- Restrict central standing-art reconciliation to the actual hero-select
+  hierarchy so gameplay portrait surfaces cannot receive a delayed overlay.
+- Preserve deploy-time Addressables CRC repair and reversible native backups.
+
 ## 0.9.1
 
 - Repositioned the repository as a manager-only public project.

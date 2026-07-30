@@ -1,7 +1,8 @@
 param(
     [string]$BepInExDir = "D:\SteamLibrary\steamapps\common\The Bazaar\BepInEx",
     [string]$UnityEditorDir = "D:\Program Files\Unity 2022.3.57f1c2\Editor",
-    [string]$Configuration = "Release"
+    [string]$Configuration = "Release",
+    [string]$Version = "0.9.2"
 )
 
 $ErrorActionPreference = "Stop"
@@ -35,5 +36,15 @@ if ($LASTEXITCODE -ne 0) {
 New-Item -ItemType Directory -Force -Path $dist | Out-Null
 $builtDll = Join-Path $projectRoot "src\BazaarSkinManager.Runtime\bin\$Configuration\BazaarSkinManager.Runtime.dll"
 Copy-Item -LiteralPath $builtDll -Destination (Join-Path $dist "BazaarSkinManager.Runtime.dll") -Force
+$runtimeDll = Join-Path $dist "BazaarSkinManager.Runtime.dll"
+$metadata = [ordered]@{
+    schema_version = 1
+    component = "runtime-adapter"
+    version = $Version
+    executable = "BazaarSkinManager.Runtime.dll"
+    sha256 = (Get-FileHash -LiteralPath $runtimeDll -Algorithm SHA256).Hash.ToLowerInvariant()
+    bytes = (Get-Item -LiteralPath $runtimeDll).Length
+}
+$metadata | ConvertTo-Json -Depth 3 |
+    Set-Content -LiteralPath (Join-Path $dist "runtime-build.json") -Encoding utf8
 Write-Host "Built: $(Join-Path $dist 'BazaarSkinManager.Runtime.dll')"
-

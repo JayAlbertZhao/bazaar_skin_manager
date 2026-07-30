@@ -20,10 +20,14 @@ from typing import Iterable
 
 
 APP_ID = "1617400"
+MANAGER_VERSION = "0.9.2"
 PROJECT_ROOT = Path(
     getattr(sys, "_MEIPASS", Path(__file__).resolve().parents[1])
 )
 DEFAULT_RUNTIME = PROJECT_ROOT / "dist" / "runtime" / "BazaarSkinManager.Runtime.dll"
+DEFAULT_RUNTIME_METADATA = (
+    PROJECT_ROOT / "dist" / "runtime" / "runtime-build.json"
+)
 PRELOAD_TEXTURE_MODE = "preload_unity_texture2d"
 
 
@@ -71,6 +75,29 @@ def sha256_file(path: Path) -> str:
         for chunk in iter(lambda: stream.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def runtime_release_info(runtime: Path) -> dict:
+    digest = sha256_file(runtime)
+    metadata_path = runtime.with_name("runtime-build.json")
+    if not metadata_path.is_file() and runtime.resolve() == DEFAULT_RUNTIME.resolve():
+        metadata_path = DEFAULT_RUNTIME_METADATA
+
+    version = None
+    if metadata_path.is_file():
+        payload = json.loads(metadata_path.read_text(encoding="utf-8-sig"))
+        expected_hash = payload.get("sha256")
+        if expected_hash and expected_hash.casefold() != digest.casefold():
+            raise RuntimeError(
+                "runtime metadata SHA-256 does not match the selected DLL"
+            )
+        version = payload.get("version")
+
+    return {
+        "version": version,
+        "source_path": str(runtime.resolve()),
+        "sha256": digest,
+    }
 
 
 def local_app_data() -> Path:
@@ -980,18 +1007,29 @@ def install(runtime: Path, pack: Path, game: GameInstall) -> dict:
         compatibility_sha256 = hashlib.sha256(
             compatibility_text.encode("utf-8")
         ).hexdigest()
+        runtime_release = runtime_release_info(runtime)
         record = {
-            "schema_version": 1,
+            "schema_version": 2,
+            "manager": {
+                "version": MANAGER_VERSION,
+            },
             "game": asdict(game),
             "game_fingerprint": fingerprint(game),
             "plugin": {
                 "path": str(plugin_dest),
                 "sha256": sha256_file(plugin_dest),
             },
+            "runtime": {
+                "version": runtime_release["version"],
+                "path": str(plugin_dest),
+                "source_path": runtime_release["source_path"],
+                "sha256": runtime_release["sha256"],
+            },
             "pack": {
                 "path": str(pack_dest),
                 "id": manifest["id"],
                 "version": manifest["version"],
+                "manifest_sha256": sha256_file(pack / "mod.json"),
             },
             "runtime_compatibility": {
                 "path": str(compatibility_path),
@@ -1239,6 +1277,21 @@ def installation_diagnostics() -> dict:
     return {
         "installed": True,
         "healthy": healthy,
+        "components": {
+            "manager": record.get("manager") or {"version": None},
+            "runtime": record.get("runtime") or {
+                "version": None,
+                "path": record["plugin"].get("path"),
+                "sha256": record["plugin"].get("sha256"),
+            },
+            "pack": {
+                "id": record["pack"].get("id"),
+                "version": record["pack"].get("version"),
+                "manifest_sha256": record["pack"].get(
+                    "manifest_sha256"
+                ),
+            },
+        },
         "state": (
             "healthy"
             if healthy

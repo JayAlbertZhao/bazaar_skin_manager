@@ -248,6 +248,17 @@ class ManagerTests(unittest.TestCase):
                     pack,
                     manager.explicit_install(game),
                 )
+                self.assertEqual(record["schema_version"], 2)
+                self.assertEqual(
+                    record["manager"]["version"],
+                    manager.MANAGER_VERSION,
+                )
+                self.assertIsNone(record["runtime"]["version"])
+                self.assertEqual(record["pack"]["version"], "1.0.0")
+                self.assertEqual(
+                    record["runtime"]["sha256"],
+                    manager.sha256_file(runtime),
+                )
                 plugin = Path(record["plugin"]["path"])
                 deployed_pack = Path(record["pack"]["path"])
                 compatibility = Path(record["runtime_compatibility"]["path"])
@@ -260,6 +271,49 @@ class ManagerTests(unittest.TestCase):
                 self.assertIn(str(compatibility), removed)
                 self.assertFalse(plugin.exists())
                 self.assertFalse(deployed_pack.exists())
+
+    def test_runtime_metadata_version_is_independent_from_pack(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            pack = write_pack(root)
+            game = write_game(root)
+            runtime = root / "BazaarSkinManager.Runtime.dll"
+            runtime.write_bytes(b"runtime")
+            (root / "runtime-build.json").write_text(
+                json.dumps(
+                    {
+                        "schema_version": 1,
+                        "component": "runtime-adapter",
+                        "version": "7.4.2",
+                        "sha256": manager.sha256_file(runtime),
+                    }
+                ),
+                encoding="utf-8",
+            )
+            with (
+                mock.patch.dict(
+                    "os.environ",
+                    {"LOCALAPPDATA": str(root / "local")},
+                ),
+                mock.patch.object(
+                    manager,
+                    "native_patch_specs",
+                    return_value=[],
+                ),
+            ):
+                record = manager.install(
+                    runtime,
+                    pack,
+                    manager.explicit_install(game),
+                )
+                diagnostics = manager.installation_diagnostics()
+            self.assertEqual(record["manager"]["version"], "0.9.2")
+            self.assertEqual(record["runtime"]["version"], "7.4.2")
+            self.assertEqual(record["pack"]["version"], "1.0.0")
+            self.assertEqual(
+                diagnostics["components"]["runtime"]["version"],
+                "7.4.2",
+            )
 
     def test_native_texture_patch_is_backed_up_and_restored(self) -> None:
         with tempfile.TemporaryDirectory() as temp:

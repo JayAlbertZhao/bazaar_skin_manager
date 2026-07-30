@@ -51,6 +51,8 @@ namespace BazaarSkinManager.TheBazaar
                 _skinEditActiveSkinField.GetValue(display) as GameObject;
             bool displayActive = component != null &&
                 component.gameObject.activeInHierarchy;
+            bool supportedCentralDisplay =
+                IsSupportedCentralDisplay(component);
             bool makGraphicActive = makGraphic != null &&
                 makGraphic.gameObject.activeInHierarchy;
             bool skinEditActive = skinEditActiveSkin != null &&
@@ -69,10 +71,12 @@ namespace BazaarSkinManager.TheBazaar
             bool selectedAllowsMak = selectedMak || selectedCommon;
             bool isTargetDefault = SkinPatchTargets.ShouldReplace(loadedAsset);
             bool shouldAttachGraphic = displayActive &&
+                supportedCentralDisplay &&
                 makGraphicActive &&
                 selectedAllowsMak &&
                 isTargetDefault;
             bool shouldAttachSkinEdit = displayActive &&
+                supportedCentralDisplay &&
                 skinEditActive &&
                 selectedAllowsMak &&
                 isTargetDefault;
@@ -104,6 +108,8 @@ namespace BazaarSkinManager.TheBazaar
                     "HeroSelectDisplay.MAK",
                     state,
                     "displayActive=" + displayActive +
+                    " supportedCentralDisplay=" +
+                    supportedCentralDisplay +
                     " makGraphicActive=" + makGraphicActive +
                     " skinEditActive=" + skinEditActive +
                     " selected=" + selectedName +
@@ -175,6 +181,10 @@ namespace BazaarSkinManager.TheBazaar
                 Graphic graphic =
                     _makGraphicField.GetValue(candidate) as Graphic;
                 if (component == null || graphic == null)
+                {
+                    continue;
+                }
+                if (!IsSupportedCentralDisplay(component))
                 {
                     continue;
                 }
@@ -341,6 +351,32 @@ namespace BazaarSkinManager.TheBazaar
                 .OrderBy(candidate => candidate.bounds.size.y)
                 .LastOrDefault();
             return renderer == null ? null : renderer.gameObject;
+        }
+
+        private static bool IsSupportedCentralDisplay(Component component)
+        {
+            if (component == null ||
+                !string.Equals(
+                    component.gameObject.name,
+                    "Hero_Placeholder",
+                    StringComparison.Ordinal))
+            {
+                return false;
+            }
+
+            Transform current = component.transform.parent;
+            while (current != null)
+            {
+                if (string.Equals(
+                    current.gameObject.name,
+                    "HeroSelect",
+                    StringComparison.Ordinal))
+                {
+                    return true;
+                }
+                current = current.parent;
+            }
+            return false;
         }
 
         private static bool EnsureBindings()
