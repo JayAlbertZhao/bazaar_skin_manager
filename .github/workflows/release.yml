@@ -9,7 +9,7 @@ on:
       version:
         description: "Version without v prefix"
         required: true
-        default: "0.9.1"
+        default: "0.9.3"
 
 permissions:
   contents: write
@@ -49,6 +49,7 @@ jobs:
           python -m py_compile tools/bazaar_skin_manager.py tools/mod_studio_core.py tools/bazaar_skin_manager_ui.py
           New-Item -ItemType Directory -Force dist/runtime | Out-Null
           Copy-Item manager/runtime/BazaarSkinManager.Runtime.dll dist/runtime/BazaarSkinManager.Runtime.dll
+          Copy-Item manager/runtime/runtime-build.json dist/runtime/runtime-build.json
           python -m unittest discover -s tests -v
 
       - name: Build manager

@@ -88,7 +88,6 @@ class RuntimeStructureTests(unittest.TestCase):
         self.assertEqual(
             preloaded,
             {
-                "portrait_gameplay",
                 "store_image",
                 "collection_list",
                 "marketplace_list",
@@ -117,6 +116,30 @@ class RuntimeStructureTests(unittest.TestCase):
             'Plugin.ActivePack.UsesPreloadedDeployment("hero_select")',
             ICON_RECONCILER,
         )
+        portrait = next(
+            item
+            for item in ADAPTER["visual_replacements"]
+            if item["slot"] == "portrait_gameplay"
+        )
+        self.assertNotIn("deployment", portrait)
+        self.assertEqual(portrait["match_mode"], "exact")
+
+    def test_specialized_overlays_cannot_be_claimed_by_global_scanner(
+        self,
+    ) -> None:
+        replacements = {
+            item["slot"]: item
+            for item in ADAPTER["visual_replacements"]
+        }
+        for slot in ("collection_details", "standing_overlay"):
+            self.assertTrue(replacements[slot]["direct_only"])
+            self.assertEqual(replacements[slot]["match_mode"], "exact")
+        self.assertIn("VisualReplacement bestContains", RUNTIME_ASSETS)
+        self.assertIn("bestContainsLength", RUNTIME_ASSETS)
+        self.assertIn(
+            'replacement.MatchMode,\n                        "exact"',
+            RUNTIME_ASSETS,
+        )
 
     def test_standing_state_is_exact_and_reversible(self) -> None:
         for field_name in (
@@ -139,7 +162,7 @@ class RuntimeStructureTests(unittest.TestCase):
         self.assertIn("StandingOverlay.RemoveFromGraphic", STANDING_STATE)
         self.assertIn("StandingOverlay.RemoveFromWorld", STANDING_STATE)
 
-    def test_runtime_version_is_0_9_2(self) -> None:
+    def test_runtime_version_is_0_9_3(self) -> None:
         plugin = (
             ROOT / "src" / "BazaarSkinManager.Runtime" / "Plugin.cs"
         ).read_text(encoding="utf-8")
@@ -147,8 +170,8 @@ class RuntimeStructureTests(unittest.TestCase):
             ROOT / "src" / "BazaarSkinManager.Runtime" / "AssemblyInfo.cs"
         ).read_text(encoding="utf-8")
 
-        self.assertIn('PluginVersion = "0.9.2"', plugin)
-        self.assertIn('AssemblyVersion("0.9.2.0")', assembly)
+        self.assertIn('PluginVersion = "0.9.3"', plugin)
+        self.assertIn('AssemblyVersion("0.9.3.0")', assembly)
 
     def test_audio_replacement_is_exact_predecoded_and_fail_open(self) -> None:
         root = ROOT / "src" / "BazaarSkinManager.Runtime"

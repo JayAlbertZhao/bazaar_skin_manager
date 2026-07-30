@@ -1,5 +1,5 @@
 param(
-    [string]$Version = "0.9.2"
+    [string]$Version = "0.9.3"
 )
 
 $ErrorActionPreference = "Stop"
@@ -33,9 +33,16 @@ if (-not (Test-Path -LiteralPath $fmodDll)) {
     throw "FMOD runtime required by UnityPy is missing: $fmodDll"
 }
 
-$runtime = Join-Path $root "manager\runtime\BazaarSkinManager.Runtime.dll"
-if (-not (Test-Path -LiteralPath $runtime)) {
-    $runtime = Join-Path $root "dist\runtime\BazaarSkinManager.Runtime.dll"
+$distRuntime = Join-Path $root "dist\runtime\BazaarSkinManager.Runtime.dll"
+$distRuntimeMetadata = Join-Path $root "dist\runtime\runtime-build.json"
+$embeddedRuntime = Join-Path $root "manager\runtime\BazaarSkinManager.Runtime.dll"
+$runtime = if (
+    (Test-Path -LiteralPath $distRuntime) -and
+    (Test-Path -LiteralPath $distRuntimeMetadata)
+) {
+    $distRuntime
+} else {
+    $embeddedRuntime
 }
 if (-not (Test-Path -LiteralPath $runtime)) {
     throw "Release runtime is missing: manager\runtime\BazaarSkinManager.Runtime.dll"
@@ -44,6 +51,13 @@ $runtimeMetadata = Join-Path (Split-Path -Parent $runtime) "runtime-build.json"
 if (-not (Test-Path -LiteralPath $runtimeMetadata)) {
     throw "Release runtime metadata is missing: $runtimeMetadata"
 }
+$runtimeRelease = Get-Content -LiteralPath $runtimeMetadata -Raw |
+    ConvertFrom-Json
+$runtimeHash = (Get-FileHash -LiteralPath $runtime -Algorithm SHA256).Hash.ToLowerInvariant()
+if ($runtimeRelease.sha256 -ne $runtimeHash) {
+    throw "Release runtime metadata SHA-256 does not match: $runtime"
+}
+Write-Host "Bundling runtime adapter $($runtimeRelease.version): $runtime"
 
 & $python -c "import archspec, PIL, PyInstaller, tkinterdnd2, UnityPy"
 if ($LASTEXITCODE -ne 0) {

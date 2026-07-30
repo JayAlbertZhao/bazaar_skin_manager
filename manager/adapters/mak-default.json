@@ -11,19 +11,6 @@
     {
       "slot": "portrait_gameplay",
       "pixels_per_unit": 256,
-      "deployment": {
-        "mode": "preload_unity_texture2d",
-        "target": "TheBazaar_Data/StreamingAssets/aa/StandaloneWindows64/skin_mak_01_assets_all.bundle",
-        "asset_name": "Skin_MAK_01a_Portrait",
-        "unity_version": "6000.3.11f1",
-        "target_size": [
-          1024,
-          1024
-        ],
-        "supported_original_sha256": [
-          "29c0bb812b91c453aee56620f09a64cf49c57458210975f230becb8e95f3cd55"
-        ]
-      },
       "match_mode": "exact",
       "match_names": [
         "Skin_MAK_01a_Portrait"
@@ -69,6 +56,8 @@
     },
     {
       "slot": "collection_details",
+      "direct_only": true,
+      "match_mode": "exact",
       "match_names": [
         "Skin_MAK_01a_Base_P",
         "Skin_MAK_01a_P"
@@ -140,6 +129,8 @@
     },
     {
       "slot": "standing_overlay",
+      "direct_only": true,
+      "match_mode": "exact",
       "match_names": [
         "Skin_MAK_01a_Base_P",
         "Skin_MAK_01a_UI_Base_P",

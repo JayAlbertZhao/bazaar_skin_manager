@@ -52,6 +52,11 @@ class ReleaseSurfaceTests(unittest.TestCase):
         self.assertIn("FMOD runtime required by UnityPy is missing", build)
         self.assertIn("--self-test-release-runtime", build)
         self.assertIn("Frozen release runtime self-test failed", build)
+        self.assertLess(
+            build.index("dist\\runtime\\BazaarSkinManager.Runtime.dll"),
+            build.index("manager\\runtime\\BazaarSkinManager.Runtime.dll"),
+        )
+        self.assertIn("Release runtime metadata SHA-256 does not match", build)
 
     def test_manager_release_ui_is_chinese_and_has_clear_action(self) -> None:
         ui = (ROOT / "tools" / "bazaar_skin_manager_ui.py").read_text(

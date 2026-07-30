@@ -307,7 +307,7 @@ class ManagerTests(unittest.TestCase):
                     manager.explicit_install(game),
                 )
                 diagnostics = manager.installation_diagnostics()
-            self.assertEqual(record["manager"]["version"], "0.9.2")
+            self.assertEqual(record["manager"]["version"], "0.9.3")
             self.assertEqual(record["runtime"]["version"], "7.4.2")
             self.assertEqual(record["pack"]["version"], "1.0.0")
             self.assertEqual(

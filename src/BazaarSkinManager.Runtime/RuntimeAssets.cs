@@ -250,6 +250,8 @@ namespace BazaarSkinManager.TheBazaar
                 return null;
             }
 
+            VisualReplacement bestContains = null;
+            int bestContainsLength = -1;
             foreach (VisualReplacement replacement in Manifest.VisualReplacements)
             {
                 if (replacement.DirectOnly ||
@@ -260,17 +262,35 @@ namespace BazaarSkinManager.TheBazaar
 
                 foreach (string needle in replacement.MatchNames ?? new List<string>())
                 {
-                    if (AssetNameMatcher.Matches(
+                    if (!AssetNameMatcher.Matches(
                         replacement.MatchMode,
                         assetName,
                         needle))
                     {
+                        continue;
+                    }
+
+                    // Exact routes always win over fuzzy routes regardless of
+                    // manifest ordering. A broad name such as
+                    // "Skin_MAK_01a_P" must never steal
+                    // "Skin_MAK_01a_Portrait" from its dedicated slot.
+                    if (string.Equals(
+                        replacement.MatchMode,
+                        "exact",
+                        StringComparison.OrdinalIgnoreCase))
+                    {
                         return replacement;
+                    }
+                    if (!string.IsNullOrEmpty(needle) &&
+                        needle.Length > bestContainsLength)
+                    {
+                        bestContains = replacement;
+                        bestContainsLength = needle.Length;
                     }
                 }
             }
 
-            return null;
+            return bestContains;
         }
 
         public void DisposeAudio()

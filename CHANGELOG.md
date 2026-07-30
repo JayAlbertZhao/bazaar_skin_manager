@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.9.3
+
+- Prevented specialized standing/collection overlays from matching gameplay
+  portrait sprites through broad substring routes.
+- Restored the gameplay portrait to the verified runtime Sprite route so its
+  256 PPU, full-rect geometry, and alpha envelope are applied atomically.
+- Made exact asset-name matches outrank fuzzy routes regardless of manifest
+  ordering.
+
 ## 0.9.2
 
 - Track manager, runtime-adapter, and external asset-pack versions and hashes
