@@ -11,7 +11,7 @@
       "skins": [
         {
           "id": "Skin_MAK_01/A",
-          "display_name": "Default",
+          "display_name": "默认",
           "name_contains": "MAK_01a"
         }
       ]
@@ -24,7 +24,7 @@
       "skins": [
         {
           "id": "Skin_VAN_01/A",
-          "display_name": "Default",
+          "display_name": "默认",
           "name_contains": "VAN_01a"
         }
       ]
@@ -37,7 +37,7 @@
       "skins": [
         {
           "id": "Skin_PYG_01/A",
-          "display_name": "Default",
+          "display_name": "默认",
           "name_contains": "PYG_01a"
         }
       ]
@@ -50,7 +50,7 @@
       "skins": [
         {
           "id": "Skin_DOO_01/A",
-          "display_name": "Default",
+          "display_name": "默认",
           "name_contains": "DOO_01a"
         }
       ]
@@ -63,7 +63,7 @@
       "skins": [
         {
           "id": "Skin_JUL_01/A",
-          "display_name": "Default",
+          "display_name": "默认",
           "name_contains": "JUL_01a"
         }
       ]
@@ -72,81 +72,81 @@
   "visual_slots": [
     {
       "id": "portrait_gameplay",
-      "name": "Gameplay portrait",
-      "description": "Board/merchant portrait; transparent PNG recommended.",
+      "name": "游戏内头像",
+      "description": "棋盘和商人界面使用的头像；建议使用透明 PNG。",
       "accept": [".png", ".jpg", ".jpeg", ".webp"]
     },
     {
       "id": "standing_overlay",
-      "name": "Standing character",
-      "description": "Transparent full-body image for menus and transitions.",
+      "name": "角色立绘",
+      "description": "菜单和转场使用的透明全身立绘。",
       "accept": [".png", ".webp"]
     },
     {
       "id": "hero_select",
-      "name": "Hero-select icon",
-      "description": "Framed hero-select image.",
+      "name": "英雄选择图标",
+      "description": "英雄选择界面使用的带框图像。",
       "accept": [".png", ".webp"]
     },
     {
       "id": "hero_icon_small",
-      "name": "Small hero icon",
-      "description": "Small/rough hero icon used by game UI.",
+      "name": "小型英雄图标",
+      "description": "游戏界面使用的小型简化英雄图标。",
       "accept": [".png", ".webp"]
     },
     {
       "id": "portrait_small",
-      "name": "Small portrait",
-      "description": "Compact portrait used by smaller UI surfaces.",
+      "name": "小型头像",
+      "description": "较小界面区域使用的紧凑头像。",
       "accept": [".png", ".jpg", ".jpeg", ".webp"]
     },
     {
       "id": "store_image",
-      "name": "Store image",
-      "description": "Skin store image.",
+      "name": "商店图像",
+      "description": "皮肤商店使用的展示图。",
       "accept": [".png", ".jpg", ".jpeg", ".webp"]
     },
     {
       "id": "collection_list",
-      "name": "Collection list",
-      "description": "Collection list preview.",
+      "name": "收藏列表",
+      "description": "收藏列表中的预览图。",
       "accept": [".png", ".jpg", ".jpeg", ".webp"]
     },
     {
       "id": "collection_details",
-      "name": "Collection details",
-      "description": "Collection detail presentation.",
+      "name": "收藏详情",
+      "description": "收藏详情页的展示图。",
       "accept": [".png", ".jpg", ".jpeg", ".webp"]
     },
     {
       "id": "marketplace_list",
-      "name": "Marketplace list",
-      "description": "Marketplace list thumbnail.",
+      "name": "市场列表",
+      "description": "市场列表中的缩略图。",
       "accept": [".png", ".jpg", ".jpeg", ".webp"]
     },
     {
       "id": "marketplace_details",
-      "name": "Marketplace details",
-      "description": "Marketplace detail image.",
+      "name": "市场详情",
+      "description": "市场详情页的展示图。",
       "accept": [".png", ".jpg", ".jpeg", ".webp"]
     },
     {
       "id": "daily_weekly",
-      "name": "Daily/weekly",
-      "description": "Daily and weekly mode presentation.",
+      "name": "每日 / 每周模式",
+      "description": "每日和每周模式使用的展示图。",
       "accept": [".png", ".jpg", ".jpeg", ".webp"]
     }
   ],
   "animation_formats": [
     {
       "id": "spine_source",
-      "name": "Spine source set",
+      "name": "Spine 源文件组",
       "extensions": [".skel", ".json", ".atlas", ".png"],
       "runtime_ready": false
     },
     {
       "id": "unity_asset_bundle",
-      "name": "Unity AssetBundle prefab",
+      "name": "Unity AssetBundle 预制体",
       "extensions": [".bundle", ".assetbundle"],
       "runtime_ready": false
     }

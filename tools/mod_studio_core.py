@@ -528,6 +528,42 @@ class StudioWorkspace:
         }
         self.save()
 
+    def clear_loaded_assets(self) -> dict[str, int]:
+        """Remove every imported authoring asset while preserving pack metadata."""
+        visual_count = len(self.state.get("visual_slots") or {})
+        audio = self.audio_manifest() or {}
+        audio_count = sum(
+            1 for route in audio.get("routes") or [] if route.get("variants")
+        )
+        animation_count = len(
+            (self.state.get("animation") or {}).get("files") or []
+        )
+
+        # A complete pack may carry auxiliary authoring manifests with arbitrary
+        # names. The workspace is dedicated storage, so keep only studio.json
+        # instead of maintaining an incomplete list of generated payload files.
+        for path in list(self.directory.iterdir()):
+            if path.name == STATE_FILE:
+                continue
+            if path.is_dir():
+                shutil.rmtree(path)
+            else:
+                path.unlink()
+
+        self.state["visual_slots"] = {}
+        self.state["audio_manifest"] = None
+        self.state["animation"] = {
+            "mode": "none",
+            "files": [],
+            "runtime_ready": False,
+        }
+        self.save()
+        return {
+            "visual_slots": visual_count,
+            "audio_routes": audio_count,
+            "animation_files": animation_count,
+        }
+
     def import_zip(self, archive: Path) -> ImportSummary:
         archive = archive.resolve()
         with tempfile.TemporaryDirectory() as temp:

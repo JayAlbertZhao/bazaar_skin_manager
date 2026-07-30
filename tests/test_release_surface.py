@@ -44,6 +44,22 @@ class ReleaseSurfaceTests(unittest.TestCase):
         self.assertIn("if UninstallSilent then", installer)
         self.assertIn("Result := True", installer)
 
+    def test_manager_build_bundles_and_checks_the_fmod_runtime(self) -> None:
+        build = (ROOT / "build-manager.ps1").read_text(encoding="utf-8")
+        self.assertIn("fmod_toolkit\\libfmod\\Windows\\x64\\fmod.dll", build)
+        self.assertIn("--add-binary", build)
+        self.assertIn("FMOD runtime required by UnityPy is missing", build)
+
+    def test_manager_release_ui_is_chinese_and_has_clear_action(self) -> None:
+        ui = (ROOT / "tools" / "bazaar_skin_manager_ui.py").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn('self.root.title("The Bazaar 皮肤管理器")', ui)
+        self.assertIn('text="一键清空已加载皮肤"', ui)
+        self.assertIn("def _clear_loaded_skin(self)", ui)
+        self.assertIn("--self-test-fmod", ui)
+        self.assertIn("--smoke-import", ui)
+
 
 if __name__ == "__main__":
     unittest.main()

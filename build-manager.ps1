@@ -24,6 +24,14 @@ $spec = Join-Path $root ".codex-work\pyinstaller-spec"
 if (-not (Test-Path -LiteralPath $python)) {
     throw "Manager build environment is missing: $python"
 }
+$sitePackages = & $python -c "import sysconfig; print(sysconfig.get_paths()['purelib'])"
+if ($LASTEXITCODE -ne 0 -or -not $sitePackages) {
+    throw "Could not locate the manager build environment's site-packages directory."
+}
+$fmodDll = Join-Path $sitePackages.Trim() "fmod_toolkit\libfmod\Windows\x64\fmod.dll"
+if (-not (Test-Path -LiteralPath $fmodDll)) {
+    throw "FMOD runtime required by UnityPy is missing: $fmodDll"
+}
 
 $runtime = Join-Path $root "manager\runtime\BazaarSkinManager.Runtime.dll"
 if (-not (Test-Path -LiteralPath $runtime)) {
@@ -52,6 +60,7 @@ New-Item -ItemType Directory -Force -Path $output, $work, $spec | Out-Null
     --collect-all tkinterdnd2 `
     --collect-all UnityPy `
     --hidden-import unity_bundle_texture_patch `
+    --add-binary "$fmodDll;fmod_toolkit\libfmod\Windows\x64" `
     --add-data "$root\manager\hero-catalog.json;manager" `
     --add-data "$root\manager\adapters\mak-default.json;manager\adapters" `
     --add-data "$runtime;dist\runtime" `

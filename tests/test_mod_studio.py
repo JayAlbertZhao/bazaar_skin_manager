@@ -221,6 +221,56 @@ class ModStudioTests(unittest.TestCase):
             self.assertFalse(manifest["animation"]["runtime_ready"])
             self.assertEqual(len(manifest["animation"]["files"]), 2)
 
+    def test_clear_loaded_assets_preserves_metadata_and_removes_all_payloads(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            workspace = StudioWorkspace.create(
+                "test.clear",
+                root=root / "work",
+                name="Keep this name",
+                version="7.8.9",
+            )
+            workspace.import_pil_image(
+                "hero_select",
+                Image.new("RGBA", (16, 16), (1, 2, 3, 255)),
+            )
+            wav = root / "line.wav"
+            write_runtime_wav(wav)
+            workspace.import_audio("Idle.default", wav)
+            animation = root / "character.skel"
+            animation.write_bytes(b"spine")
+            workspace.import_animation([animation], "spine_source")
+            workspace.build_pack()
+            (workspace.directory / "authoring-notes.json").write_text(
+                "{}",
+                encoding="utf-8",
+            )
+
+            removed = workspace.clear_loaded_assets()
+
+            self.assertEqual(
+                removed,
+                {
+                    "visual_slots": 1,
+                    "audio_routes": 1,
+                    "animation_files": 1,
+                },
+            )
+            self.assertEqual(workspace.state["pack"]["id"], "test.clear")
+            self.assertEqual(workspace.state["pack"]["name"], "Keep this name")
+            self.assertEqual(workspace.state["pack"]["version"], "7.8.9")
+            self.assertEqual(workspace.state["visual_slots"], {})
+            self.assertIsNone(workspace.state["audio_manifest"])
+            self.assertEqual(workspace.state["animation"]["mode"], "none")
+            self.assertFalse((workspace.directory / "assets").exists())
+            self.assertFalse((workspace.directory / "audio").exists())
+            self.assertFalse((workspace.directory / "animation").exists())
+            self.assertFalse((workspace.directory / "mod.json").exists())
+            self.assertFalse((workspace.directory / "asset-index.json").exists())
+            self.assertFalse(
+                (workspace.directory / "authoring-notes.json").exists()
+            )
+
     def test_remove_color_screen_validates_hex(self):
         image = Image.new("RGBA", (1, 1), (0, 255, 0, 255))
         with self.assertRaisesRegex(ValueError, "RRGGBB"):

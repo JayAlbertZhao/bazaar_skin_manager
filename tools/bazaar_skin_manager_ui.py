@@ -6,6 +6,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+import tempfile
 import threading
 import traceback
 from pathlib import Path
@@ -51,11 +52,17 @@ COLORS = {
     "empty": "#242d3a",
 }
 
+ROUTE_CATEGORY_NAMES = {
+    "hero_voice": "英雄语音",
+    "merchant_voice": "商人语音",
+    "menu_voice": "菜单语音",
+}
+
 
 class ModManagerStudio:
     def __init__(self) -> None:
         self.root = RootClass()
-        self.root.title("The Bazaar Skin Manager")
+        self.root.title("The Bazaar 皮肤管理器")
         self.root.geometry("1440x900")
         self.root.minsize(1180, 720)
         self.root.configure(bg=COLORS["window"])
@@ -84,7 +91,7 @@ class ModManagerStudio:
             bordercolor=COLORS["line"],
             lightcolor=COLORS["line"],
             darkcolor=COLORS["line"],
-            font=("Segoe UI", 10),
+            font=("Microsoft YaHei UI", 10),
         )
         style.configure("TFrame", background=COLORS["panel"])
         style.configure("Window.TFrame", background=COLORS["window"])
@@ -108,7 +115,7 @@ class ModManagerStudio:
             "Title.TLabel",
             background=COLORS["window"],
             foreground=COLORS["text"],
-            font=("Segoe UI Semibold", 19),
+            font=("Microsoft YaHei UI", 19, "bold"),
         )
         style.configure(
             "Accent.TButton",
@@ -116,7 +123,7 @@ class ModManagerStudio:
             foreground="#0d1c19",
             borderwidth=0,
             padding=(18, 10),
-            font=("Segoe UI Semibold", 10),
+            font=("Microsoft YaHei UI", 10, "bold"),
         )
         style.map(
             "Accent.TButton",
@@ -231,36 +238,36 @@ class ModManagerStudio:
         header.pack(fill="x", pady=(0, 14))
         ttk.Label(
             header,
-            text="The Bazaar Skin Manager",
+            text="The Bazaar 皮肤管理器",
             style="Title.TLabel",
         ).pack(side="left")
         self.install_status = ttk.Label(
             header,
-            text="Checking deployment…",
+            text="正在检查部署状态…",
             style="Muted.TLabel",
         )
         self.install_status.pack(side="right", padx=(12, 0))
         ttk.Button(
             header,
-            text="Refresh status",
+            text="刷新状态",
             command=self._refresh_deployment_status,
         ).pack(side="right")
         ttk.Button(
             header,
-            text="Restore original",
+            text="恢复原版",
             style="Danger.TButton",
             command=self._undeploy,
         ).pack(side="right", padx=(8, 4))
         self.play_button = ttk.Button(
             header,
-            text="START GAME",
+            text="启动游戏",
             style="Accent.TButton",
             command=self._launch_game,
         )
         self.play_button.pack(side="right", padx=(8, 4))
         self.header_deploy_button = ttk.Button(
             header,
-            text="DEPLOY",
+            text="部署",
             style="Accent.TButton",
             command=self._deploy,
         )
@@ -281,26 +288,31 @@ class ModManagerStudio:
         actions.pack(fill="x", side="bottom", pady=(18, 0))
         self.deploy_button = ttk.Button(
             actions,
-            text="DEPLOY",
+            text="部署",
             style="Accent.TButton",
             command=self._deploy,
         )
         self.deploy_button.pack(fill="x", pady=(0, 8))
         ttk.Button(
             actions,
-            text="Undeploy / restore original",
+            text="一键清空已加载皮肤",
+            command=self._clear_loaded_skin,
+        ).pack(fill="x", pady=(0, 8))
+        ttk.Button(
+            actions,
+            text="取消部署 / 恢复原版",
             style="Danger.TButton",
             command=self._undeploy,
         ).pack(fill="x")
 
         ttk.Label(
             parent,
-            text="Target",
-            font=("Segoe UI Semibold", 13),
+            text="目标",
+            font=("Microsoft YaHei UI", 13, "bold"),
         ).pack(anchor="w")
         ttk.Label(
             parent,
-            text="Choose a hero, then one of its known skins.",
+            text="选择英雄和对应皮肤。",
             style="Muted.TLabel",
             wraplength=275,
         ).pack(anchor="w", pady=(3, 12))
@@ -333,36 +345,36 @@ class ModManagerStudio:
 
         self.game_status = ttk.Label(
             parent,
-            text="Searching for The Bazaar...",
+            text="正在查找 The Bazaar…",
             style="Muted.TLabel",
             wraplength=275,
         )
         self.game_status.pack(anchor="w", pady=(0, 8))
         ttk.Button(
             parent,
-            text="Rescan game location",
+            text="重新扫描游戏位置",
             command=self._refresh_deployment_status,
         ).pack(anchor="w")
         ttk.Button(
             parent,
-            text="Locate game manually...",
+            text="手动选择游戏目录…",
             command=self._locate_game,
         ).pack(anchor="w", pady=(4, 14))
 
         ttk.Separator(parent).pack(fill="x", pady=(0, 16))
         ttk.Label(
             parent,
-            text="Package",
-            font=("Segoe UI Semibold", 13),
+            text="资产包",
+            font=("Microsoft YaHei UI", 13, "bold"),
         ).pack(anchor="w")
 
         self.pack_id_var = tk.StringVar()
         self.pack_name_var = tk.StringVar()
         self.pack_version_var = tk.StringVar()
         for label, variable in (
-            ("Pack id", self.pack_id_var),
-            ("Display name", self.pack_name_var),
-            ("Version", self.pack_version_var),
+            ("资产包 ID", self.pack_id_var),
+            ("显示名称", self.pack_name_var),
+            ("版本", self.pack_version_var),
         ):
             ttk.Label(parent, text=label, style="Muted.TLabel").pack(
                 anchor="w", pady=(10, 3)
@@ -375,8 +387,8 @@ class ModManagerStudio:
         self.drop_zone = tk.Label(
             parent,
             text=(
-                "DROP COMPLETE PACK OR ASSET ZIP HERE\n"
-                "or click to browse"
+                "将完整资产包或 ZIP 拖到这里\n"
+                "也可点击选择文件"
             ),
             bg=COLORS["empty"],
             fg=COLORS["muted"],
@@ -385,7 +397,7 @@ class ModManagerStudio:
             height=6,
             cursor="hand2",
             relief="flat",
-            font=("Segoe UI Semibold", 9),
+            font=("Microsoft YaHei UI", 9, "bold"),
         )
         self.drop_zone.pack(fill="x")
         self.drop_zone.bind("<Button-1>", lambda _event: self._browse_package())
@@ -393,7 +405,7 @@ class ModManagerStudio:
         if not DND_AVAILABLE:
             ttk.Label(
                 parent,
-                text="This source run uses click-to-browse. The release build bundles native drag-and-drop.",
+                text="当前源码运行模式仅支持点击选择；发布版支持原生拖放。",
                 style="Muted.TLabel",
                 wraplength=275,
             ).pack(anchor="w", pady=(6, 0))
@@ -405,10 +417,10 @@ class ModManagerStudio:
         self.audio_tab = ttk.Frame(notebook, style="Alt.TFrame", padding=14)
         self.animation_tab = ttk.Frame(notebook, style="Alt.TFrame", padding=14)
         self.package_tab = ttk.Frame(notebook, style="Alt.TFrame", padding=14)
-        notebook.add(self.visual_tab, text="Visual slots")
-        notebook.add(self.audio_tab, text="Audio")
-        notebook.add(self.animation_tab, text="Skeleton / animation")
-        notebook.add(self.package_tab, text="Package & log")
+        notebook.add(self.visual_tab, text="图像槽位")
+        notebook.add(self.audio_tab, text="音频")
+        notebook.add(self.animation_tab, text="骨骼 / 动画")
+        notebook.add(self.package_tab, text="资产包与日志")
         self._build_visual_tab()
         self._build_audio_tab()
         self._build_animation_tab()
@@ -419,14 +431,14 @@ class ModManagerStudio:
         controls.pack(fill="x", pady=(0, 10))
         ttk.Label(
             controls,
-            text="Unfilled slots use the original game asset.",
+            text="未填充的槽位会继续使用游戏原版资产。",
             style="Alt.TLabel",
-            font=("Segoe UI Semibold", 11),
+            font=("Microsoft YaHei UI", 11, "bold"),
         ).pack(side="left")
         self.chroma_enabled = tk.BooleanVar(value=False)
         ttk.Checkbutton(
             controls,
-            text="Remove colour screen on import",
+            text="导入时自动去除指定底色",
             variable=self.chroma_enabled,
         ).pack(side="right")
         self.chroma_color = tk.StringVar(value="#00FF00")
@@ -445,7 +457,7 @@ class ModManagerStudio:
         ).pack(side="right")
         ttk.Label(
             controls,
-            text="Tolerance",
+            text="容差",
             style="Alt.TLabel",
         ).pack(side="right", padx=(8, 3))
 
@@ -516,7 +528,7 @@ class ModManagerStudio:
         preview_frame.pack_propagate(False)
         preview = tk.Label(
             preview_frame,
-            text="ORIGINAL",
+            text="原版",
             bg=COLORS["empty"],
             fg=COLORS["muted"],
         )
@@ -528,7 +540,7 @@ class ModManagerStudio:
             text=slot["name"],
             bg=COLORS["panel"],
             fg=COLORS["text"],
-            font=("Segoe UI Semibold", 11),
+            font=("Microsoft YaHei UI", 11, "bold"),
         ).pack(anchor="w")
         tk.Label(
             text,
@@ -547,7 +559,7 @@ class ModManagerStudio:
         ).pack(anchor="w", pady=(5, 8))
         status = tk.Label(
             text,
-            text="Original fallback",
+            text="使用原版",
             bg=COLORS["panel"],
             fg=COLORS["muted"],
         )
@@ -556,17 +568,17 @@ class ModManagerStudio:
         buttons.pack(fill="x", pady=(8, 0))
         ttk.Button(
             buttons,
-            text="Import",
+            text="导入",
             command=lambda item=slot["id"]: self._browse_visual(item),
         ).pack(side="left")
         ttk.Button(
             buttons,
-            text="Paste",
+            text="粘贴",
             command=lambda item=slot["id"]: self._paste_visual(item),
         ).pack(side="left", padx=5)
         ttk.Button(
             buttons,
-            text="Clear",
+            text="清除",
             command=lambda item=slot["id"]: self._clear_visual(item),
         ).pack(side="left")
         self._register_drop(
@@ -591,13 +603,13 @@ class ModManagerStudio:
         top.pack(fill="x", pady=(0, 10))
         ttk.Label(
             top,
-            text="Import one line at a time, or drop a named audio/package ZIP.",
+            text="可逐条导入，也可拖入按规范命名的音频包或完整资产包 ZIP。",
             style="Alt.TLabel",
-            font=("Segoe UI Semibold", 11),
+            font=("Microsoft YaHei UI", 11, "bold"),
         ).pack(side="left")
         ttk.Button(
             top,
-            text="Import audio ZIP",
+            text="导入音频 ZIP",
             command=self._browse_audio_package,
         ).pack(side="right")
         self.audio_summary = ttk.Label(
@@ -614,10 +626,10 @@ class ModManagerStudio:
             show="headings",
             selectmode="browse",
         )
-        self.audio_tree.heading("category", text="Category")
-        self.audio_tree.heading("slot", text="Logical slot")
-        self.audio_tree.heading("variants", text="Files")
-        self.audio_tree.heading("status", text="Status")
+        self.audio_tree.heading("category", text="类别")
+        self.audio_tree.heading("slot", text="逻辑槽位")
+        self.audio_tree.heading("variants", text="文件数")
+        self.audio_tree.heading("status", text="状态")
         self.audio_tree.column("category", width=130, stretch=False)
         self.audio_tree.column("slot", width=360)
         self.audio_tree.column("variants", width=70, anchor="center")
@@ -631,35 +643,33 @@ class ModManagerStudio:
         controls.pack(fill="x", pady=(10, 0))
         ttk.Button(
             controls,
-            text="Add file to selected line",
+            text="向选中槽位添加文件",
             command=self._browse_audio_line,
         ).pack(side="left")
         ttk.Button(
             controls,
-            text="Clear selected line",
+            text="清除选中槽位",
             command=self._clear_audio_line,
         ).pack(side="left", padx=6)
         ttk.Label(
             controls,
-            text="Non-WAV input is automatically converted with ffmpeg when available.",
+            text="检测到 ffmpeg 时会自动将非 WAV 音频转码。",
             style="Alt.TLabel",
         ).pack(side="right")
 
     def _build_animation_tab(self) -> None:
         ttk.Label(
             self.animation_tab,
-            text="Skeleton / animation authoring sources",
+            text="骨骼 / 动画制作源文件",
             style="Alt.TLabel",
-            font=("Segoe UI Semibold", 13),
+            font=("Microsoft YaHei UI", 13, "bold"),
         ).pack(anchor="w")
         ttk.Label(
             self.animation_tab,
             text=(
-                "The package format can carry Spine source sets or Unity "
-                "AssetBundles. The current 0.4.x runtime deploys the static "
-                "fallback; dynamic playback remains gated until the prefab "
-                "adapter is verified. This prevents a source bundle from being "
-                "silently advertised as working animation."
+                "资产包可以携带 Spine 源文件或 Unity AssetBundle。当前运行时仍使用"
+                "静态图作为回退；动态播放需等待预制体适配器验证完成，以免把尚未"
+                "可用的动画资源误标为已支持。"
             ),
             style="Alt.TLabel",
             wraplength=850,
@@ -668,19 +678,19 @@ class ModManagerStudio:
         self.animation_mode = tk.StringVar(value="spine_source")
         ttk.Radiobutton(
             self.animation_tab,
-            text="Spine source set (.skel/.json + .atlas + textures)",
+            text="Spine 源文件组（.skel/.json + .atlas + 贴图）",
             variable=self.animation_mode,
             value="spine_source",
         ).pack(anchor="w")
         ttk.Radiobutton(
             self.animation_tab,
-            text="Unity AssetBundle prefab (.bundle/.assetbundle)",
+            text="Unity AssetBundle 预制体（.bundle/.assetbundle）",
             variable=self.animation_mode,
             value="unity_asset_bundle",
         ).pack(anchor="w", pady=(5, 12))
         self.animation_drop = tk.Label(
             self.animation_tab,
-            text="DROP ANIMATION FILES HERE\nor click to browse",
+            text="将动画文件拖到这里\n也可点击选择文件",
             bg=COLORS["empty"],
             fg=COLORS["muted"],
             height=8,
@@ -694,13 +704,13 @@ class ModManagerStudio:
         self._register_drop(self.animation_drop, self._drop_animation)
         self.animation_status = ttk.Label(
             self.animation_tab,
-            text="No animation source in this package.",
+            text="当前资产包没有动画源文件。",
             style="Alt.TLabel",
         )
         self.animation_status.pack(anchor="w", pady=(12, 0))
         ttk.Button(
             self.animation_tab,
-            text="Clear animation source",
+            text="清除动画源文件",
             command=self._clear_animation,
         ).pack(anchor="w", pady=(8, 0))
 
@@ -709,22 +719,22 @@ class ModManagerStudio:
         actions.pack(fill="x")
         ttk.Button(
             actions,
-            text="New workspace",
+            text="新建工作区",
             command=self._new_workspace,
         ).pack(side="left")
         ttk.Button(
             actions,
-            text="Open workspace",
+            text="打开工作区",
             command=self._open_workspace,
         ).pack(side="left", padx=5)
         ttk.Button(
             actions,
-            text="Export complete ZIP",
+            text="导出完整 ZIP",
             command=self._export_zip,
         ).pack(side="left")
         ttk.Button(
             actions,
-            text="Open workspace folder",
+            text="打开工作区文件夹",
             command=self._open_workspace_folder,
         ).pack(side="right")
 
@@ -808,14 +818,14 @@ class ModManagerStudio:
         self.skin_var.set(self._skin_label(selected))
         if hero.get("runtime_supported"):
             self.hero_support.configure(
-                text="Verified runtime adapter available.",
+                text="已提供并验证运行时适配器。",
                 foreground=COLORS["accent"],
             )
             self.deploy_button.configure(state="normal")
             self.header_deploy_button.configure(state="normal")
         else:
             self.hero_support.configure(
-                text="Catalog entry only; runtime adapter not verified in this release.",
+                text="仅有目录信息；此版本尚未验证运行时适配器。",
                 foreground=COLORS["warning"],
             )
             self.deploy_button.configure(state="disabled")
@@ -840,7 +850,7 @@ class ModManagerStudio:
             )
             self._refresh_summary()
         except ValueError as error:
-            self._write_log(f"Metadata not saved: {error}")
+            self._write_log(f"元数据未保存：{error}")
 
     def _refresh_all(self) -> None:
         self._refresh_visuals()
@@ -857,9 +867,9 @@ class ModManagerStudio:
             preview: tk.Label = widgets["preview"]  # type: ignore[assignment]
             status: tk.Label = widgets["status"]  # type: ignore[assignment]
             if not path:
-                preview.configure(image="", text="ORIGINAL")
+                preview.configure(image="", text="原版")
                 status.configure(
-                    text="Original fallback",
+                    text="使用原版",
                     fg=COLORS["muted"],
                 )
                 self.preview_images.pop(slot_id, None)
@@ -876,7 +886,7 @@ class ModManagerStudio:
                     fg=COLORS["accent"],
                 )
             except OSError as error:
-                preview.configure(image="", text="INVALID")
+                preview.configure(image="", text="无效")
                 status.configure(text=str(error), fg=COLORS["danger"])
 
     def _refresh_audio(self) -> None:
@@ -899,21 +909,24 @@ class ModManagerStudio:
                 "end",
                 iid=slot,
                 values=(
-                    route["category"],
+                    ROUTE_CATEGORY_NAMES.get(
+                        route["category"],
+                        route["category"],
+                    ),
                     slot,
                     count,
-                    "✓ Ready" if count else "— Original",
+                    "✓ 已就绪" if count else "— 使用原版",
                 ),
                 tags=("filled" if count else "original",),
             )
         if filled:
             self.audio_summary.configure(
-                text=f"✓ {filled}/{len(routes)} audio routes filled",
+                text=f"✓ 已填充 {filled}/{len(routes)} 条音频路由",
                 foreground=COLORS["accent"],
             )
         else:
             self.audio_summary.configure(
-                text=f"0/{len(routes)} · original audio",
+                text=f"0/{len(routes)} · 使用原版音频",
                 foreground=COLORS["muted"],
             )
         if selected and self.audio_tree.exists(selected[0]):
@@ -926,14 +939,14 @@ class ModManagerStudio:
             self.animation_mode.set(animation.get("mode", "spine_source"))
             self.animation_status.configure(
                 text=(
-                    f"{len(files)} source file(s) included · "
-                    "static fallback remains active in runtime 0.4.x"
+                    f"已包含 {len(files)} 个源文件 · "
+                    "当前运行时仍使用静态图回退"
                 ),
                 foreground=COLORS["warning"],
             )
         else:
             self.animation_status.configure(
-                text="No animation source in this package.",
+                text="当前资产包没有动画源文件。",
                 foreground=COLORS["muted"],
             )
 
@@ -948,10 +961,10 @@ class ModManagerStudio:
         )
         self.package_summary.configure(
             text=(
-                f"Workspace: {self.workspace.directory}\n"
-                f"Filled: {visuals}/{len(self.catalog['visual_slots'])} visual "
-                f"slots · {routes} audio routes · {animation} animation files. "
-                "Everything else falls back to the original game."
+                f"工作区：{self.workspace.directory}\n"
+                f"已填充：{visuals}/{len(self.catalog['visual_slots'])} 个图像槽位"
+                f" · {routes} 条音频路由 · {animation} 个动画文件。"
+                "其余内容均使用游戏原版。"
             )
         )
 
@@ -959,32 +972,32 @@ class ModManagerStudio:
         try:
             status = self.workspace.diagnostics()
             if status.get("healthy"):
-                text = "Deployed · healthy"
+                text = "已部署 · 状态正常"
                 color = COLORS["accent"]
             elif status.get("installed"):
-                text = f"Deployed · {status.get('state', 'needs attention')}"
+                text = f"已部署 · {status.get('state', '需要处理')}"
                 color = COLORS["warning"]
             else:
-                text = "Original / not deployed"
+                text = "原版 / 未部署"
                 color = COLORS["muted"]
             self.install_status.configure(text=text, foreground=color)
         except Exception as error:
             self.install_status.configure(
-                text=f"Status error: {error}",
+                text=f"状态检查失败：{error}",
                 foreground=COLORS["danger"],
             )
         game = self.workspace.detected_game(self.game_dir_override)
         if game:
-            build = f" · Steam build {game.build_id}" if game.build_id else ""
+            build = f" · Steam 构建 {game.build_id}" if game.build_id else ""
             self.game_status.configure(
-                text=f"Game found: {game.game_dir}{build}",
+                text=f"已找到游戏：{game.game_dir}{build}",
                 foreground=COLORS["accent"],
             )
             if not self.busy:
                 self.play_button.configure(state="normal")
         else:
             self.game_status.configure(
-                text="The Bazaar was not found in common Steam locations.",
+                text="未在常见 Steam 目录中找到 The Bazaar。",
                 foreground=COLORS["warning"],
             )
             self.play_button.configure(state="disabled")
@@ -992,7 +1005,7 @@ class ModManagerStudio:
     def _locate_game(self) -> None:
         selected = filedialog.askdirectory(
             parent=self.root,
-            title="Select the folder containing TheBazaar.exe",
+            title="选择包含 TheBazaar.exe 的游戏目录",
             initialdir=self.game_dir_override or Path.home(),
         )
         if not selected:
@@ -1000,34 +1013,34 @@ class ModManagerStudio:
         game = self.workspace.detected_game(Path(selected))
         if not game:
             messagebox.showerror(
-                "Invalid game folder",
-                "Select the folder containing TheBazaar.exe and TheBazaar_Data.",
+                "游戏目录无效",
+                "请选择同时包含 TheBazaar.exe 和 TheBazaar_Data 的目录。",
                 parent=self.root,
             )
             return
         self.game_dir_override = game.game_dir
         self._remember_workspace()
-        self._write_log(f"Using manually selected game: {game.game_dir}")
+        self._write_log(f"使用手动选择的游戏目录：{game.game_dir}")
         self._refresh_deployment_status()
 
     def _show_first_run_help(self) -> None:
         game = self.workspace.detected_game(self.game_dir_override)
         game_line = (
-            f"The Bazaar was found at:\n{game.game_dir}\n\n"
+            f"已找到 The Bazaar：\n{game.game_dir}\n\n"
             if game
             else (
-                "The Bazaar was not found. Install it through Steam, then "
-                "use Rescan or Locate game manually.\n\n"
+                "未找到 The Bazaar。请先通过 Steam 安装，然后重新扫描或手动"
+                "选择游戏目录。\n\n"
             )
         )
         messagebox.showinfo(
-            "Welcome",
+            "欢迎",
             (
                 game_line
-                + "1. Obtain a compatible asset-pack ZIP.\n"
-                "2. Drag the ZIP into the package area.\n"
-                "3. Close the game and press DEPLOY.\n"
-                "4. Press START GAME to launch through Steam."
+                + "1. 准备兼容的资产包 ZIP。\n"
+                "2. 将 ZIP 拖入左侧资产包区域。\n"
+                "3. 关闭游戏后点击“部署”。\n"
+                "4. 点击“启动游戏”通过 Steam 启动。"
             ),
             parent=self.root,
         )
@@ -1051,10 +1064,10 @@ class ModManagerStudio:
     def _browse_visual(self, slot: str) -> None:
         path = filedialog.askopenfilename(
             parent=self.root,
-            title=f"Import {slot}",
+            title=f"导入 {slot}",
             filetypes=[
-                ("Images", "*.png *.jpg *.jpeg *.webp *.bmp"),
-                ("All files", "*.*"),
+                ("图像", "*.png *.jpg *.jpeg *.webp *.bmp"),
+                ("所有文件", "*.*"),
             ],
         )
         if path:
@@ -1071,11 +1084,11 @@ class ModManagerStudio:
                 path,
                 **self._visual_import_options(),
             )
-            self._write_log(f"Imported visual {slot}: {destination}")
+            self._write_log(f"已导入图像 {slot}：{destination}")
             self._refresh_visuals()
             self._refresh_summary()
         except Exception as error:
-            self._show_error("Visual import failed", error)
+            self._show_error("图像导入失败", error)
 
     def _paste_visual(self, slot: str) -> None:
         try:
@@ -1093,16 +1106,16 @@ class ModManagerStudio:
                     **self._visual_import_options(),
                 )
             else:
-                raise ValueError("The clipboard contains no image or image file.")
-            self._write_log(f"Pasted visual {slot}: {destination}")
+                raise ValueError("剪贴板中没有图像或图像文件。")
+            self._write_log(f"已粘贴图像 {slot}：{destination}")
             self._refresh_visuals()
             self._refresh_summary()
         except Exception as error:
-            self._show_error("Clipboard import failed", error)
+            self._show_error("剪贴板导入失败", error)
 
     def _clear_visual(self, slot: str) -> None:
         self.workspace.clear_visual(slot)
-        self._write_log(f"Cleared visual {slot}; original fallback restored.")
+        self._write_log(f"已清除图像 {slot}；该槽位恢复使用原版。")
         self._refresh_visuals()
         self._refresh_summary()
 
@@ -1114,20 +1127,20 @@ class ModManagerStudio:
         slot = self._selected_audio_slot()
         if not slot:
             messagebox.showinfo(
-                "Select a line",
-                "Select an audio logical slot first.",
+                "请选择槽位",
+                "请先选择一个音频逻辑槽位。",
                 parent=self.root,
             )
             return
         path = filedialog.askopenfilename(
             parent=self.root,
-            title=f"Add audio to {slot}",
+            title=f"向 {slot} 添加音频",
             filetypes=[
                 (
-                    "Audio",
+                    "音频",
                     "*.wav *.mp3 *.flac *.ogg *.m4a *.aac *.opus",
                 ),
-                ("All files", "*.*"),
+                ("所有文件", "*.*"),
             ],
         )
         if path:
@@ -1136,11 +1149,11 @@ class ModManagerStudio:
     def _import_audio_line(self, slot: str, path: Path) -> None:
         try:
             destination = self.workspace.import_audio(slot, path)
-            self._write_log(f"Imported audio {slot}: {destination}")
+            self._write_log(f"已导入音频 {slot}：{destination}")
             self._refresh_audio()
             self._refresh_summary()
         except Exception as error:
-            self._show_error("Audio import failed", error)
+            self._show_error("音频导入失败", error)
 
     def _drop_audio_files(self, paths: list[Path]) -> None:
         if len(paths) == 1 and paths[0].suffix.casefold() == ".zip":
@@ -1149,8 +1162,8 @@ class ModManagerStudio:
         slot = self._selected_audio_slot()
         if not slot:
             self._show_error(
-                "Audio import failed",
-                ValueError("Select a logical slot before dropping audio files."),
+                "音频导入失败",
+                ValueError("拖入音频文件前请先选择一个逻辑槽位。"),
             )
             return
         for path in paths:
@@ -1161,15 +1174,15 @@ class ModManagerStudio:
         if not slot:
             return
         self.workspace.clear_audio_route(slot)
-        self._write_log(f"Cleared audio {slot}; original fallback restored.")
+        self._write_log(f"已清除音频 {slot}；该槽位恢复使用原版。")
         self._refresh_audio()
         self._refresh_summary()
 
     def _browse_audio_package(self) -> None:
         path = filedialog.askopenfilename(
             parent=self.root,
-            title="Import audio or complete asset ZIP",
-            filetypes=[("ZIP packages", "*.zip"), ("All files", "*.*")],
+            title="导入音频包或完整资产包 ZIP",
+            filetypes=[("ZIP 资产包", "*.zip"), ("所有文件", "*.*")],
         )
         if path:
             self._import_package(Path(path))
@@ -1177,8 +1190,8 @@ class ModManagerStudio:
     def _browse_package(self) -> None:
         path = filedialog.askopenfilename(
             parent=self.root,
-            title="Import complete asset package",
-            filetypes=[("ZIP packages", "*.zip"), ("All files", "*.*")],
+            title="导入完整资产包",
+            filetypes=[("ZIP 资产包", "*.zip"), ("所有文件", "*.*")],
         )
         if path:
             self._import_package(Path(path))
@@ -1190,30 +1203,30 @@ class ModManagerStudio:
     def _import_package(self, path: Path) -> None:
         try:
             if path.suffix.casefold() != ".zip":
-                raise ValueError("The package entry accepts ZIP files.")
+                raise ValueError("资产包入口仅接受 ZIP 文件。")
             summary = self.workspace.import_zip(path)
             self._write_log(
-                f"Imported {summary.kind}: "
-                f"{len(summary.visual_slots)} visual slots, "
-                f"{len(summary.audio_routes)} audio routes, "
-                f"{len(summary.animation_files)} animation files; "
-                f"{len(summary.ignored)} ignored."
+                f"已导入 {summary.kind}："
+                f"{len(summary.visual_slots)} 个图像槽位，"
+                f"{len(summary.audio_routes)} 条音频路由，"
+                f"{len(summary.animation_files)} 个动画文件；"
+                f"忽略 {len(summary.ignored)} 项。"
             )
             self._load_workspace_into_ui()
             self._refresh_all()
         except Exception as error:
-            self._show_error("Package import failed", error)
+            self._show_error("资产包导入失败", error)
 
     def _browse_animation(self) -> None:
         paths = filedialog.askopenfilenames(
             parent=self.root,
-            title="Import animation sources",
+            title="导入动画源文件",
             filetypes=[
                 (
-                    "Animation sources",
+                    "动画源文件",
                     "*.skel *.json *.atlas *.png *.bundle *.assetbundle",
                 ),
-                ("All files", "*.*"),
+                ("所有文件", "*.*"),
             ],
         )
         if paths:
@@ -1225,22 +1238,75 @@ class ModManagerStudio:
                 paths,
                 self.animation_mode.get(),
             )
-            self._write_log(f"Imported {len(accepted)} animation source files.")
+            self._write_log(f"已导入 {len(accepted)} 个动画源文件。")
             self._refresh_animation()
             self._refresh_summary()
         except Exception as error:
-            self._show_error("Animation import failed", error)
+            self._show_error("动画导入失败", error)
 
     def _clear_animation(self) -> None:
         self.workspace.clear_animation()
-        self._write_log("Cleared animation authoring sources.")
+        self._write_log("已清除动画源文件。")
         self._refresh_animation()
         self._refresh_summary()
 
+    def _clear_loaded_skin(self) -> None:
+        if self.busy:
+            return
+        try:
+            deployed = bool(self.workspace.diagnostics().get("installed"))
+        except Exception as error:
+            self._show_error("无法检查部署状态", error)
+            return
+        deployment_note = (
+            "\n\n检测到当前皮肤已经部署。继续后会先取消部署并恢复游戏原版，"
+            "然后清空当前工作区。"
+            if deployed
+            else ""
+        )
+        if not messagebox.askyesno(
+            "清空已加载皮肤",
+            (
+                "确定清空当前工作区中的全部图像、音频和动画资产吗？"
+                "\n\n资产包元数据和所选英雄会保留。此操作不可撤销。"
+                + deployment_note
+            ),
+            parent=self.root,
+        ):
+            return
+
+        def clear_operation() -> dict:
+            restored: list[str] = []
+            if deployed:
+                restored = self.workspace.undeploy()
+            counts = self.workspace.clear_loaded_assets()
+            return {"restored": restored, "counts": counts}
+
+        self._run_background(
+            "正在清空已加载皮肤…",
+            clear_operation,
+            self._clear_loaded_skin_complete,
+        )
+
+    def _clear_loaded_skin_complete(self, result: dict) -> None:
+        self.busy = False
+        counts = result["counts"]
+        self._set_skin_options(self._selected_hero(), self._selected_skin()["id"])
+        self._refresh_all()
+        text = (
+            f"已清空 {counts['visual_slots']} 个图像槽位、"
+            f"{counts['audio_routes']} 条音频路由和 "
+            f"{counts['animation_files']} 个动画文件。"
+        )
+        if result["restored"]:
+            text += " 已同时取消部署并恢复游戏原版。"
+        self._write_log(text)
+        messagebox.showinfo("清空完成", text, parent=self.root)
+
     def _new_workspace(self) -> None:
         pack_id = self._prompt_text(
-            "New workspace",
-            "Pack id:",
+            "新建工作区",
+            "资产包 ID：",
             "local.custom.skin",
         )
         if not pack_id:
@@ -1249,14 +1315,14 @@ class ModManagerStudio:
             self.workspace = StudioWorkspace.create(pack_id)
             self._load_workspace_into_ui()
             self._refresh_all()
-            self._write_log(f"Created workspace {self.workspace.directory}")
+            self._write_log(f"已创建工作区：{self.workspace.directory}")
         except Exception as error:
-            self._show_error("Could not create workspace", error)
+            self._show_error("无法创建工作区", error)
 
     def _open_workspace(self) -> None:
         path = filedialog.askdirectory(
             parent=self.root,
-            title="Open Skin Manager workspace",
+            title="打开皮肤管理器工作区",
             initialdir=WORKSPACES_ROOT,
         )
         if not path:
@@ -1265,9 +1331,9 @@ class ModManagerStudio:
             self.workspace = StudioWorkspace.load(Path(path))
             self._load_workspace_into_ui()
             self._refresh_all()
-            self._write_log(f"Opened workspace {self.workspace.directory}")
+            self._write_log(f"已打开工作区：{self.workspace.directory}")
         except Exception as error:
-            self._show_error("Could not open workspace", error)
+            self._show_error("无法打开工作区", error)
 
     def _export_zip(self) -> None:
         self._metadata_changed()
@@ -1277,18 +1343,18 @@ class ModManagerStudio:
         )
         path = filedialog.asksaveasfilename(
             parent=self.root,
-            title="Export complete asset package",
+            title="导出完整资产包",
             defaultextension=".zip",
             initialfile=default,
-            filetypes=[("ZIP package", "*.zip")],
+            filetypes=[("ZIP 资产包", "*.zip")],
         )
         if not path:
             return
         try:
             destination = self.workspace.export_zip(Path(path))
-            self._write_log(f"Exported complete package: {destination}")
+            self._write_log(f"已导出完整资产包：{destination}")
         except Exception as error:
-            self._show_error("Package export failed", error)
+            self._show_error("资产包导出失败", error)
 
     def _open_workspace_folder(self) -> None:
         os.startfile(self.workspace.directory)
@@ -1298,20 +1364,19 @@ class ModManagerStudio:
             return
         self._metadata_changed()
         if messagebox.askyesno(
-            "Deploy skin",
+            "部署皮肤",
             (
-                "Deploy this workspace and replace the currently managed skin?\n\n"
-                "Close The Bazaar before continuing. Unfilled slots will use "
-                "the original game assets."
+                "部署当前工作区并替换现有托管皮肤吗？\n\n"
+                "继续前请关闭 The Bazaar。未填充的槽位会使用游戏原版资产。"
             ),
             parent=self.root,
         ):
             self._run_background(
-                "Deploying…",
+                "正在部署…",
                 lambda: self.workspace.deploy(self.game_dir_override),
                 lambda result: self._operation_complete(
-                    "Deploy complete",
-                    f"Installed {result['pack']['id']} {result['pack']['version']}.",
+                    "部署完成",
+                    f"已安装 {result['pack']['id']} {result['pack']['version']}。",
                 ),
             )
 
@@ -1319,16 +1384,16 @@ class ModManagerStudio:
         if self.busy:
             return
         if messagebox.askyesno(
-            "Restore original assets",
-            "Remove the managed runtime and pack and restore original assets?",
+            "恢复游戏原版",
+            "移除托管运行时和资产包，并恢复游戏原版资产吗？",
             parent=self.root,
         ):
             self._run_background(
-                "Undeploying…",
+                "正在取消部署…",
                 self.workspace.undeploy,
                 lambda removed: self._operation_complete(
-                    "Undeploy complete",
-                    f"Removed {len(removed)} managed path(s).",
+                    "取消部署完成",
+                    f"已移除 {len(removed)} 个托管路径。",
                 ),
             )
 
@@ -1336,7 +1401,7 @@ class ModManagerStudio:
         if self.busy:
             return
         self._run_background(
-            "Starting The Bazaar through Steam...",
+            "正在通过 Steam 启动 The Bazaar…",
             lambda: self.workspace.launch_game(self.game_dir_override),
             self._launch_complete,
         )
@@ -1345,7 +1410,7 @@ class ModManagerStudio:
         self.busy = False
         self._set_skin_options(self._selected_hero(), self._selected_skin()["id"])
         self._write_log(
-            f"Started The Bazaar through Steam ({result['method']}): "
+            f"已通过 Steam 启动 The Bazaar（{result['method']}）："
             f"{result['game_dir']}"
         )
         self._refresh_deployment_status()
@@ -1373,7 +1438,7 @@ class ModManagerStudio:
     def _background_failed(self, error: Exception) -> None:
         self.busy = False
         self._set_skin_options(self._selected_hero(), self._selected_skin()["id"])
-        self._show_error("Operation failed", error)
+        self._show_error("操作失败", error)
         self._refresh_deployment_status()
 
     def _operation_complete(self, title: str, text: str) -> None:
@@ -1401,7 +1466,7 @@ class ModManagerStudio:
             result[0] = value.get().strip()
             window.destroy()
 
-        ttk.Button(window, text="Create", command=accept).pack(
+        ttk.Button(window, text="确定", command=accept).pack(
             padx=18, pady=18, anchor="e"
         )
         entry.focus_set()
@@ -1414,7 +1479,7 @@ class ModManagerStudio:
         self.log.see("end")
 
     def _show_error(self, title: str, error: Exception) -> None:
-        self._write_log(f"ERROR: {error}")
+        self._write_log(f"错误：{error}")
         if os.environ.get("BAZAAR_SKIN_MANAGER_STUDIO_DEBUG") == "1":
             self._write_log(traceback.format_exc())
         messagebox.showerror(title, str(error), parent=self.root)
@@ -1429,6 +1494,25 @@ def main() -> int:
             restore_before_application_uninstall()
         except Exception:
             return 2
+        return 0
+    if "--self-test-fmod" in sys.argv:
+        try:
+            import fmod_toolkit.fmod  # noqa: F401
+        except Exception:
+            return 3
+        return 0
+    if "--smoke-import" in sys.argv:
+        try:
+            index = sys.argv.index("--smoke-import")
+            archive = Path(sys.argv[index + 1])
+            with tempfile.TemporaryDirectory() as temp:
+                workspace = StudioWorkspace.create(
+                    "release.smoke",
+                    root=Path(temp),
+                )
+                workspace.import_zip(archive)
+        except Exception:
+            return 4
         return 0
     ModManagerStudio().run()
     return 0
