@@ -161,8 +161,19 @@ class RuntimeStructureTests(unittest.TestCase):
         self.assertIn("StandingOverlay.AttachToWorld", STANDING_STATE)
         self.assertIn("StandingOverlay.RemoveFromGraphic", STANDING_STATE)
         self.assertIn("StandingOverlay.RemoveFromWorld", STANDING_STATE)
+        unsupported_guard = STANDING_STATE.index(
+            "if (!supportedCentralDisplay)"
+        )
+        central_cleanup = STANDING_STATE.index(
+            "StandingOverlay.RemoveFromWorld(skinEditActiveSkin)"
+        )
+        self.assertLess(unsupported_guard, central_cleanup)
+        self.assertIn(
+            "Non-central HeroSelectDisplay is owned by its exact",
+            STANDING_STATE,
+        )
 
-    def test_runtime_version_is_0_9_3(self) -> None:
+    def test_runtime_version_is_0_9_4(self) -> None:
         plugin = (
             ROOT / "src" / "BazaarSkinManager.Runtime" / "Plugin.cs"
         ).read_text(encoding="utf-8")
@@ -170,8 +181,8 @@ class RuntimeStructureTests(unittest.TestCase):
             ROOT / "src" / "BazaarSkinManager.Runtime" / "AssemblyInfo.cs"
         ).read_text(encoding="utf-8")
 
-        self.assertIn('PluginVersion = "0.9.3"', plugin)
-        self.assertIn('AssemblyVersion("0.9.3.0")', assembly)
+        self.assertIn('PluginVersion = "0.9.4"', plugin)
+        self.assertIn('AssemblyVersion("0.9.4.0")', assembly)
 
     def test_audio_replacement_is_exact_predecoded_and_fail_open(self) -> None:
         root = ROOT / "src" / "BazaarSkinManager.Runtime"
@@ -188,6 +199,19 @@ class RuntimeStructureTests(unittest.TestCase):
         self.assertIn("ReadSelectors(__args[2])", replacement)
         self.assertIn("if (!Play(route, __instance, true))", replacement)
         self.assertIn("return true;", replacement)
+        self.assertIn(
+            'RequireType("TheBazaar.SoundEventListener")',
+            replacement,
+        )
+        self.assertIn('"OnFinishCombat"', replacement)
+        self.assertIn('!IsCurrentRunState("PVPCombat")', replacement)
+        self.assertIn('"ParameterPlayerVictoryDefeat"', replacement)
+        self.assertIn('"NonVerbal"', replacement)
+        self.assertIn("RestorePvpPlayerResultVoice(__state)", replacement)
+        self.assertIn(
+            "Bridged local hero PvP result voice request",
+            replacement,
+        )
         self.assertIn("return false;", replacement)
         self.assertIn("CanPlayByPercentage", replacement)
         self.assertIn("IsTutorialVOPlaying", replacement)
