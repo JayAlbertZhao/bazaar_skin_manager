@@ -4,5 +4,5 @@ using System.Reflection;
 [assembly: AssemblyDescription("Data-driven skin replacement runtime for The Bazaar")]
 [assembly: AssemblyCompany("The Bazaar Skin Manager")]
 [assembly: AssemblyProduct("The Bazaar Skin Manager")]
-[assembly: AssemblyVersion("0.9.4.0")]
-[assembly: AssemblyFileVersion("0.9.4.0")]
+[assembly: AssemblyVersion("0.9.3.0")]
+[assembly: AssemblyFileVersion("0.9.3.0")]

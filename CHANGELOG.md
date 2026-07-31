@@ -1,15 +1,5 @@
 # Changelog
 
-## 0.9.4
-
-- Keep exact `PvpScreen`, new-day and other SkinEdit overlays independent
-  from the main hero-selection reconciler. This fixes the versus portrait
-  reverting to the native hero after the replacement had already attached.
-- Add a regression guard for non-central `HeroSelectDisplay` cleanup.
-- Bridge the game's local-hero PvP result call when the opponent is verbal,
-  allowing the existing exact `PvP_VictoryDefeat` victory and defeat routes
-  to run instead of remaining unreachable behind the native `NonVerbal` gate.
-
 ## 0.9.3
 
 - Prevented specialized standing/collection overlays from matching gameplay
