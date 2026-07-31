@@ -14,8 +14,28 @@ namespace BazaarSkinManager.TheBazaar
         private static object _voiceOwner;
         private static bool _voicePlayback;
         private static bool _installed;
+        private static PvpResultVoiceSide _pvpResultVoiceSide;
+        private static readonly System.Random PvpVoiceRandom =
+            new System.Random();
+        private static readonly object PvpVoiceRandomLock = new object();
         private static readonly HashSet<string> ReportedRoutes =
             new HashSet<string>(StringComparer.Ordinal);
+
+        private enum PvpResultVoiceSide
+        {
+            None,
+            Opponent,
+            Player
+        }
+
+        private sealed class PvpResultVoiceState
+        {
+            internal object CardAudio;
+            internal FieldInfo NonVerbalField;
+            internal bool OriginalNonVerbal;
+            internal bool Changed;
+            internal bool ResetChoice;
+        }
 
         [ThreadStatic]
         private static int _characterSelectContext;
@@ -62,11 +82,17 @@ namespace BazaarSkinManager.TheBazaar
                     "PlayEquipCollectionsVO");
                 Type sfxPlayer = RequireType("SFXPlayer");
                 MethodInfo playSfx = FindPlayOneShot(sfxPlayer);
+                Type soundEventListener =
+                    RequireType("TheBazaar.SoundEventListener");
+                MethodInfo finishCombat = AccessTools.Method(
+                    soundEventListener,
+                    "OnFinishCombat");
                 if (playVo == null ||
                     state == null ||
                     setHero == null ||
                     equip == null ||
-                    playSfx == null)
+                    playSfx == null ||
+                    finishCombat == null)
                 {
                     throw new MissingMethodException(
                         "One or more exact audio interception methods are absent.");
@@ -109,6 +135,17 @@ namespace BazaarSkinManager.TheBazaar
                     prefix: new HarmonyMethod(
                         typeof(RuntimeAudioReplacement),
                         nameof(ReplaceMenuSfx)));
+                harmony.Patch(
+                    finishCombat,
+                    prefix: new HarmonyMethod(
+                        typeof(RuntimeAudioReplacement),
+                        nameof(BeginExperimentalPvpResultVoice)),
+                    postfix: new HarmonyMethod(
+                        typeof(RuntimeAudioReplacement),
+                        nameof(EndExperimentalPvpResultVoice)),
+                    finalizer: new HarmonyMethod(
+                        typeof(RuntimeAudioReplacement),
+                        nameof(FinalizeExperimentalPvpResultVoice)));
                 _installed = true;
                 Plugin.Log.LogInfo(
                     "External voice replacement enabled for exact Mak hero, " +
@@ -133,6 +170,7 @@ namespace BazaarSkinManager.TheBazaar
             _voiceOwner = null;
             _voicePlayback = false;
             _installed = false;
+            _pvpResultVoiceSide = PvpResultVoiceSide.None;
             ReportedRoutes.Clear();
             _characterSelectContext = 0;
             _equipMusicContext = 0;
@@ -158,6 +196,24 @@ namespace BazaarSkinManager.TheBazaar
                 int hookType = Convert.ToInt32(
                     __args[1],
                     CultureInfo.InvariantCulture);
+                if (!isHero &&
+                    hookType == 10 &&
+                    IsCurrentRunState("PVPCombat") &&
+                    IsTargetHeroSelected())
+                {
+                    PvpResultVoiceSide side =
+                        ChooseExperimentalPvpResultVoice();
+                    if (side == PvpResultVoiceSide.Player)
+                    {
+                        // The native call at combatant death is the
+                        // opponent's result line. Suppress it only when this
+                        // combat chose the local player; OnFinishCombat will
+                        // request the local result through the game's normal
+                        // hero route.
+                        return false;
+                    }
+                    return true;
+                }
                 object cardAudio = ResolveSelectedCardAudio(
                     isHero,
                     hookType);
@@ -274,6 +330,163 @@ namespace BazaarSkinManager.TheBazaar
                     "the original FMOD event will play: " +
                     exception.Message);
                 return true;
+            }
+        }
+
+        private static PvpResultVoiceSide ChooseExperimentalPvpResultVoice()
+        {
+            if (_pvpResultVoiceSide != PvpResultVoiceSide.None)
+            {
+                return _pvpResultVoiceSide;
+            }
+
+            object opponentAudio = ResolveSelectedCardAudio(false, 10);
+            object nonVerbal = ReadMember(opponentAudio, "NonVerbal");
+            if (opponentAudio == null || nonVerbal == null)
+            {
+                // Unknown runtime state must preserve the native call. The
+                // experiment is never allowed to turn a bind failure into a
+                // guaranteed silent result.
+                _pvpResultVoiceSide = PvpResultVoiceSide.Opponent;
+            }
+            else if (Convert.ToBoolean(
+                nonVerbal,
+                CultureInfo.InvariantCulture))
+            {
+                _pvpResultVoiceSide = PvpResultVoiceSide.Player;
+            }
+            else
+            {
+                lock (PvpVoiceRandomLock)
+                {
+                    // Do not advance UnityEngine.Random: voice selection must
+                    // not perturb any game or presentation RNG sequence.
+                    _pvpResultVoiceSide = PvpVoiceRandom.Next(0, 2) == 0
+                        ? PvpResultVoiceSide.Opponent
+                        : PvpResultVoiceSide.Player;
+                }
+            }
+            Plugin.Log.LogInfo(
+                "Experimental PvP result voice selected: " +
+                _pvpResultVoiceSide.ToString().ToLowerInvariant() + ".");
+            return _pvpResultVoiceSide;
+        }
+
+        private static void BeginExperimentalPvpResultVoice(
+            object __instance,
+            ref PvpResultVoiceState __state)
+        {
+            __state = null;
+            try
+            {
+                string playerResult = Convert.ToString(
+                    ReadMember(
+                        __instance,
+                        "ParameterPlayerVictoryDefeat"),
+                    CultureInfo.InvariantCulture);
+                if (string.IsNullOrEmpty(playerResult) ||
+                    !IsCurrentRunState("PVPCombat") ||
+                    !IsTargetHeroSelected())
+                {
+                    return;
+                }
+
+                __state = new PvpResultVoiceState
+                {
+                    ResetChoice = true
+                };
+                if (ChooseExperimentalPvpResultVoice() !=
+                    PvpResultVoiceSide.Player)
+                {
+                    return;
+                }
+
+                object soundManager = ReadMember(
+                    __instance,
+                    "_soundManager");
+                object cardAudioHandler = ReadMember(
+                    soundManager,
+                    "CardAudioHandler");
+                object activeCardAudio = ReadMember(
+                    cardAudioHandler,
+                    "ActiveCardAudio");
+                if (activeCardAudio == null)
+                {
+                    Plugin.Log.LogWarning(
+                        "Experimental player PvP result voice could not " +
+                        "bind the opponent CardAudio; native behavior was " +
+                        "left unchanged.");
+                    return;
+                }
+
+                FieldInfo nonVerbalField = AccessTools.Field(
+                    activeCardAudio.GetType(),
+                    "NonVerbal");
+                if (nonVerbalField == null)
+                {
+                    Plugin.Log.LogWarning(
+                        "Experimental player PvP result voice could not " +
+                        "bind CardAudio.NonVerbal.");
+                    return;
+                }
+
+                bool originalNonVerbal = Convert.ToBoolean(
+                    nonVerbalField.GetValue(activeCardAudio),
+                    CultureInfo.InvariantCulture);
+                __state.CardAudio = activeCardAudio;
+                __state.NonVerbalField = nonVerbalField;
+                __state.OriginalNonVerbal = originalNonVerbal;
+                __state.Changed = !originalNonVerbal;
+                if (__state.Changed)
+                {
+                    nonVerbalField.SetValue(activeCardAudio, true);
+                }
+                Plugin.Log.LogInfo(
+                    "Experimental local hero PvP result requested: " +
+                    playerResult + ".");
+            }
+            catch (Exception exception)
+            {
+                RestoreExperimentalPvpResultVoice(__state);
+                _pvpResultVoiceSide = PvpResultVoiceSide.None;
+                __state = null;
+                Plugin.Log.LogWarning(
+                    "Experimental PvP result selection failed open: " +
+                    exception.Message);
+            }
+        }
+
+        private static void EndExperimentalPvpResultVoice(
+            PvpResultVoiceState __state)
+        {
+            RestoreExperimentalPvpResultVoice(__state);
+        }
+
+        private static Exception FinalizeExperimentalPvpResultVoice(
+            Exception __exception,
+            PvpResultVoiceState __state)
+        {
+            RestoreExperimentalPvpResultVoice(__state);
+            return __exception;
+        }
+
+        private static void RestoreExperimentalPvpResultVoice(
+            PvpResultVoiceState state)
+        {
+            if (state != null &&
+                state.Changed &&
+                state.CardAudio != null &&
+                state.NonVerbalField != null)
+            {
+                state.NonVerbalField.SetValue(
+                    state.CardAudio,
+                    state.OriginalNonVerbal);
+                state.Changed = false;
+            }
+            if (state != null && state.ResetChoice)
+            {
+                _pvpResultVoiceSide = PvpResultVoiceSide.None;
+                state.ResetChoice = false;
             }
         }
 
@@ -725,6 +938,40 @@ namespace BazaarSkinManager.TheBazaar
             return Convert.ToBoolean(
                 replay.Invoke(null, new[] { current.GetValue(null, null) }),
                 CultureInfo.InvariantCulture);
+        }
+
+        private static bool IsCurrentRunState(string expected)
+        {
+            Type data = RequireType("TheBazaar.Data");
+            PropertyInfo current = data.GetProperty(
+                "CurrentState",
+                BindingFlags.Static |
+                BindingFlags.Public |
+                BindingFlags.NonPublic);
+            if (current == null)
+            {
+                throw new MissingMemberException(
+                    data.FullName,
+                    "CurrentState");
+            }
+            object runState = current.GetValue(null, null);
+            object stateName = ReadMember(runState, "StateName");
+            return stateName != null && string.Equals(
+                Convert.ToString(
+                    stateName,
+                    CultureInfo.InvariantCulture),
+                expected,
+                StringComparison.Ordinal);
+        }
+
+        private static bool IsTargetHeroSelected()
+        {
+            UnityEngine.Object heroAudio =
+                ResolveSelectedCardAudio(true, 10) as UnityEngine.Object;
+            return heroAudio != null && string.Equals(
+                heroAudio.name,
+                "MakAudioSO",
+                StringComparison.Ordinal);
         }
 
         private static object ReadMember(object value, string name)

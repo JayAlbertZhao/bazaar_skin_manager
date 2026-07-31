@@ -9,7 +9,7 @@ on:
       version:
         description: "Version without v prefix"
         required: true
-        default: "0.9.3"
+        default: "0.9.5"
 
 permissions:
   contents: write
@@ -35,6 +35,7 @@ jobs:
         run: |
           if ("${{ github.ref_type }}" -eq "tag") {
             $version = "${{ github.ref_name }}".TrimStart("v")
+            $version = $version -replace '-experimental$', ''
           } else {
             $version = "${{ inputs.version }}"
           }
@@ -126,5 +127,15 @@ jobs:
           if ($LASTEXITCODE -eq 0) {
             gh release upload $tag @assets --clobber
           } else {
-            gh release create $tag @assets --verify-tag --generate-notes --title "The Bazaar Skin Manager $tag"
+            $arguments = @(
+              "release", "create", $tag
+            ) + $assets + @(
+              "--verify-tag",
+              "--generate-notes",
+              "--title", "The Bazaar Skin Manager $tag"
+            )
+            if ($tag.EndsWith("-experimental")) {
+              $arguments += "--prerelease"
+            }
+            & gh @arguments
           }

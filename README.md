@@ -139,9 +139,9 @@ Build the runtime and manager:
 
 ```powershell
 .\build.ps1 -Configuration Release
-.\build-manager.ps1 -Version 0.9.3
-.\build-installer.ps1 -Version 0.9.3
-.\package-manager-portable.ps1 -Version 0.9.3
+.\build-manager.ps1 -Version 0.9.5
+.\build-installer.ps1 -Version 0.9.5
+.\package-manager-portable.ps1 -Version 0.9.5
 ```
 
 Useful source commands:

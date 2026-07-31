@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.9.5 (experimental)
+
+- Choose exactly one PvP result speaker per combat: the local player or the
+  opponent, with equal probability when both can speak.
+- Preserve the native opponent-only behavior outside the target hero skin and
+  fall back to the local player for non-verbal opponents.
+- Keep this behavior on the `experimental` branch; stable `main` remains on
+  the 0.9.3 audio-routing semantics.
+
 ## 0.9.3
 
 - Prevented specialized standing/collection overlays from matching gameplay
