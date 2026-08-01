@@ -47,14 +47,14 @@ class ReleaseSurfaceTests(unittest.TestCase):
         self.assertIn("gh release edit $tag", workflow)
         self.assertNotIn('"--generate-notes"', workflow)
 
-    def test_0_9_62_release_is_stable(self) -> None:
+    def test_0_9_63_release_is_stable(self) -> None:
         workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text(
             encoding="utf-8"
         )
-        self.assertIn('default: "0.9.62"', workflow)
+        self.assertIn('default: "0.9.63"', workflow)
         self.assertIn('if ($tag.EndsWith("-experimental"))', workflow)
-        self.assertNotIn("v0.9.62-experimental", workflow)
-        self.assertNotIn("0.9.62 (experimental)", workflow)
+        self.assertNotIn("v0.9.63-experimental", workflow)
+        self.assertNotIn("0.9.63 (experimental)", workflow)
 
     def test_0_9_62_excludes_badge_authoring_pipeline(self) -> None:
         self.assertFalse((ROOT / "tools" / "badge_compositor.py").exists())

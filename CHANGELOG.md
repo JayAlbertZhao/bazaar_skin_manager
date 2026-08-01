@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.9.63
+
+- Fix Windows startup failures caused by a packaged Tcl DLL and Tcl library
+  data coming from different patch versions.
+- Make the frozen-manager release self-test initialize Tcl/Tk so an invalid
+  GUI bundle fails during packaging instead of on the user's machine.
+- Keep the runtime adapter, skin assets, audio routing, and deferred badge
+  authoring pipeline unchanged from 0.9.62.
+
 ## 0.9.62
 
 - Restrict PvP transition art, board portraits, and late-loaded portrait
