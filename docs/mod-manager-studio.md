@@ -34,10 +34,15 @@ Addressables catalog and groups them by hero. Each skin is labelled as one of:
 - **Adapter update required**: an adapter exists, but not for this game build.
 
 Adapter JSON files are discovered from `manager/adapters/` and indexed by
-hero plus skin. The current release has a verified runtime adapter for Mak's
-default skin. Other detected skins remain visible, but export and Deploy stay
-disabled until their real bundle, Texture2D, size, and original hashes have
-been audited. Catalog presence alone never authorizes a write.
+hero plus skin. The current source has a verified adapter for Mak's default
+skin and a native-Texture2D-only adapter for Dooley's default skin. Other
+detected skins remain visible, but export and Deploy stay disabled until their
+real bundle, Texture2D, size, and original hashes have been audited. Catalog
+presence alone never authorizes a write.
+
+Dooley's deterministic source-art recipe is documented in
+`docs/deterministic-skin-pack-builder.md`. It does not generate hero-select
+badges or small hero emblems.
 
 For adapter slots backed by a verified Texture2D target, **Compare original**
 performs a read-only export from the installed bundle and shows the original

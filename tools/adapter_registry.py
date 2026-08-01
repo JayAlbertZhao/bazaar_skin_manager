@@ -86,6 +86,19 @@ class AdapterRegistry:
     def find(self, hero: str, skin: str) -> AdapterRecord | None:
         return self._by_target.get((hero.casefold(), skin.casefold()))
 
+    def find_by_id(self, adapter_id: str) -> AdapterRecord | None:
+        return self._by_id.get(adapter_id.casefold())
+
+    def default(self) -> AdapterRecord:
+        marked = [
+            record
+            for record in self.records
+            if record.payload.get("default_authoring") is True
+        ]
+        if len(marked) > 1:
+            raise ValueError("Multiple adapters are marked default_authoring.")
+        return marked[0] if marked else self.records[0]
+
     def support_status(
         self,
         hero: str,

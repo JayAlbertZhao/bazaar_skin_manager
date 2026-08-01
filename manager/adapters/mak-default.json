@@ -2,6 +2,7 @@
   "schema_version": 1,
   "id": "mak-default",
   "adapter_version": 1,
+  "default_authoring": true,
   "supported_builds": [
     "24001960"
   ],

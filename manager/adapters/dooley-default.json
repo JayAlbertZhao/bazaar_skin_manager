@@ -1,0 +1,226 @@
+{
+  "schema_version": 1,
+  "id": "dooley-default",
+  "adapter_version": 1,
+  "supported_builds": [
+    "24001960"
+  ],
+  "target": {
+    "game": "the-bazaar",
+    "hero": "Dooley",
+    "skin": "Skin_DOO_01/A",
+    "skin_name_contains": "DOO_01a"
+  },
+  "visual_replacements": [
+    {
+      "slot": "portrait_gameplay",
+      "pixels_per_unit": 256,
+      "match_mode": "exact",
+      "match_names": [
+        "Skin_DOO_01a_Portrait"
+      ],
+      "deployment": {
+        "mode": "preload_unity_texture2d",
+        "target": "TheBazaar_Data/StreamingAssets/aa/StandaloneWindows64/skin_doo_01_assets_all.bundle",
+        "asset_name": "Skin_DOO_01a_Portrait",
+        "unity_version": "6000.3.11f1",
+        "target_size": [
+          1024,
+          1024
+        ],
+        "supported_original_sha256": [
+          "d6ed77d564f6918487e5a1863d79106e37ce93eede1fedf72875d0b64ed5a843"
+        ]
+      }
+    },
+    {
+      "slot": "store_image",
+      "match_names": [
+        "Skin_DOO_01a_StoreImage"
+      ],
+      "deployment": {
+        "mode": "preload_unity_texture2d",
+        "target": "TheBazaar_Data/StreamingAssets/aa/StandaloneWindows64/skin_doo_01_assets_all.bundle",
+        "asset_name": "Skin_DOO_01a_StoreImage",
+        "unity_version": "6000.3.11f1",
+        "target_size": [
+          2048,
+          2048
+        ],
+        "supported_original_sha256": [
+          "d6ed77d564f6918487e5a1863d79106e37ce93eede1fedf72875d0b64ed5a843"
+        ]
+      }
+    },
+    {
+      "slot": "marketplace_list",
+      "match_names": [
+        "Skin_DOO_01a_StoreImage"
+      ],
+      "deployment": {
+        "mode": "preload_unity_texture2d",
+        "target": "TheBazaar_Data/StreamingAssets/aa/StandaloneWindows64/skin_doo_01_assets_all.bundle",
+        "asset_name": "Skin_DOO_01a_StoreImage",
+        "unity_version": "6000.3.11f1",
+        "target_size": [
+          2048,
+          2048
+        ],
+        "supported_original_sha256": [
+          "d6ed77d564f6918487e5a1863d79106e37ce93eede1fedf72875d0b64ed5a843"
+        ]
+      }
+    },
+    {
+      "slot": "marketplace_details",
+      "match_names": [
+        "Skin_DOO_01a_StoreImage"
+      ],
+      "deployment": {
+        "mode": "preload_unity_texture2d",
+        "target": "TheBazaar_Data/StreamingAssets/aa/StandaloneWindows64/skin_doo_01_assets_all.bundle",
+        "asset_name": "Skin_DOO_01a_StoreImage",
+        "unity_version": "6000.3.11f1",
+        "target_size": [
+          2048,
+          2048
+        ],
+        "supported_original_sha256": [
+          "d6ed77d564f6918487e5a1863d79106e37ce93eede1fedf72875d0b64ed5a843"
+        ]
+      }
+    },
+    {
+      "slot": "collection_list",
+      "match_names": [
+        "Skin_DOO_01a_PreviewCollection_TUI"
+      ],
+      "deployment": {
+        "mode": "preload_unity_texture2d",
+        "target": "TheBazaar_Data/StreamingAssets/aa/StandaloneWindows64/skin_doo_01_assets_all.bundle",
+        "asset_name": "Skin_DOO_01a_PreviewCollection_TUI",
+        "unity_version": "6000.3.11f1",
+        "target_size": [
+          512,
+          512
+        ],
+        "supported_original_sha256": [
+          "d6ed77d564f6918487e5a1863d79106e37ce93eede1fedf72875d0b64ed5a843"
+        ]
+      }
+    },
+    {
+      "slot": "daily_weekly",
+      "match_names": [
+        "Skin_DOO_01a_PreviewCollection_TUI"
+      ],
+      "deployment": {
+        "mode": "preload_unity_texture2d",
+        "target": "TheBazaar_Data/StreamingAssets/aa/StandaloneWindows64/skin_doo_01_assets_all.bundle",
+        "asset_name": "Skin_DOO_01a_PreviewCollection_TUI",
+        "unity_version": "6000.3.11f1",
+        "target_size": [
+          512,
+          512
+        ],
+        "supported_original_sha256": [
+          "d6ed77d564f6918487e5a1863d79106e37ce93eede1fedf72875d0b64ed5a843"
+        ]
+      }
+    }
+  ],
+  "authoring_recipe": {
+    "id": "deterministic-raster-v1",
+    "version": 1,
+    "inputs": {
+      "character": {
+        "required": true,
+        "accepted_extensions": [
+          ".png",
+          ".jpg",
+          ".jpeg",
+          ".webp"
+        ]
+      }
+    },
+    "foreground": {
+      "input": "character",
+      "remove_background": {
+        "method": "edge_connected",
+        "tolerance": 34,
+        "feather": 90
+      }
+    },
+    "outputs": {
+      "portrait_gameplay": {
+        "size": [
+          1024,
+          1024
+        ],
+        "fit": "alpha_contain",
+        "target_alpha_bounds": [
+          66,
+          49,
+          974,
+          938
+        ],
+        "anchor": [
+          0.5,
+          1.0
+        ],
+        "minimum_alpha_coverage": 0.12,
+        "maximum_alpha_coverage": 0.72,
+        "minimum_transparent_border": 0.8
+      },
+      "store_image": {
+        "size": [
+          2048,
+          2048
+        ],
+        "fit": "alpha_contain",
+        "target_alpha_bounds": [
+          171,
+          344,
+          1804,
+          1914
+        ],
+        "anchor": [
+          0.5,
+          1.0
+        ],
+        "minimum_alpha_coverage": 0.1,
+        "maximum_alpha_coverage": 0.65,
+        "minimum_transparent_border": 0.8
+      },
+      "marketplace_list": {
+        "alias_of": "store_image"
+      },
+      "marketplace_details": {
+        "alias_of": "store_image"
+      },
+      "collection_list": {
+        "size": [
+          512,
+          512
+        ],
+        "fit": "alpha_contain",
+        "target_alpha_bounds": [
+          18,
+          12,
+          494,
+          500
+        ],
+        "anchor": [
+          0.5,
+          1.0
+        ],
+        "minimum_alpha_coverage": 0.18,
+        "maximum_alpha_coverage": 0.78,
+        "minimum_transparent_border": 0.65
+      },
+      "daily_weekly": {
+        "alias_of": "collection_list"
+      }
+    }
+  }
+}

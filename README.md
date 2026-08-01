@@ -8,6 +8,10 @@ tests, and release tooling. It does **not** contain or distribute character
 art, portraits, voice recordings, generated media, or third-party skin packs.
 Creators distribute those packs separately as ZIP files.
 
+The source also includes an adapter-driven deterministic raster builder; see
+[`docs/deterministic-skin-pack-builder.md`](docs/deterministic-skin-pack-builder.md).
+It deliberately excludes hero-select badge/frame generation.
+
 ## Features
 
 - Detects Steam installations across registered and conventional library paths.
@@ -17,6 +21,7 @@ Creators distribute those packs separately as ZIP files.
 - Supports PNG, JPEG, WebP, BMP, WAV, MP3, FLAC, Ogg, M4A, AAC, and Opus input.
 - Converts supported audio through `ffmpeg` when available.
 - Removes a configurable colour screen from imported images.
+- Derives audited flat-texture slots through deterministic, offline recipes.
 - Preserves animation source sets for future runtime adapters.
 - Applies supported image slots before game startup to avoid late replacement.
 - Deploys the runtime and external pack reversibly.
@@ -25,9 +30,10 @@ Creators distribute those packs separately as ZIP files.
 - Restores manager-owned changes during undeploy or uninstall.
 - Starts the game through Steam.
 
-The current public runtime adapter has verified deployment support for Mak's
-default skin on Steam build `24001960`. Other heroes remain visible in the
-catalog but are disabled until their adapters have been verified.
+The current adapters have verified deployment support for Mak's default skin
+and Dooley's independently replaceable default-skin Texture2D surfaces on
+Steam build `24001960`. Other heroes remain visible in the catalog but are
+disabled until their adapters have been verified.
 
 ## Install
 

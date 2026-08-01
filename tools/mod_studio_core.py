@@ -224,7 +224,7 @@ def default_project(
     skin: str | None = None,
     skin_name_contains: str | None = None,
 ) -> dict:
-    default_adapter = adapter_registry().records[0]
+    default_adapter = adapter_registry().default()
     hero = hero or default_adapter.hero
     skin = skin or default_adapter.skin
     skin_name_contains = skin_name_contains or default_adapter.skin_name_contains
@@ -306,7 +306,7 @@ class StudioWorkspace:
     def _state_from_pack(pack_root: Path) -> dict:
         manifest = _read_json(pack_root / "mod.json")
         target = manifest.get("target") or {}
-        default_adapter = adapter_registry().records[0]
+        default_adapter = adapter_registry().default()
         state = default_project(
             manifest.get("id", "imported.skin"),
             manifest.get("name", "Imported Skin"),
@@ -952,6 +952,8 @@ class StudioWorkspace:
             },
             "visual_replacements": replacements,
         }
+        if self.state.get("authoring"):
+            manifest["authoring"] = deepcopy(self.state["authoring"])
         audio = self.audio_manifest()
         if audio and any(route.get("variants") for route in audio.get("routes", [])):
             manifest["audio_manifest"] = self.state["audio_manifest"]
@@ -1032,7 +1034,16 @@ class StudioWorkspace:
                 [self.directory / "mod.json", self.directory / "asset-index.json"]
             )
             for path in sorted(set(paths)):
-                archive.write(path, path.relative_to(self.directory).as_posix())
+                relative = path.relative_to(self.directory).as_posix()
+                entry = zipfile.ZipInfo(relative, date_time=(1980, 1, 1, 0, 0, 0))
+                entry.create_system = 3
+                entry.external_attr = 0o100644 << 16
+                archive.writestr(
+                    entry,
+                    path.read_bytes(),
+                    compress_type=zipfile.ZIP_DEFLATED,
+                    compresslevel=9,
+                )
         return destination
 
     def deploy(self, game_dir: Path | None = None) -> dict:
