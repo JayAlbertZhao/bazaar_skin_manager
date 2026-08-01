@@ -93,6 +93,25 @@ namespace BazaarSkinManager.TheBazaar
                 isTargetDefault,
                 shouldAttach);
 
+            // The periodic reconciler owns only the central HeroSelect
+            // placeholder. PvpScreen, EndOfDayScreen, and the other SkinEdit
+            // placements share HeroSelectDisplay, but their overlays are
+            // owned by the exact placement patches. Cleaning them up here
+            // restores the native renderer after the replacement has already
+            // attached.
+            if (!supportedCentralDisplay)
+            {
+                RuntimeSkinAudit.RecordLoader(
+                    "HeroSelectDisplay.MAK",
+                    "unsupported type",
+                    "Non-central HeroSelectDisplay is owned by its exact " +
+                        "SkinEdit placement patch; no overlay state changed.",
+                    skinEditActiveSkin == null
+                        ? (UnityEngine.Object)makGraphic
+                        : skinEditActiveSkin);
+                return;
+            }
+
             if (!shouldAttach)
             {
                 StandingOverlay.RemoveFromGraphic(makGraphic);

@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.9.6
+
+- Keep `PvpScreen`, `EndOfDayScreen`, and other exact SkinEdit placements
+  independent from the central hero-selection reconciler, preventing an
+  attached replacement from reverting to the native hero during PvP entry.
+- Discover hero/skin adapters through a fail-closed registry and preload the
+  verified gameplay portrait route through its exact native Texture2D target.
+- Promote the PvP result-speaker selection introduced in 0.9.5 to the stable
+  release line.
+
 ## 0.9.5 (experimental)
 
 - Choose exactly one PvP result speaker per combat: the local player or the

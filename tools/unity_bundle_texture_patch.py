@@ -67,6 +67,38 @@ def bundle_crc32(environment) -> int:
     return checksum & 0xFFFFFFFF
 
 
+def export_texture_bundle(
+    source_bundle: Path,
+    output_image: Path,
+    *,
+    asset_name: str,
+    unity_version: str,
+    target_size: tuple[int, int] | None = None,
+) -> dict:
+    """Export one Texture2D without modifying the source UnityFS bundle."""
+    source_bundle = source_bundle.resolve()
+    output_image = output_image.resolve()
+    if not source_bundle.is_file():
+        raise FileNotFoundError(source_bundle)
+    UnityPy = _load_unitypy(unity_version)
+    environment = UnityPy.load(source_bundle.read_bytes())
+    texture = _texture(environment, asset_name)
+    image = texture.image.convert("RGBA")
+    if target_size is not None and image.size != tuple(target_size):
+        raise RuntimeError(
+            f"Texture {asset_name!r} is {image.width}x{image.height}; "
+            f"expected {target_size[0]}x{target_size[1]}."
+        )
+    output_image.parent.mkdir(parents=True, exist_ok=True)
+    image.save(output_image, "PNG", optimize=True)
+    return {
+        "asset_name": asset_name,
+        "size": list(image.size),
+        "source_sha256": sha256_file(source_bundle),
+        "output_sha256": sha256_file(output_image),
+    }
+
+
 def patch_texture_bundle(
     source_bundle: Path,
     output_bundle: Path,

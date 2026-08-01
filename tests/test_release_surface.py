@@ -37,6 +37,31 @@ class ReleaseSurfaceTests(unittest.TestCase):
         self.assertNotIn("packs/", workflow)
         self.assertIn("TheBazaarModManager-Setup-", workflow)
 
+    def test_0_9_6_release_is_stable(self) -> None:
+        workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn('default: "0.9.6"', workflow)
+        self.assertIn('if ($tag.EndsWith("-experimental"))', workflow)
+        self.assertNotIn("v0.9.6-experimental", workflow)
+        self.assertNotIn("0.9.6 (experimental)", workflow)
+
+    def test_0_9_6_excludes_badge_authoring_pipeline(self) -> None:
+        self.assertFalse((ROOT / "tools" / "badge_compositor.py").exists())
+        studio = (ROOT / "tools" / "mod_studio_core.py").read_text(
+            encoding="utf-8"
+        )
+        ui = (ROOT / "tools" / "bazaar_skin_manager_ui.py").read_text(
+            encoding="utf-8"
+        )
+        adapter = (ROOT / "manager" / "adapters" / "mak-default.json").read_text(
+            encoding="utf-8"
+        )
+        self.assertNotIn("badge_compositor", studio)
+        self.assertNotIn("generate_hero_select_badge", studio)
+        self.assertNotIn("_browse_badge_portrait", ui)
+        self.assertNotIn("hero_select_badge", adapter)
+
     def test_silent_uninstall_does_not_wait_for_a_dialog(self) -> None:
         installer = (
             ROOT / "installer" / "TheBazaarModManager.iss"

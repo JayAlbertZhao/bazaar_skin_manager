@@ -5,6 +5,8 @@ import unittest
 import wave
 import zipfile
 from pathlib import Path
+from types import SimpleNamespace
+from unittest import mock
 
 from PIL import Image
 
@@ -33,6 +35,28 @@ def write_runtime_wav(path: Path) -> None:
 
 
 class ModStudioTests(unittest.TestCase):
+    def test_original_preview_uses_verified_read_only_texture_export(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            workspace = StudioWorkspace.create("test.original", root=root / "work")
+
+            def fake_export(_bundle, output, **_kwargs):
+                output.parent.mkdir(parents=True, exist_ok=True)
+                Image.new("RGBA", (512, 512), (9, 8, 7, 255)).save(output)
+                return {}
+
+            game = SimpleNamespace(game_dir=root / "game", build_id="24001960")
+            with mock.patch("mod_studio_core.preferred_game_install", return_value=game):
+                with mock.patch(
+                    "mod_studio_core.export_texture_bundle",
+                    side_effect=fake_export,
+                ) as exporter:
+                    output = workspace.export_original_visual("hero_select")
+            self.assertTrue(output.is_file())
+            with Image.open(output) as loaded:
+                self.assertEqual(loaded.size, (512, 512))
+            exporter.assert_called_once()
+
     def test_preview_is_fixed_size_centered_and_not_cropped(self):
         source = Image.new("RGBA", (100, 200), (220, 80, 40, 255))
         preview = compose_image_preview(source)

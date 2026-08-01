@@ -88,6 +88,21 @@ def write_game(root: Path) -> Path:
 
 
 class ManagerTests(unittest.TestCase):
+    def test_adapter_claim_binds_visual_contract_fail_closed(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            pack = write_pack(Path(temp))
+            manifest_path = pack / "mod.json"
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            manifest["adapter"] = {"id": "mak-default", "version": 1}
+            manifest_path.write_text(
+                json.dumps(manifest, indent=2) + "\n",
+                encoding="utf-8",
+            )
+            errors = manager.validate_pack(pack)
+            self.assertTrue(
+                any("deployment does not match verified adapter" in item for item in errors)
+            )
+
     def _native_patch_fixture(self, root: Path) -> tuple[Path, Path, Path]:
         pack = write_pack(root)
         manifest_path = pack / "mod.json"
@@ -307,7 +322,7 @@ class ManagerTests(unittest.TestCase):
                     manager.explicit_install(game),
                 )
                 diagnostics = manager.installation_diagnostics()
-            self.assertEqual(record["manager"]["version"], "0.9.5")
+            self.assertEqual(record["manager"]["version"], "0.9.6")
             self.assertEqual(record["runtime"]["version"], "7.4.2")
             self.assertEqual(record["pack"]["version"], "1.0.0")
             self.assertEqual(

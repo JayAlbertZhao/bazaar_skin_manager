@@ -1,5 +1,5 @@
 param(
-    [string]$Version = "0.9.5"
+    [string]$Version = "0.9.6"
 )
 
 $ErrorActionPreference = "Stop"
@@ -81,7 +81,7 @@ New-Item -ItemType Directory -Force -Path $output, $work, $spec | Out-Null
     --hidden-import unity_bundle_texture_patch `
     --add-binary "$fmodDll;fmod_toolkit\libfmod\Windows\x64" `
     --add-data "$root\manager\hero-catalog.json;manager" `
-    --add-data "$root\manager\adapters\mak-default.json;manager\adapters" `
+    --add-data "$root\manager\adapters;manager\adapters" `
     --add-data "$runtime;dist\runtime" `
     --add-data "$runtimeMetadata;dist\runtime" `
     --add-data "$root\tools\unity_bundle_texture_patch.py;tools" `

@@ -5,6 +5,7 @@
   "heroes": [
     {
       "id": "Mak",
+      "asset_code": "MAK",
       "display_name": "Mak",
       "runtime_supported": true,
       "audio_supported": true,
@@ -18,6 +19,7 @@
     },
     {
       "id": "Vanessa",
+      "asset_code": "VAN",
       "display_name": "Vanessa",
       "runtime_supported": false,
       "audio_supported": false,
@@ -31,6 +33,7 @@
     },
     {
       "id": "Pygmalien",
+      "asset_code": "PYG",
       "display_name": "Pygmalien",
       "runtime_supported": false,
       "audio_supported": false,
@@ -44,6 +47,7 @@
     },
     {
       "id": "Dooley",
+      "asset_code": "DOO",
       "display_name": "Dooley",
       "runtime_supported": false,
       "audio_supported": false,
@@ -57,6 +61,7 @@
     },
     {
       "id": "Jules",
+      "asset_code": "JUL",
       "display_name": "Jules",
       "runtime_supported": false,
       "audio_supported": false,

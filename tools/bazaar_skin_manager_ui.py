@@ -24,6 +24,7 @@ from mod_studio_core import (
     StudioWorkspace,
     catalog,
     compose_image_preview,
+    discovered_catalog,
     restore_before_application_uninstall,
 )
 
@@ -70,6 +71,7 @@ class ModManagerStudio:
         self.first_run = False
         self.game_dir_override: Path | None = None
         self.workspace = self._open_last_or_default()
+        self.catalog = discovered_catalog(self.game_dir_override)
         self.preview_images: dict[str, ImageTk.PhotoImage] = {}
         self.slot_widgets: dict[str, dict[str, tk.Widget]] = {}
         self.busy = False
@@ -334,7 +336,7 @@ class ModManagerStudio:
             state="readonly",
         )
         self.skin_combo.pack(fill="x")
-        self.skin_combo.bind("<<ComboboxSelected>>", lambda _event: self._metadata_changed())
+        self.skin_combo.bind("<<ComboboxSelected>>", self._skin_changed)
         self.hero_support = ttk.Label(
             parent,
             text="",
@@ -581,6 +583,11 @@ class ModManagerStudio:
             text="清除",
             command=lambda item=slot["id"]: self._clear_visual(item),
         ).pack(side="left")
+        ttk.Button(
+            buttons,
+            text="对比原版",
+            command=lambda item=slot["id"]: self._compare_original(item),
+        ).pack(side="left", padx=(5, 0))
         self._register_drop(
             card,
             lambda paths, item=slot["id"]: self._drop_visual(item, paths),
@@ -806,7 +813,12 @@ class ModManagerStudio:
 
     @staticmethod
     def _skin_label(skin: dict) -> str:
-        return f"{skin['display_name']}  ·  {skin['id']}"
+        status = {
+            "supported": "可部署",
+            "detected_unmapped": "已检测・未适配",
+            "game_update_required": "需要更新适配器",
+        }.get(skin.get("deployment_status"), "离线目录")
+        return f"{skin['display_name']}  ·  {skin['id']}  ·  {status}"
 
     def _set_skin_options(self, hero: dict, selected_id: str | None = None) -> None:
         labels = [self._skin_label(skin) for skin in hero["skins"]]
@@ -816,16 +828,22 @@ class ModManagerStudio:
             hero["skins"][0],
         )
         self.skin_var.set(self._skin_label(selected))
-        if hero.get("runtime_supported"):
+        if selected.get("deployment_status") == "supported":
             self.hero_support.configure(
-                text="已提供并验证运行时适配器。",
+                text=f"已验证适配器：{selected.get('adapter_id')}",
                 foreground=COLORS["accent"],
             )
             self.deploy_button.configure(state="normal")
             self.header_deploy_button.configure(state="normal")
         else:
+            status = selected.get("deployment_status")
+            message = (
+                "检测到此皮肤，但尚无经过验证的适配器；导出和部署保持阻断。"
+                if status == "detected_unmapped"
+                else "当前游戏版本与适配器不匹配；需要更新适配器。"
+            )
             self.hero_support.configure(
-                text="仅有目录信息；此版本尚未验证运行时适配器。",
+                text=message,
                 foreground=COLORS["warning"],
             )
             self.deploy_button.configure(state="disabled")
@@ -835,6 +853,30 @@ class ModManagerStudio:
         self._set_skin_options(self._selected_hero())
         self._metadata_changed()
         self._refresh_audio()
+
+    def _skin_changed(self, _event=None) -> None:
+        hero = self._selected_hero()
+        skin = self._selected_skin()
+        self._set_skin_options(hero, skin["id"])
+        self._metadata_changed()
+        self._refresh_audio()
+
+    def _reload_discovered_catalog(self) -> None:
+        target = self.workspace.state["target"]
+        self.catalog = discovered_catalog(self.game_dir_override)
+        self.hero_combo.configure(
+            values=[hero["display_name"] for hero in self.catalog["heroes"]]
+        )
+        hero = next(
+            (
+                item
+                for item in self.catalog["heroes"]
+                if item["id"] == target["hero"]
+            ),
+            self.catalog["heroes"][0],
+        )
+        self.hero_var.set(hero["display_name"])
+        self._set_skin_options(hero, target.get("skin"))
 
     def _metadata_changed(self) -> None:
         try:
@@ -1019,6 +1061,7 @@ class ModManagerStudio:
             )
             return
         self.game_dir_override = game.game_dir
+        self._reload_discovered_catalog()
         self._remember_workspace()
         self._write_log(f"使用手动选择的游戏目录：{game.game_dir}")
         self._refresh_deployment_status()
@@ -1072,6 +1115,59 @@ class ModManagerStudio:
         )
         if path:
             self._import_visual(slot, Path(path))
+
+    def _compare_original(self, slot: str) -> None:
+        if self.busy:
+            return
+        self._run_background(
+            f"正在读取原版贴图：{slot}…",
+            lambda: self.workspace.export_original_visual(
+                slot,
+                self.game_dir_override,
+            ),
+            lambda original: self._show_visual_comparison(slot, original),
+        )
+
+    def _show_visual_comparison(self, slot: str, original: Path) -> None:
+        self.busy = False
+        self._set_skin_options(self._selected_hero(), self._selected_skin()["id"])
+        replacement = self.workspace.visual_path(slot)
+        with Image.open(original) as loaded:
+            original_size = loaded.size
+            original_preview = compose_image_preview(loaded, (360, 300), 16)
+        if replacement:
+            with Image.open(replacement) as loaded:
+                replacement_size = loaded.size
+                replacement_preview = compose_image_preview(loaded, (360, 300), 16)
+        else:
+            replacement_size = None
+            replacement_preview = Image.new("RGBA", (360, 300), COLORS["empty"])
+
+        window = tk.Toplevel(self.root)
+        window.title(f"原版 / 替换预览 · {slot}")
+        window.configure(bg=COLORS["panel"])
+        window.transient(self.root)
+        container = ttk.Frame(window, padding=16)
+        container.pack(fill="both", expand=True)
+        photos = [
+            ImageTk.PhotoImage(original_preview),
+            ImageTk.PhotoImage(replacement_preview),
+        ]
+        for column, (title, photo, size) in enumerate(
+            (
+                ("原版", photos[0], original_size),
+                ("当前替换", photos[1], replacement_size),
+            )
+        ):
+            panel = ttk.Frame(container, padding=8)
+            panel.grid(row=0, column=column, sticky="nsew")
+            ttk.Label(panel, text=title, font=("Microsoft YaHei UI", 12, "bold")).pack()
+            ttk.Label(panel, image=photo).pack(pady=8)
+            text = f"{size[0]} × {size[1]}" if size else "未填充；继续使用原版"
+            ttk.Label(panel, text=text, style="Muted.TLabel").pack()
+            container.columnconfigure(column, weight=1)
+        window._preview_images = photos  # type: ignore[attr-defined]
+        self._refresh_deployment_status()
 
     def _drop_visual(self, slot: str, paths: list[Path]) -> None:
         if paths:

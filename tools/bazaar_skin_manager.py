@@ -20,7 +20,7 @@ from typing import Iterable
 
 
 APP_ID = "1617400"
-MANAGER_VERSION = "0.9.5"
+MANAGER_VERSION = "0.9.6"
 PROJECT_ROOT = Path(
     getattr(sys, "_MEIPASS", Path(__file__).resolve().parents[1])
 )
@@ -52,6 +52,25 @@ def _load_bundle_patcher():
         sys.modules[specification.name] = module
         specification.loader.exec_module(module)
         return module.patch_texture_bundle_many
+
+
+def _load_adapter_registry():
+    try:
+        from adapter_registry import AdapterRegistry
+
+        return AdapterRegistry.load(PROJECT_ROOT / "manager" / "adapters")
+    except ModuleNotFoundError:
+        module_path = Path(__file__).resolve().with_name("adapter_registry.py")
+        specification = importlib.util.spec_from_file_location(
+            "adapter_registry",
+            module_path,
+        )
+        if specification is None or specification.loader is None:
+            raise RuntimeError(f"Cannot load adapter registry: {module_path}")
+        module = importlib.util.module_from_spec(specification)
+        sys.modules[specification.name] = module
+        specification.loader.exec_module(module)
+        return module.AdapterRegistry.load(PROJECT_ROOT / "manager" / "adapters")
 
 
 @dataclass
@@ -327,15 +346,47 @@ def validate_pack(pack_dir: Path) -> list[str]:
     if not manifest.get("id"):
         errors.append("id is required")
     target = manifest.get("target") or {}
-    if target.get("hero") != "Mak":
-        errors.append("target.hero must be Mak")
-    if target.get("skin") != "Skin_MAK_01/A":
-        errors.append("target.skin must be Skin_MAK_01/A")
+    registry = _load_adapter_registry()
+    adapter = registry.find(str(target.get("hero") or ""), str(target.get("skin") or ""))
+    if adapter is None:
+        errors.append(
+            "no verified adapter for target: "
+            f"{target.get('hero')} / {target.get('skin')}"
+        )
+    elif target.get("skin_name_contains") != adapter.skin_name_contains:
+        errors.append(
+            "target.skin_name_contains does not match verified adapter"
+        )
+    adapter_claim = manifest.get("adapter")
+    if adapter_claim and adapter:
+        if adapter_claim.get("id") != adapter.adapter_id:
+            errors.append("manifest adapter.id does not match target adapter")
+        if adapter_claim.get("version") != adapter.adapter_version:
+            errors.append("manifest adapter.version does not match target adapter")
+
+    verified_visuals = {
+        item["slot"]: item
+        for item in ((adapter.payload.get("visual_replacements") or []) if adapter else [])
+    }
 
     pack_prefix = pack_dir.resolve()
     native_targets: dict[str, tuple[str, tuple[str, ...]]] = {}
     native_assets: dict[tuple[str, str], str] = {}
     for replacement in manifest.get("visual_replacements", []):
+        slot = replacement.get("slot")
+        verified = verified_visuals.get(slot)
+        if adapter_claim and verified is None:
+            errors.append(f"slot is not declared by verified adapter: {slot}")
+        elif adapter_claim and verified is not None:
+            for field in ("direct_only", "match_mode", "match_names", "pixels_per_unit"):
+                if replacement.get(field) != verified.get(field):
+                    errors.append(
+                        f"slot {slot} field {field} does not match verified adapter"
+                    )
+            if replacement.get("deployment") != verified.get("deployment"):
+                errors.append(
+                    f"slot {slot} deployment does not match verified adapter"
+                )
         relative = replacement.get("file", "")
         asset = (pack_dir / relative).resolve()
         try:
@@ -350,20 +401,23 @@ def validate_pack(pack_dir: Path) -> list[str]:
         deployment = replacement.get("deployment")
         if not deployment:
             continue
-        slot = replacement.get("slot")
         if deployment.get("mode") != PRELOAD_TEXTURE_MODE:
             errors.append(f"unsupported deployment mode for {slot}")
             continue
-        target = str(deployment.get("target") or "").replace("\\", "/")
-        target_parts = Path(target).parts
+        deployment_target = str(deployment.get("target") or "").replace(
+            "\\", "/"
+        )
+        target_parts = Path(deployment_target).parts
         if (
-            not target
-            or Path(target).is_absolute()
+            not deployment_target
+            or Path(deployment_target).is_absolute()
             or ".." in target_parts
-            or ":" in target
+            or ":" in deployment_target
         ):
-            errors.append(f"unsafe native patch target for {slot}: {target}")
-        target_key = target.casefold()
+            errors.append(
+                f"unsafe native patch target for {slot}: {deployment_target}"
+            )
+        target_key = deployment_target.casefold()
         if not deployment.get("asset_name"):
             errors.append(f"native patch asset_name is required for {slot}")
         if not deployment.get("unity_version"):
@@ -388,7 +442,7 @@ def validate_pack(pack_dir: Path) -> list[str]:
             errors.append(
                 f"native patch supported_original_sha256 is invalid for {slot}"
             )
-        elif target:
+        elif deployment_target:
             signature = (
                 str(deployment.get("unity_version")),
                 tuple(sorted(value.casefold() for value in supported)),
@@ -396,7 +450,8 @@ def validate_pack(pack_dir: Path) -> list[str]:
             previous_signature = native_targets.get(target_key)
             if previous_signature is not None and previous_signature != signature:
                 errors.append(
-                    f"inconsistent native patch target contract: {target}"
+                    "inconsistent native patch target contract: "
+                    f"{deployment_target}"
                 )
             native_targets[target_key] = signature
 
@@ -436,10 +491,16 @@ def validate_pack(pack_dir: Path) -> list[str]:
                     if audio_manifest.get("fallback") != "original":
                         errors.append("audio fallback must be original")
                     audio_target = audio_manifest.get("target") or {}
-                    if audio_target.get("hero") != "Mak":
-                        errors.append("audio target.hero must be Mak")
-                    if audio_target.get("steam_build") != "24001960":
-                        errors.append("audio target.steam_build must be 24001960")
+                    if audio_target.get("hero") != target.get("hero"):
+                        errors.append("audio target.hero must match pack target.hero")
+                    if (
+                        adapter
+                        and str(audio_target.get("steam_build"))
+                        not in adapter.supported_builds
+                    ):
+                        errors.append(
+                            "audio target.steam_build is not verified by adapter"
+                        )
                     identities: set[tuple] = set()
                     for route in audio_manifest.get("routes") or []:
                         selectors = tuple(

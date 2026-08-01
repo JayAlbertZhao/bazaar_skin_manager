@@ -26,6 +26,9 @@ from typing import Iterable
 
 from PIL import Image
 
+from adapter_registry import AdapterRecord, AdapterRegistry, enrich_catalog
+from unity_bundle_texture_patch import export_texture_bundle
+
 from bazaar_skin_manager import (
     DEFAULT_RUNTIME,
     atomic_copy_tree,
@@ -47,7 +50,7 @@ PROJECT_ROOT = Path(
     getattr(sys, "_MEIPASS", Path(__file__).resolve().parents[1])
 )
 CATALOG_PATH = PROJECT_ROOT / "manager" / "hero-catalog.json"
-ADAPTER_PATH = PROJECT_ROOT / "manager" / "adapters" / "mak-default.json"
+ADAPTERS_PATH = PROJECT_ROOT / "manager" / "adapters"
 WORKSPACES_ROOT = manager_root() / "workspaces"
 STATE_FILE = "studio.json"
 SUPPORTED_IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".bmp"}
@@ -157,30 +160,74 @@ def _single_pack_root(extracted: Path) -> Path | None:
     return manifests[0].parent
 
 
-def _visual_template_map() -> dict[str, dict]:
-    manifest = _read_json(ADAPTER_PATH)
+def adapter_registry() -> AdapterRegistry:
+    return AdapterRegistry.load(ADAPTERS_PATH)
+
+
+def _adapter_for_target(target: dict) -> AdapterRecord:
+    adapter = adapter_registry().find(
+        str(target.get("hero") or ""),
+        str(target.get("skin") or ""),
+    )
+    if adapter is None:
+        raise ValueError(
+            "No verified adapter for "
+            f"{target.get('hero')} / {target.get('skin')}."
+        )
+    return adapter
+
+
+def _visual_template_map(target: dict) -> dict[str, dict]:
+    manifest = _adapter_for_target(target).payload
     return {
         replacement["slot"]: replacement
         for replacement in manifest["visual_replacements"]
     }
 
 
-def _audio_template() -> dict:
-    return _read_json(ADAPTER_PATH)["audio_template"]
+def _audio_template(target: dict) -> dict:
+    adapter = _adapter_for_target(target)
+    template = adapter.payload.get("audio_template")
+    if not template:
+        raise ValueError(f"Adapter {adapter.adapter_id} has no audio routes.")
+    return template
 
 
 def catalog() -> dict:
     return _read_json(CATALOG_PATH)
 
 
+def discovered_catalog(game_dir: Path | None = None) -> dict:
+    base = catalog()
+    try:
+        game = preferred_game_install(game_dir)
+    except RuntimeError:
+        return enrich_catalog(
+            base,
+            adapter_registry(),
+            game_dir=None,
+            build_id=None,
+        )
+    return enrich_catalog(
+        base,
+        adapter_registry(),
+        game_dir=game.game_dir,
+        build_id=game.build_id,
+    )
+
+
 def default_project(
     pack_id: str = "local.custom.skin",
     name: str = "Custom Skin",
     version: str = "0.1.0",
-    hero: str = "Mak",
-    skin: str = "Skin_MAK_01/A",
-    skin_name_contains: str = "MAK_01a",
+    hero: str | None = None,
+    skin: str | None = None,
+    skin_name_contains: str | None = None,
 ) -> dict:
+    default_adapter = adapter_registry().records[0]
+    hero = hero or default_adapter.hero
+    skin = skin or default_adapter.skin
+    skin_name_contains = skin_name_contains or default_adapter.skin_name_contains
     return {
         "schema_version": 1,
         "pack": {
@@ -226,9 +273,9 @@ class StudioWorkspace:
         root: Path | None = None,
         name: str = "Custom Skin",
         version: str = "0.1.0",
-        hero: str = "Mak",
-        skin: str = "Skin_MAK_01/A",
-        skin_name_contains: str = "MAK_01a",
+        hero: str | None = None,
+        skin: str | None = None,
+        skin_name_contains: str | None = None,
     ) -> "StudioWorkspace":
         state = default_project(
             pack_id,
@@ -259,13 +306,14 @@ class StudioWorkspace:
     def _state_from_pack(pack_root: Path) -> dict:
         manifest = _read_json(pack_root / "mod.json")
         target = manifest.get("target") or {}
+        default_adapter = adapter_registry().records[0]
         state = default_project(
             manifest.get("id", "imported.skin"),
             manifest.get("name", "Imported Skin"),
             manifest.get("version", "0.1.0"),
-            target.get("hero", "Mak"),
-            target.get("skin", "Skin_MAK_01/A"),
-            target.get("skin_name_contains", "MAK_01a"),
+            target.get("hero", default_adapter.hero),
+            target.get("skin", default_adapter.skin),
+            target.get("skin_name_contains", default_adapter.skin_name_contains),
         )
         state["visual_slots"] = {
             entry["slot"]: entry["file"]
@@ -329,7 +377,7 @@ class StudioWorkspace:
         chroma_color: str | None = None,
         tolerance: int = 28,
     ) -> Path:
-        if slot not in _visual_template_map():
+        if slot not in _visual_template_map(self.state["target"]):
             raise ValueError(f"Unknown visual slot: {slot}")
         source = source.resolve()
         if source.suffix.casefold() not in SUPPORTED_IMAGE_EXTENSIONS:
@@ -355,7 +403,7 @@ class StudioWorkspace:
         chroma_color: str | None = None,
         tolerance: int = 28,
     ) -> Path:
-        if slot not in _visual_template_map():
+        if slot not in _visual_template_map(self.state["target"]):
             raise ValueError(f"Unknown visual slot: {slot}")
         output = image.convert("RGBA")
         if chroma_color:
@@ -368,6 +416,35 @@ class StudioWorkspace:
         )
         self.save()
         return destination
+
+    def export_original_visual(
+        self,
+        slot: str,
+        game_dir: Path | None = None,
+    ) -> Path:
+        """Export a verified original Texture2D for side-by-side preview."""
+        template = _visual_template_map(self.state["target"]).get(slot)
+        deployment = (template or {}).get("deployment")
+        if not deployment:
+            raise ValueError(
+                f"Slot {slot} has no verified read-only Texture2D preview target."
+            )
+        game = preferred_game_install(game_dir)
+        adapter = _adapter_for_target(self.state["target"])
+        if not adapter.supports_build(game.build_id):
+            raise ValueError(
+                f"Adapter {adapter.adapter_id} is not verified for Steam "
+                f"build {game.build_id or 'unknown'}."
+            )
+        output = self.directory / "authoring" / "original-previews" / f"{slot}.png"
+        export_texture_bundle(
+            game.game_dir / deployment["target"],
+            output,
+            asset_name=deployment["asset_name"],
+            unity_version=deployment["unity_version"],
+            target_size=tuple(deployment["target_size"]),
+        )
+        return output
 
     def clear_visual(self, slot: str) -> None:
         path = self.visual_path(slot)
@@ -390,7 +467,7 @@ class StudioWorkspace:
             return _read_json(path)
         if not create:
             return None
-        template = _audio_template()
+        template = _audio_template(self.state["target"])
         target = self.state["target"]
         result = {
             "schema_version": 1,
@@ -411,7 +488,11 @@ class StudioWorkspace:
         return result
 
     def audio_route_catalog(self) -> list[dict]:
-        return deepcopy(_audio_template().get("routes") or [])
+        try:
+            template = _audio_template(self.state["target"])
+        except ValueError:
+            return []
+        return deepcopy(template.get("routes") or [])
 
     def import_audio(
         self,
@@ -618,7 +699,7 @@ class StudioWorkspace:
             )
         elif len(voice_manifests) > 1:
             raise ValueError("Audio package contains multiple mak-voice-assets.json files.")
-        slot_ids = set(_visual_template_map())
+        slot_ids = set(_visual_template_map(self.state["target"]))
         route_catalog = self.audio_route_catalog()
         route_by_slug = {
             _slug(route["logical_slot"]).casefold(): route["logical_slot"]
@@ -817,7 +898,7 @@ class StudioWorkspace:
                     "variants": variants,
                 }
             )
-        template = _audio_template()
+        template = _audio_template(self.state["target"])
         runtime_manifest = {
             "schema_version": 1,
             "enabled": True,
@@ -845,7 +926,8 @@ class StudioWorkspace:
         return [route["logical_slot"] for route in routes], copied_sources
 
     def build_pack(self) -> Path:
-        visual_templates = _visual_template_map()
+        adapter = _adapter_for_target(self.state["target"])
+        visual_templates = _visual_template_map(self.state["target"])
         replacements = []
         for slot, relative in sorted(
             (self.state.get("visual_slots") or {}).items()
@@ -864,6 +946,10 @@ class StudioWorkspace:
             "version": self.state["pack"]["version"],
             "enabled": True,
             "target": deepcopy(self.state["target"]),
+            "adapter": {
+                "id": adapter.adapter_id,
+                "version": adapter.adapter_version,
+            },
             "visual_replacements": replacements,
         }
         audio = self.audio_manifest()
@@ -877,17 +963,44 @@ class StudioWorkspace:
         self.save()
         return self.directory
 
+    def _declared_payload_paths(self, manifest: dict) -> list[Path]:
+        relatives: set[str] = set()
+        for replacement in manifest.get("visual_replacements") or []:
+            if replacement.get("file"):
+                relatives.add(str(replacement["file"]))
+        audio_relative = manifest.get("audio_manifest")
+        if audio_relative:
+            relatives.add(str(audio_relative))
+            audio_path = self._resolve_payload_path(str(audio_relative))
+            audio = _read_json(audio_path)
+            for route in audio.get("routes") or []:
+                for variant in route.get("variants") or []:
+                    if variant.get("file"):
+                        relatives.add(str(variant["file"]))
+        animation = manifest.get("animation") or {}
+        relatives.update(str(item) for item in animation.get("files") or [])
+        return [self._resolve_payload_path(item) for item in sorted(relatives)]
+
+    def _resolve_payload_path(self, relative: str) -> Path:
+        normalized = relative.replace("\\", "/")
+        if normalized.startswith("/") or re.match(r"^[A-Za-z]:", normalized):
+            raise ValueError(f"Pack payload path must be relative: {relative}")
+        path = (self.directory / normalized).resolve()
+        try:
+            path.relative_to(self.directory)
+        except ValueError as error:
+            raise ValueError(
+                f"Pack payload escapes the workspace: {relative}"
+            ) from error
+        if not path.is_file():
+            raise FileNotFoundError(path)
+        return path
+
     def _write_asset_index(self) -> None:
+        manifest = _read_json(self.directory / "mod.json")
         files = {}
-        for path in sorted(self.directory.rglob("*")):
-            if not path.is_file() or path.name in {
-                "asset-index.json",
-                STATE_FILE,
-            }:
-                continue
+        for path in self._declared_payload_paths(manifest):
             relative = path.relative_to(self.directory).as_posix()
-            if relative == "mod.json":
-                continue
             files[relative] = {
                 "sha256": sha256_file(path),
                 "bytes": path.stat().st_size,
@@ -913,9 +1026,12 @@ class StudioWorkspace:
             compression=zipfile.ZIP_DEFLATED,
             compresslevel=9,
         ) as archive:
-            for path in sorted(self.directory.rglob("*")):
-                if not path.is_file() or path.name == STATE_FILE:
-                    continue
+            manifest = _read_json(self.directory / "mod.json")
+            paths = self._declared_payload_paths(manifest)
+            paths.extend(
+                [self.directory / "mod.json", self.directory / "asset-index.json"]
+            )
+            for path in sorted(set(paths)):
                 archive.write(path, path.relative_to(self.directory).as_posix())
         return destination
 
@@ -925,19 +1041,7 @@ class StudioWorkspace:
         if errors:
             raise ValueError("Pack validation failed: " + "; ".join(errors))
         target = self.state["target"]
-        hero = next(
-            (
-                item
-                for item in catalog()["heroes"]
-                if item["id"] == target["hero"]
-            ),
-            None,
-        )
-        if not hero or not hero.get("runtime_supported"):
-            raise ValueError(
-                f"{target['hero']} is present in the catalog but has no "
-                "verified runtime adapter in this release."
-            )
+        adapter = _adapter_for_target(target)
         if game_dir is not None:
             game = explicit_install(game_dir)
         else:
@@ -945,10 +1049,29 @@ class StudioWorkspace:
             if not installs:
                 raise ValueError("No complete Steam installation was detected.")
             game = installs[0]
+        if not adapter.supports_build(game.build_id):
+            raise ValueError(
+                f"Adapter {adapter.adapter_id} is not verified for Steam "
+                f"build {game.build_id or 'unknown'}."
+            )
         previous = manager_root() / "install-manifest.json"
         if previous.is_file():
             uninstall()
-        return install(DEFAULT_RUNTIME, self.directory, game)
+        # Deploy the same exact payload surface as export_zip. Authoring inputs
+        # must never be copied into the managed mods directory.
+        manifest = _read_json(self.directory / "mod.json")
+        with tempfile.TemporaryDirectory() as temp:
+            staged = Path(temp) / "pack"
+            paths = self._declared_payload_paths(manifest)
+            paths.extend(
+                [self.directory / "mod.json", self.directory / "asset-index.json"]
+            )
+            for source in paths:
+                relative = source.relative_to(self.directory)
+                destination = staged / relative
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(source, destination)
+            return install(DEFAULT_RUNTIME, staged, game)
 
     def undeploy(self) -> list[str]:
         return uninstall()

@@ -26,10 +26,22 @@ game path and Steam build are shown in the sidebar. If `steam.exe` is available,
 Start Game uses `steam.exe -applaunch 1617400`; otherwise it uses the registered
 `steam://rungameid/1617400` protocol.
 
-The current release has a verified runtime adapter for Mak's default skin.
-Vanessa, Pygmalien, Dooley, and Jules are visible in the catalog so their
-future adapters and packs use the same UI, but Deploy is disabled for them
-until their runtime routes have been audited.
+The manager reads exact `Skin_XXX_00/A` identifiers from the installed
+Addressables catalog and groups them by hero. Each skin is labelled as one of:
+
+- **Deployable**: a matching adapter and the current Steam build are verified;
+- **Detected, unmapped**: the skin is installed but has no audited adapter;
+- **Adapter update required**: an adapter exists, but not for this game build.
+
+Adapter JSON files are discovered from `manager/adapters/` and indexed by
+hero plus skin. The current release has a verified runtime adapter for Mak's
+default skin. Other detected skins remain visible, but export and Deploy stay
+disabled until their real bundle, Texture2D, size, and original hashes have
+been audited. Catalog presence alone never authorizes a write.
+
+For adapter slots backed by a verified Texture2D target, **Compare original**
+performs a read-only export from the installed bundle and shows the original
+and current replacement side by side.
 
 ## Complete package
 
@@ -160,9 +172,9 @@ dist/manager/TheBazaarModManager.exe
 Portable release:
 
 ```powershell
-.\package-manager-portable.ps1 -Version 0.9.5
+.\package-manager-portable.ps1 -Version 0.9.6
 ```
 
-This writes `dist/TheBazaarModManager-Portable-0.9.5.zip`, containing only the
+This writes `dist/TheBazaarModManager-Portable-0.9.6.zip`, containing only the
 standalone executable, hashes, and a quick-start guide. Skin packs are imported
 from separately distributed ZIP files.
