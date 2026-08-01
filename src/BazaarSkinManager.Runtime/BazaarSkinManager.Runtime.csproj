@@ -82,6 +82,7 @@
     <Compile Include="SkinPatches.cs" />
     <Compile Include="StandingOverlay.cs" />
     <Compile Include="UiReplacementScanner.cs" />
+    <Compile Include="VisualOwnership.cs" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 </Project>

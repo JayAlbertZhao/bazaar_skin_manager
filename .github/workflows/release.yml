@@ -9,7 +9,7 @@ on:
       version:
         description: "Version without v prefix"
         required: true
-        default: "0.9.61"
+        default: "0.9.62"
 
 permissions:
   contents: write

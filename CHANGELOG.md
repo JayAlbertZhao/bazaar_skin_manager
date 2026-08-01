@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.9.62
+
+- Restrict PvP transition art, board portraits, and late-loaded portrait
+  replacements to the local player; opponent visuals retain native assets.
+- Give the local board portrait a dedicated background layer sourced from the
+  replacement artwork instead of exposing Mak's native portrait background.
+- Normalize the external Kotone voice pack against the corresponding original
+  Mak routes and retain native audio as the fail-open fallback.
+- Display the manager version in both the window title and application header.
+- Keep the deferred hero-select badge authoring pipeline excluded.
+
 ## 0.9.61
 
 - Detect an existing per-user installation through the stable Inno Setup

@@ -10,6 +10,9 @@ namespace BazaarSkinManager.TheBazaar
 {
     internal static class RuntimeAudioReplacement
     {
+        private static readonly bool ForceLocalPvpResultVoiceForValidation =
+            false;
+
         private static AudioSource _source;
         private static object _voiceOwner;
         private static bool _voicePlayback;
@@ -357,13 +360,24 @@ namespace BazaarSkinManager.TheBazaar
             }
             else
             {
-                lock (PvpVoiceRandomLock)
+                // The validation switch can force the local-player branch
+                // without perturbing the game's RNG. Public builds keep the
+                // independent 50/50 System.Random choice below.
+                if (ForceLocalPvpResultVoiceForValidation)
                 {
-                    // Do not advance UnityEngine.Random: voice selection must
-                    // not perturb any game or presentation RNG sequence.
-                    _pvpResultVoiceSide = PvpVoiceRandom.Next(0, 2) == 0
-                        ? PvpResultVoiceSide.Opponent
-                        : PvpResultVoiceSide.Player;
+                    _pvpResultVoiceSide = PvpResultVoiceSide.Player;
+                }
+                else
+                {
+                    lock (PvpVoiceRandomLock)
+                    {
+                        // Do not advance UnityEngine.Random: voice selection
+                        // must not perturb game/presentation RNG sequences.
+                        _pvpResultVoiceSide =
+                            PvpVoiceRandom.Next(0, 2) == 0
+                                ? PvpResultVoiceSide.Opponent
+                                : PvpResultVoiceSide.Player;
+                    }
                 }
             }
             Plugin.Log.LogInfo(

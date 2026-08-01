@@ -47,16 +47,16 @@ class ReleaseSurfaceTests(unittest.TestCase):
         self.assertIn("gh release edit $tag", workflow)
         self.assertNotIn('"--generate-notes"', workflow)
 
-    def test_0_9_61_release_is_stable(self) -> None:
+    def test_0_9_62_release_is_stable(self) -> None:
         workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text(
             encoding="utf-8"
         )
-        self.assertIn('default: "0.9.61"', workflow)
+        self.assertIn('default: "0.9.62"', workflow)
         self.assertIn('if ($tag.EndsWith("-experimental"))', workflow)
-        self.assertNotIn("v0.9.61-experimental", workflow)
-        self.assertNotIn("0.9.61 (experimental)", workflow)
+        self.assertNotIn("v0.9.62-experimental", workflow)
+        self.assertNotIn("0.9.62 (experimental)", workflow)
 
-    def test_0_9_61_excludes_badge_authoring_pipeline(self) -> None:
+    def test_0_9_62_excludes_badge_authoring_pipeline(self) -> None:
         self.assertFalse((ROOT / "tools" / "badge_compositor.py").exists())
         studio = (ROOT / "tools" / "mod_studio_core.py").read_text(
             encoding="utf-8"
@@ -108,7 +108,10 @@ class ReleaseSurfaceTests(unittest.TestCase):
         ui = (ROOT / "tools" / "bazaar_skin_manager_ui.py").read_text(
             encoding="utf-8"
         )
-        self.assertIn('self.root.title("The Bazaar 皮肤管理器")', ui)
+        self.assertIn(
+            'self.root.title(f"The Bazaar 皮肤管理器 v{MANAGER_VERSION}")',
+            ui,
+        )
         self.assertIn('text="清空已加载皮肤"', ui)
         self.assertIn("def _clear_loaded_skin(self)", ui)
         self.assertIn("--self-test-release-runtime", ui)

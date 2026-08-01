@@ -404,6 +404,18 @@ namespace BazaarSkinManager.TheBazaar
                 return;
             }
 
+            if (loader == "GenerateEncounterData" &&
+                !VisualOwnership.IsLocalHeroPortraitLoad())
+            {
+                RuntimeSkinAudit.RecordLoader(
+                    loader,
+                    "wrong owner",
+                    "Encounter data belongs to a non-player portrait; native " +
+                        "portrait and background references were retained.",
+                    null);
+                return;
+            }
+
             if (__result == null)
             {
                 string status = loader == "LoadGameplayAssetAsync"
@@ -896,13 +908,14 @@ namespace BazaarSkinManager.TheBazaar
                 Plugin.ActivePack.UsesPreloadedDeployment(
                     "portrait_gameplay");
             bool preloadedBackground =
-                Plugin.ActivePack.UsesPreloadedDeployment("store_image");
+                Plugin.ActivePack.UsesPreloadedDeployment(
+                    "portrait_background");
             Sprite portrait = preloadedPortrait
                 ? null
                 : Plugin.ActivePack.Sprite("portrait_gameplay");
             Texture2D background = preloadedBackground
                 ? null
-                : Plugin.ActivePack.Texture("store_image");
+                : Plugin.ActivePack.Texture("portrait_background");
             if (portraitField == null || backgroundField == null ||
                 (!preloadedPortrait && portrait == null) ||
                 (!preloadedBackground && background == null))
@@ -942,7 +955,7 @@ namespace BazaarSkinManager.TheBazaar
             {
                 backgroundField.SetValue(result, background);
                 RuntimeDiagnostics.ReportReplacement(
-                    "store_image",
+                    "portrait_background",
                     "GenerateEncounterData -> backgroundTextureReference");
             }
             status = "applied";

@@ -2,12 +2,12 @@
 
 ## What GitHub publishes
 
-A version tag such as `v0.9.61` produces:
+A version tag such as `v0.9.62` produces:
 
 - GitHub's automatic source ZIP and source tarball for the tag;
-- `TheBazaarModManager-Setup-0.9.61.exe`;
+- `TheBazaarModManager-Setup-0.9.62.exe`;
 - the installer's SHA-256 file;
-- `TheBazaarModManager-Portable-0.9.61.zip`.
+- `TheBazaarModManager-Portable-0.9.62.zip`.
 
 The public workflow does not package a skin's art or audio. Complete asset
 packs remain ordinary ZIP inputs to the manager and can be distributed through
@@ -25,8 +25,8 @@ any separate channel.
 5. Commit the source, create an immutable semantic tag, and push it:
 
    ```powershell
-   git tag v0.9.61
-   git push origin main v0.9.61
+   git tag v0.9.62
+   git push origin main v0.9.62
    ```
 
 6. The release workflow builds on `windows-latest`, uploads its workflow

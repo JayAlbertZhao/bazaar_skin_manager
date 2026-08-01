@@ -39,6 +39,9 @@ COMPATIBILITY = (
 RUNTIME_ASSETS = (
     ROOT / "src" / "BazaarSkinManager.Runtime" / "RuntimeAssets.cs"
 ).read_text(encoding="utf-8")
+VISUAL_OWNERSHIP = (
+    ROOT / "src" / "BazaarSkinManager.Runtime" / "VisualOwnership.cs"
+).read_text(encoding="utf-8")
 ADAPTER = json.loads(
     (
         ROOT / "manager" / "adapters" / "mak-default.json"
@@ -173,7 +176,7 @@ class RuntimeStructureTests(unittest.TestCase):
             STANDING_STATE,
         )
 
-    def test_runtime_version_is_0_9_61(self) -> None:
+    def test_runtime_version_is_0_9_62(self) -> None:
         plugin = (
             ROOT / "src" / "BazaarSkinManager.Runtime" / "Plugin.cs"
         ).read_text(encoding="utf-8")
@@ -181,8 +184,8 @@ class RuntimeStructureTests(unittest.TestCase):
             ROOT / "src" / "BazaarSkinManager.Runtime" / "AssemblyInfo.cs"
         ).read_text(encoding="utf-8")
 
-        self.assertIn('PluginVersion = "0.9.61"', plugin)
-        self.assertIn('AssemblyVersion("0.9.61.0")', assembly)
+        self.assertIn('PluginVersion = "0.9.62"', plugin)
+        self.assertIn('AssemblyVersion("0.9.62.0")', assembly)
 
     def test_audio_replacement_is_exact_predecoded_and_fail_open(self) -> None:
         root = ROOT / "src" / "BazaarSkinManager.Runtime"
@@ -208,6 +211,10 @@ class RuntimeStructureTests(unittest.TestCase):
         self.assertIn('IsCurrentRunState("PVPCombat")', replacement)
         self.assertIn("IsTargetHeroSelected()", replacement)
         self.assertIn("PvpVoiceRandom.Next(0, 2)", replacement)
+        self.assertIn(
+            "ForceLocalPvpResultVoiceForValidation =\n            false;",
+            replacement,
+        )
         self.assertIn("Do not advance UnityEngine.Random", replacement)
         self.assertIn(
             "PvpResultVoiceSide.Opponent",
@@ -322,6 +329,38 @@ class RuntimeStructureTests(unittest.TestCase):
         self.assertIn("ExactMode = \"exact\"", matcher)
         self.assertIn("return string.Equals(", matcher)
         self.assertIn("AssetNameMatcher.Matches(", runtime_assets)
+
+    def test_in_match_visuals_are_guarded_by_local_ownership(self) -> None:
+        self.assertIn("VisualOwnership.IsOpponentHierarchy(image)", SCANNER)
+        self.assertIn("VisualOwnership.IsOpponentHierarchy(renderer)", SCANNER)
+        self.assertIn(
+            "VisualOwnership.ShouldReplaceSkinEditDisplay(",
+            PATCHES,
+        )
+        self.assertIn('"PvpScreen"', VISUAL_OWNERSHIP)
+        self.assertIn('"_selectedHero"', VISUAL_OWNERSHIP)
+        self.assertIn('"_isHero"', VISUAL_OWNERSHIP)
+        self.assertIn(
+            "!VisualOwnership.IsLocalHeroPortraitLoad()",
+            LOADER_COVERAGE,
+        )
+
+    def test_encounter_background_is_a_dedicated_direct_only_slot(self) -> None:
+        background = next(
+            replacement
+            for replacement in ADAPTER["visual_replacements"]
+            if replacement["slot"] == "portrait_background"
+        )
+        self.assertTrue(background["direct_only"])
+        self.assertEqual(background["match_names"], [])
+        self.assertIn(
+            'Plugin.ActivePack.Texture("portrait_background")',
+            LOADER_COVERAGE,
+        )
+        self.assertIn(
+            '"GenerateEncounterData -> backgroundTextureReference"',
+            LOADER_COVERAGE,
+        )
 
     def test_runtime_compatibility_gate_precedes_every_activation_hook(
         self,

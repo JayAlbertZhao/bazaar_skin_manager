@@ -30,6 +30,7 @@ namespace BazaarSkinManager.TheBazaar
             foreach (Image image in Resources.FindObjectsOfTypeAll<Image>())
             {
                 if (image == null || image.sprite == null ||
+                    VisualOwnership.IsOpponentHierarchy(image) ||
                     image.sprite.name.StartsWith("BazaarSkinManager/"))
                 {
                     continue;
@@ -71,6 +72,7 @@ namespace BazaarSkinManager.TheBazaar
             foreach (RawImage image in Resources.FindObjectsOfTypeAll<RawImage>())
             {
                 if (image == null || image.texture == null ||
+                    VisualOwnership.IsOpponentHierarchy(image) ||
                     image.texture.name.StartsWith("BazaarSkinManager/"))
                 {
                     continue;
@@ -107,6 +109,7 @@ namespace BazaarSkinManager.TheBazaar
             foreach (SpriteRenderer renderer in Resources.FindObjectsOfTypeAll<SpriteRenderer>())
             {
                 if (renderer == null || renderer.sprite == null ||
+                    VisualOwnership.IsOpponentHierarchy(renderer) ||
                     renderer.sprite.name.StartsWith("BazaarSkinManager/"))
                 {
                     continue;

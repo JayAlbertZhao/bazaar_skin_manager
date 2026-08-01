@@ -49,7 +49,8 @@ namespace BazaarSkinManager.TheBazaar
 
         private static void Postfix(object __instance, ref bool __result)
         {
-            if (SkinPatchTargets.ShouldReplace(__instance))
+            if (SkinPatchTargets.ShouldReplace(__instance) &&
+                VisualOwnership.IsLocalHeroPortraitLoad())
             {
                 __result = false;
             }
@@ -77,7 +78,8 @@ namespace BazaarSkinManager.TheBazaar
 
         private static void Postfix(object __instance, ref Task<Sprite> __result)
         {
-            if (!SkinPatchTargets.ShouldReplace(__instance))
+            if (!SkinPatchTargets.ShouldReplace(__instance) ||
+                !VisualOwnership.IsLocalHeroPortraitLoad())
             {
                 return;
             }
@@ -334,6 +336,17 @@ namespace BazaarSkinManager.TheBazaar
                 return result;
             }
 
+            // LoadSkinEditSkinAsync has no player/opponent argument. For the
+            // PvP transition, wait until HeroSelectDisplay.AnimateMaterialsIn
+            // where the owning HeroViewTransition can be resolved exactly.
+            if (string.Equals(
+                    placementName,
+                    "PvpScreen",
+                    StringComparison.Ordinal))
+            {
+                return result;
+            }
+
             Transform requestedPlacement =
                 root.transform.Find(placementName);
             Renderer renderer = requestedPlacement == null
@@ -428,6 +441,12 @@ namespace BazaarSkinManager.TheBazaar
             }
 
             string placementName = placement.ToString();
+            if (!VisualOwnership.ShouldReplaceSkinEditDisplay(
+                    __instance,
+                    placementName))
+            {
+                return;
+            }
             Transform requestedPlacement =
                 root.transform.Find(placementName);
             Renderer renderer = requestedPlacement == null

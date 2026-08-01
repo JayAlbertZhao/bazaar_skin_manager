@@ -15,6 +15,8 @@ from tkinter import colorchooser, filedialog, messagebox, ttk
 
 from PIL import Image, ImageGrab, ImageTk
 
+from bazaar_skin_manager import MANAGER_VERSION
+
 from mod_studio_core import (
     PREVIEW_SIZE,
     PROJECT_ROOT,
@@ -63,7 +65,7 @@ ROUTE_CATEGORY_NAMES = {
 class ModManagerStudio:
     def __init__(self) -> None:
         self.root = RootClass()
-        self.root.title("The Bazaar 皮肤管理器")
+        self.root.title(f"The Bazaar 皮肤管理器 v{MANAGER_VERSION}")
         self.root.geometry("1440x900")
         self.root.minsize(1180, 720)
         self.root.configure(bg=COLORS["window"])
@@ -240,7 +242,7 @@ class ModManagerStudio:
         header.pack(fill="x", pady=(0, 14))
         ttk.Label(
             header,
-            text="The Bazaar 皮肤管理器",
+            text=f"The Bazaar 皮肤管理器 · v{MANAGER_VERSION}",
             style="Title.TLabel",
         ).pack(side="left")
         self.install_status = ttk.Label(

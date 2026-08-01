@@ -82,6 +82,12 @@
       "accept": [".png", ".jpg", ".jpeg", ".webp"]
     },
     {
+      "id": "portrait_background",
+      "name": "游戏内头像背景",
+      "description": "棋盘底端头像框内、人物图层后方使用的背景。",
+      "accept": [".png", ".jpg", ".jpeg", ".webp"]
+    },
+    {
       "id": "standing_overlay",
       "name": "角色立绘",
       "description": "菜单和转场使用的透明全身立绘。",
