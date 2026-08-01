@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "dooley-default",
-  "adapter_version": 1,
+  "adapter_version": 2,
   "supported_builds": [
     "24001960"
   ],
@@ -127,13 +127,53 @@
           "d6ed77d564f6918487e5a1863d79106e37ce93eede1fedf72875d0b64ed5a843"
         ]
       }
+    },
+    {
+      "slot": "hero_icon_small",
+      "pixels_per_unit": 100,
+      "match_mode": "exact",
+      "match_names": [
+        "Icon_FlatRough_DOO_TUI"
+      ],
+      "deployment": {
+        "mode": "preload_unity_texture2d",
+        "target": "TheBazaar_Data/StreamingAssets/aa/StandaloneWindows64/defaultlocalgroup_assets_assets_thebazaar_art_ui_icons_heros_rough_icon_flatrough_doo_tui.png.bundle",
+        "asset_name": "Icon_FlatRough_DOO_TUI",
+        "unity_version": "6000.3.11f1",
+        "target_size": [
+          256,
+          256
+        ],
+        "supported_original_sha256": [
+          "543d0fb67fda5d258d45fd4ab978b6104db614541ebe581472f29c61178ef1e8"
+        ]
+      }
     }
   ],
   "authoring_recipe": {
     "id": "deterministic-raster-v1",
-    "version": 1,
+    "version": 2,
     "inputs": {
       "character": {
+        "required": true,
+        "accepted_extensions": [
+          ".png",
+          ".jpg",
+          ".jpeg",
+          ".webp"
+        ]
+      },
+      "background": {
+        "required": true,
+        "accepted_extensions": [
+          ".png",
+          ".jpg",
+          ".jpeg",
+          ".webp",
+          ".bmp"
+        ]
+      },
+      "small_icon": {
         "required": true,
         "accepted_extensions": [
           ".png",
@@ -153,6 +193,20 @@
     },
     "outputs": {
       "portrait_gameplay": {
+        "depends_on": [
+          "background",
+          "character"
+        ],
+        "layers": [
+          {
+            "input": "background",
+            "fit": "cover"
+          },
+          {
+            "input": "character",
+            "fit": "alpha_contain"
+          }
+        ],
         "size": [
           1024,
           1024
@@ -168,11 +222,25 @@
           0.5,
           1.0
         ],
-        "minimum_alpha_coverage": 0.12,
-        "maximum_alpha_coverage": 0.72,
-        "minimum_transparent_border": 0.8
+        "minimum_alpha_coverage": 0.99,
+        "maximum_alpha_coverage": 1.0,
+        "minimum_transparent_border": 0.0
       },
       "store_image": {
+        "depends_on": [
+          "background",
+          "character"
+        ],
+        "layers": [
+          {
+            "input": "background",
+            "fit": "cover"
+          },
+          {
+            "input": "character",
+            "fit": "alpha_contain"
+          }
+        ],
         "size": [
           2048,
           2048
@@ -188,17 +256,39 @@
           0.5,
           1.0
         ],
-        "minimum_alpha_coverage": 0.1,
-        "maximum_alpha_coverage": 0.65,
-        "minimum_transparent_border": 0.8
+        "minimum_alpha_coverage": 0.99,
+        "maximum_alpha_coverage": 1.0,
+        "minimum_transparent_border": 0.0
       },
       "marketplace_list": {
-        "alias_of": "store_image"
+        "alias_of": "store_image",
+        "depends_on": [
+          "background",
+          "character"
+        ]
       },
       "marketplace_details": {
-        "alias_of": "store_image"
+        "alias_of": "store_image",
+        "depends_on": [
+          "background",
+          "character"
+        ]
       },
       "collection_list": {
+        "depends_on": [
+          "background",
+          "character"
+        ],
+        "layers": [
+          {
+            "input": "background",
+            "fit": "cover"
+          },
+          {
+            "input": "character",
+            "fit": "alpha_contain"
+          }
+        ],
         "size": [
           512,
           512
@@ -214,12 +304,45 @@
           0.5,
           1.0
         ],
-        "minimum_alpha_coverage": 0.18,
-        "maximum_alpha_coverage": 0.78,
-        "minimum_transparent_border": 0.65
+        "minimum_alpha_coverage": 0.99,
+        "maximum_alpha_coverage": 1.0,
+        "minimum_transparent_border": 0.0
       },
       "daily_weekly": {
-        "alias_of": "collection_list"
+        "alias_of": "collection_list",
+        "depends_on": [
+          "background",
+          "character"
+        ]
+      },
+      "hero_icon_small": {
+        "depends_on": [
+          "small_icon"
+        ],
+        "layers": [
+          {
+            "input": "small_icon",
+            "fit": "alpha_contain"
+          }
+        ],
+        "size": [
+          256,
+          256
+        ],
+        "fit": "alpha_contain",
+        "target_alpha_bounds": [
+          12,
+          12,
+          244,
+          244
+        ],
+        "anchor": [
+          0.5,
+          0.5
+        ],
+        "minimum_alpha_coverage": 0.2,
+        "maximum_alpha_coverage": 0.82,
+        "minimum_transparent_border": 0.65
       }
     }
   }

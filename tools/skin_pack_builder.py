@@ -156,6 +156,89 @@ def fit_alpha_contain(
     return canvas
 
 
+def fit_cover(source: Image.Image, *, size: tuple[int, int]) -> Image.Image:
+    """Resize and center-crop an image to cover a canvas deterministically."""
+    source = source.convert("RGBA")
+    scale = max(size[0] / source.width, size[1] / source.height)
+    resized = source.resize(
+        (
+            max(1, int(round(source.width * scale))),
+            max(1, int(round(source.height * scale))),
+        ),
+        Image.Resampling.LANCZOS,
+    )
+    left = (resized.width - size[0]) // 2
+    top = (resized.height - size[1]) // 2
+    return resized.crop((left, top, left + size[0], top + size[1]))
+
+
+def derive_small_icon_binary(
+    foreground: Image.Image,
+    *,
+    normalized_region: tuple[float, float, float, float],
+    size: tuple[int, int] = (512, 512),
+    padding_fraction: float = 0.05,
+) -> Image.Image:
+    """Extract a configured region using only a thresholded alpha mask.
+
+    The normalized crop is an explicit geometric prior. Within that region,
+    the final crop is the bounding box of the binary alpha mask; no model or
+    semantic segmentation is involved.
+    """
+    image = foreground.convert("RGBA")
+    left, top, right, bottom = normalized_region
+    if not (0 <= left < right <= 1 and 0 <= top < bottom <= 1):
+        raise ValueError(f"Invalid normalized icon region: {normalized_region}")
+    crop_box = (
+        int(round(left * image.width)),
+        int(round(top * image.height)),
+        int(round(right * image.width)),
+        int(round(bottom * image.height)),
+    )
+    region = image.crop(crop_box)
+    bounds = alpha_bounds(region)
+    if bounds is None:
+        raise ValueError("Configured small-icon region has no visible pixels.")
+    width = bounds[2] - bounds[0]
+    height = bounds[3] - bounds[1]
+    padding = int(round(max(width, height) * padding_fraction))
+    padded = (
+        max(0, bounds[0] - padding),
+        max(0, bounds[1] - padding),
+        min(region.width, bounds[2] + padding),
+        min(region.height, bounds[3] + padding),
+    )
+    return fit_alpha_contain(
+        region.crop(padded),
+        size=size,
+        target_bounds=(0, 0, size[0], size[1]),
+        anchor=(0.5, 0.5),
+    )
+
+
+def derive_small_icon_file(
+    character: Path,
+    destination: Path,
+    *,
+    normalized_region: tuple[float, float, float, float],
+    tolerance: int = 34,
+    feather: int = 90,
+) -> Path:
+    """Create the third pipeline input from a character image without AIGC."""
+    with Image.open(character) as loaded:
+        foreground = remove_edge_connected_background(
+            loaded.convert("RGBA"),
+            tolerance=tolerance,
+            feather=feather,
+        )
+    icon = derive_small_icon_binary(
+        foreground,
+        normalized_region=normalized_region,
+    )
+    _save_png(icon, destination)
+    return destination.resolve()
+
+
 def image_metrics(image: Image.Image) -> dict:
     rgba = image.convert("RGBA")
     alpha = rgba.getchannel("A")
@@ -200,11 +283,14 @@ def generate_pack(
     *,
     adapter_id: str,
     character: Path,
+    background: Path,
+    small_icon: Path,
     workspace_root: Path,
     output_zip: Path,
     pack_id: str,
     name: str,
     version: str,
+    input_metadata: dict | None = None,
     adapter_directory: Path = DEFAULT_ADAPTER_DIRECTORY,
 ) -> dict:
     registry = AdapterRegistry.load(adapter_directory)
@@ -212,26 +298,44 @@ def generate_pack(
     if adapter is None:
         raise ValueError(f"Unknown adapter: {adapter_id}")
     recipe = adapter.payload.get("authoring_recipe") or {}
-    if recipe.get("id") != GENERATOR_ID or int(recipe.get("version") or 0) != 1:
+    if recipe.get("id") != GENERATOR_ID or int(recipe.get("version") or 0) != 2:
         raise ValueError(f"Adapter {adapter_id} has no supported deterministic recipe.")
 
-    character = character.resolve()
-    if not character.is_file():
-        raise FileNotFoundError(character)
-    accepted = {
-        str(value).casefold()
-        for value in ((recipe.get("inputs") or {}).get("character") or {}).get("accepted_extensions", [])
+    input_paths = {
+        "character": character.resolve(),
+        "background": background.resolve(),
+        "small_icon": small_icon.resolve(),
     }
-    if accepted and character.suffix.casefold() not in accepted:
-        raise ValueError(f"Unsupported character image type: {character.suffix}")
-    with Image.open(character) as loaded:
-        original = loaded.convert("RGBA")
+    loaded_inputs: dict[str, Image.Image] = {}
+    for input_name, input_path in input_paths.items():
+        if not input_path.is_file():
+            raise FileNotFoundError(input_path)
+        accepted = {
+            str(value).casefold()
+            for value in ((recipe.get("inputs") or {}).get(input_name) or {}).get(
+                "accepted_extensions", []
+            )
+        }
+        if accepted and input_path.suffix.casefold() not in accepted:
+            raise ValueError(
+                f"Unsupported {input_name} image type: {input_path.suffix}"
+            )
+        with Image.open(input_path) as loaded:
+            loaded_inputs[input_name] = loaded.convert("RGBA")
+
+    input_metadata = dict(input_metadata or {})
+    for input_name in input_paths:
+        metadata = dict(input_metadata.get(input_name) or {})
+        if metadata.get("aigc") is True:
+            raise ValueError(f"AIGC input is forbidden by this authoring recipe: {input_name}")
+        metadata["aigc"] = False
+        input_metadata[input_name] = metadata
 
     removal = (recipe.get("foreground") or {}).get("remove_background") or {}
     if removal.get("method") != "edge_connected":
         raise ValueError("Only edge_connected background removal is supported.")
     foreground = remove_edge_connected_background(
-        original,
+        loaded_inputs["character"],
         tolerance=int(removal.get("tolerance", 34)),
         feather=int(removal.get("feather", 30)),
     )
@@ -247,14 +351,18 @@ def generate_pack(
         skin_name_contains=adapter.skin_name_contains,
     )
     workspace.state["visual_slots"] = {}
-    archived_input = (
-        workspace.directory
-        / "authoring"
-        / "inputs"
-        / f"character{character.suffix.casefold()}"
-    )
-    archived_input.parent.mkdir(parents=True, exist_ok=True)
-    archived_input.write_bytes(character.read_bytes())
+    archived_inputs: dict[str, Path] = {}
+    for input_name, input_path in input_paths.items():
+        archived_input = (
+            workspace.directory
+            / "authoring"
+            / "inputs"
+            / f"{input_name}{input_path.suffix.casefold()}"
+        )
+        archived_input.parent.mkdir(parents=True, exist_ok=True)
+        if archived_input.resolve() != input_path:
+            archived_input.write_bytes(input_path.read_bytes())
+        archived_inputs[input_name] = archived_input
     outputs: dict[str, Image.Image] = {}
     output_metadata: dict[str, dict] = {}
     output_recipes = recipe.get("outputs") or {}
@@ -263,17 +371,39 @@ def generate_pack(
         if alias:
             continue
         size = tuple(int(value) for value in output_recipe["size"])
-        fit = output_recipe.get("fit")
-        if fit != "alpha_contain":
-            raise ValueError(f"Unsupported fit mode for {slot}: {fit}")
-        rendered = fit_alpha_contain(
-            foreground,
-            size=size,
-            target_bounds=tuple(int(value) for value in output_recipe["target_alpha_bounds"]),
-            anchor=tuple(float(value) for value in output_recipe.get("anchor", [0.5, 1.0])),
-        )
+        layers = output_recipe.get("layers") or []
+        dependencies = list(output_recipe.get("depends_on") or [])
+        if not dependencies or {layer.get("input") for layer in layers} != set(dependencies):
+            raise ValueError(f"{slot} must declare exact input dependencies and layers.")
+        rendered = Image.new("RGBA", size, (0, 0, 0, 0))
+        for layer in layers:
+            input_name = layer["input"]
+            fit = layer.get("fit")
+            if input_name == "character":
+                layer_source = foreground
+            else:
+                layer_source = loaded_inputs[input_name]
+            if fit == "cover":
+                fitted = fit_cover(layer_source, size=size)
+            elif fit == "alpha_contain":
+                fitted = fit_alpha_contain(
+                    layer_source,
+                    size=size,
+                    target_bounds=tuple(
+                        int(value) for value in output_recipe["target_alpha_bounds"]
+                    ),
+                    anchor=tuple(
+                        float(value)
+                        for value in output_recipe.get("anchor", [0.5, 1.0])
+                    ),
+                )
+            else:
+                raise ValueError(f"Unsupported fit mode for {slot}: {fit}")
+            rendered.alpha_composite(fitted)
         metrics = image_metrics(rendered)
         _validate_metrics(slot, metrics, output_recipe)
+        metrics["depends_on"] = dependencies
+        metrics["layers"] = layers
         outputs[slot] = rendered
         output_metadata[slot] = metrics
 
@@ -283,7 +413,11 @@ def generate_pack(
             if alias not in outputs:
                 raise ValueError(f"Alias {slot} references missing output {alias}.")
             outputs[slot] = outputs[alias].copy()
-            output_metadata[slot] = dict(output_metadata[alias], alias_of=alias)
+            output_metadata[slot] = dict(
+                output_metadata[alias],
+                alias_of=alias,
+                depends_on=list(output_recipe.get("depends_on") or []),
+            )
 
     for slot, rendered in sorted(outputs.items()):
         destination = workspace.directory / "assets" / f"{slot}.png"
@@ -299,13 +433,21 @@ def generate_pack(
             "adapter_id": adapter.adapter_id,
             "adapter_version": adapter.adapter_version,
         },
+        "asset_policy": {
+            "aigc_allowed": False,
+            "declaration": "All three inputs are non-AIGC assets or deterministic derivatives.",
+        },
         "inputs": {
-            "character": {
-                "sha256": sha256_file(character),
-                "bytes": character.stat().st_size,
-                "image_size": list(original.size),
-                "workspace_file": archived_input.relative_to(workspace.directory).as_posix(),
+            input_name: {
+                "sha256": sha256_file(input_path),
+                "bytes": input_path.stat().st_size,
+                "image_size": list(loaded_inputs[input_name].size),
+                "workspace_file": archived_inputs[input_name]
+                .relative_to(workspace.directory)
+                .as_posix(),
+                **input_metadata[input_name],
             }
+            for input_name, input_path in input_paths.items()
         },
         "foreground": image_metrics(foreground),
         "outputs": output_metadata,
@@ -330,20 +472,45 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--adapter", required=True)
     parser.add_argument("--character", required=True, type=Path)
+    parser.add_argument("--background", required=True, type=Path)
+    icon_group = parser.add_mutually_exclusive_group(required=True)
+    icon_group.add_argument("--small-icon", type=Path)
+    icon_group.add_argument("--derive-small-icon-output", type=Path)
+    parser.add_argument(
+        "--small-icon-region",
+        nargs=4,
+        type=float,
+        metavar=("LEFT", "TOP", "RIGHT", "BOTTOM"),
+        default=(0.15, 0.12, 0.98, 0.59),
+    )
+    parser.add_argument("--input-metadata", type=Path)
     parser.add_argument("--workspace-root", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--pack-id", required=True)
     parser.add_argument("--name", required=True)
     parser.add_argument("--version", default="0.1.0")
     args = parser.parse_args()
+    small_icon = args.small_icon
+    if args.derive_small_icon_output:
+        small_icon = derive_small_icon_file(
+            args.character,
+            args.derive_small_icon_output,
+            normalized_region=tuple(args.small_icon_region),
+        )
+    input_metadata = None
+    if args.input_metadata:
+        input_metadata = json.loads(args.input_metadata.read_text(encoding="utf-8"))
     result = generate_pack(
         adapter_id=args.adapter,
         character=args.character,
+        background=args.background,
+        small_icon=small_icon,
         workspace_root=args.workspace_root,
         output_zip=args.output,
         pack_id=args.pack_id,
         name=args.name,
         version=args.version,
+        input_metadata=input_metadata,
     )
     print(json.dumps(result, ensure_ascii=False, indent=2))
     return 0

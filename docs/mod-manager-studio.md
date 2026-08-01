@@ -41,8 +41,8 @@ real bundle, Texture2D, size, and original hashes have been audited. Catalog
 presence alone never authorizes a write.
 
 Dooley's deterministic source-art recipe is documented in
-`docs/deterministic-skin-pack-builder.md`. It does not generate hero-select
-badges or small hero emblems.
+`docs/deterministic-skin-pack-builder.md`. It supports the independently
+replaceable small hero icon but does not generate hero-select badges.
 
 For adapter slots backed by a verified Texture2D target, **Compare original**
 performs a read-only export from the installed bundle and shows the original
