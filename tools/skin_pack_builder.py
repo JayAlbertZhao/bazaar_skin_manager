@@ -12,7 +12,7 @@ from collections import deque
 from pathlib import Path
 from statistics import median
 
-from PIL import Image
+from PIL import Image, ImageChops, ImageFilter
 
 from adapter_registry import AdapterRegistry, DEFAULT_ADAPTER_DIRECTORY
 from mod_studio_core import StudioWorkspace, sha256_file
@@ -178,13 +178,20 @@ def derive_small_icon_binary(
     normalized_region: tuple[float, float, float, float],
     size: tuple[int, int] = (512, 512),
     padding_fraction: float = 0.05,
+    ink_threshold: int = 60,
+    boundary_width: int = 4,
 ) -> Image.Image:
-    """Extract a configured region using only a thresholded alpha mask.
+    """Extract a configured region as a one-colour stencil icon.
 
     The normalized crop is an explicit geometric prior. Within that region,
-    the final crop is the bounding box of the binary alpha mask; no model or
-    semantic segmentation is involved.
+    the final crop is the bounding box of the binary alpha mask. Dark interior
+    ink becomes transparent linework while the outer silhouette remains solid
+    white; no model or semantic segmentation is involved.
     """
+    if not 0 <= ink_threshold <= 255:
+        raise ValueError("Icon ink threshold must be between 0 and 255.")
+    if boundary_width < 0:
+        raise ValueError("Icon boundary width must be non-negative.")
     image = foreground.convert("RGBA")
     left, top, right, bottom = normalized_region
     if not (0 <= left < right <= 1 and 0 <= top < bottom <= 1):
@@ -208,12 +215,28 @@ def derive_small_icon_binary(
         min(region.width, bounds[2] + padding),
         min(region.height, bounds[3] + padding),
     )
-    return fit_alpha_contain(
+    fitted = fit_alpha_contain(
         region.crop(padded),
         size=size,
         target_bounds=(0, 0, size[0], size[1]),
         anchor=(0.5, 0.5),
     )
+    binary_alpha = fitted.getchannel("A").point(
+        lambda value: 255 if value > ALPHA_THRESHOLD else 0
+    )
+    dark_ink = fitted.convert("L").point(
+        lambda value: 255 if value < ink_threshold else 0
+    )
+    if boundary_width:
+        kernel_size = boundary_width * 2 + 1
+        interior = binary_alpha.filter(ImageFilter.MinFilter(kernel_size))
+    else:
+        interior = binary_alpha
+    internal_cutouts = ImageChops.multiply(dark_ink, interior)
+    stencil_alpha = ImageChops.subtract(binary_alpha, internal_cutouts)
+    stencil = Image.new("RGBA", size, (255, 255, 255, 0))
+    stencil.putalpha(stencil_alpha)
+    return stencil
 
 
 def derive_small_icon_file(

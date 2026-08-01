@@ -65,6 +65,19 @@ class SkinPackBuilderTests(unittest.TestCase):
                 tolerance=20,
                 feather=60,
             )
+            with Image.open(icon) as loaded_icon:
+                rgba_icon = loaded_icon.convert("RGBA")
+                flattened = getattr(
+                    rgba_icon,
+                    "get_flattened_data",
+                    rgba_icon.getdata,
+                )
+                visible_rgb = {
+                    pixel[:3]
+                    for pixel in flattened()
+                    if pixel[3] > 8
+                }
+            self.assertEqual(visible_rgb, {(255, 255, 255)})
             metadata = {
                 "character": {"origin": "user_supplied", "aigc": False},
                 "background": {

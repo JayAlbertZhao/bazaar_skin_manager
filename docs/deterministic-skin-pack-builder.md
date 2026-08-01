@@ -6,8 +6,8 @@ service:
 
 - a character image;
 - a background image;
-- a small icon, which may itself be prepared by the included deterministic
-  binary-alpha crop.
+- a small, single-colour icon, which may itself be prepared by the included
+  deterministic binary-alpha crop and stencil conversion.
 
 The selected adapter owns every output size, alpha envelope, anchor, native
 Texture2D target, and supported original bundle hash.
@@ -40,8 +40,10 @@ processing rather than semantic segmentation.
 For a source image without a separate icon, `--derive-small-icon-output`
 applies the same matte removal, limits processing to a caller-supplied
 normalized rectangle, thresholds alpha to a binary mask, and crops to that
-mask's bounding box. This is an explicit geometric prior, not object
-recognition.
+mask's bounding box. Dark interior ink is converted to transparent linework
+while the boundary is preserved as a solid white silhouette, matching the
+game's monochrome icon language. This is an explicit geometric prior, not
+object recognition.
 
 ## Example
 
