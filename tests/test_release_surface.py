@@ -115,6 +115,8 @@ class ReleaseSurfaceTests(unittest.TestCase):
         self.assertIn('text="清空已加载皮肤"', ui)
         self.assertIn("def _clear_loaded_skin(self)", ui)
         self.assertIn("--self-test-release-runtime", ui)
+        self.assertIn("root = RootClass()", ui)
+        self.assertIn("root.update_idletasks()", ui)
         self.assertIn("--smoke-import", ui)
         self.assertIn("--smoke-deploy", ui)
 

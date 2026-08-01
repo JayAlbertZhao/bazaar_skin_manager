@@ -1594,14 +1594,24 @@ def main() -> int:
             return 2
         return 0
     if "--self-test-release-runtime" in sys.argv:
+        root = None
         try:
             from archspec.cpu import host
             import fmod_toolkit.fmod  # noqa: F401
 
             if not host().name:
                 return 5
+            # Exercise the frozen Tcl/Tk payload, not just the Python import.
+            # A mismatched tcl86t.dll and init.tcl otherwise survives packaging
+            # and only fails when the user opens the manager.
+            root = RootClass()
+            root.withdraw()
+            root.update_idletasks()
         except Exception:
             return 3
+        finally:
+            if root is not None:
+                root.destroy()
         return 0
     if "--smoke-import" in sys.argv:
         try:
