@@ -15,6 +15,7 @@ TOOLS = ROOT / "tools"
 sys.path.insert(0, str(TOOLS))
 
 from skin_pack_builder import (  # noqa: E402
+    derive_small_icon_binary,
     derive_small_icon_file,
     generate_pack,
     remove_edge_connected_background,
@@ -22,6 +23,25 @@ from skin_pack_builder import (  # noqa: E402
 
 
 class SkinPackBuilderTests(unittest.TestCase):
+    def test_small_icon_flattens_colour_blocks_and_inverts_dark_gaps(self) -> None:
+        source = Image.new("RGBA", (128, 128), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(source)
+        draw.rectangle((16, 16, 63, 111), fill=(190, 0, 45, 255))
+        draw.rectangle((65, 16, 112, 111), fill=(10, 190, 90, 255))
+        draw.rectangle((60, 20, 68, 107), fill=(8, 8, 8, 255))
+
+        output = derive_small_icon_binary(
+            source,
+            normalized_region=(0.0, 0.0, 1.0, 1.0),
+            size=(128, 128),
+            padding_fraction=0.0,
+            boundary_width=2,
+        )
+
+        self.assertEqual(output.getpixel((30, 64)), (255, 255, 255, 255))
+        self.assertEqual(output.getpixel((98, 64)), (255, 255, 255, 255))
+        self.assertEqual(output.getpixel((64, 64))[3], 0)
+
     def test_edge_connected_removal_preserves_enclosed_white(self) -> None:
         source = Image.new("RGB", (64, 64), "white")
         draw = ImageDraw.Draw(source)

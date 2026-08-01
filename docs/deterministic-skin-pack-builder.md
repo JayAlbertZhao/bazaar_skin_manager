@@ -40,10 +40,11 @@ processing rather than semantic segmentation.
 For a source image without a separate icon, `--derive-small-icon-output`
 applies the same matte removal, limits processing to a caller-supplied
 normalized rectangle, thresholds alpha to a binary mask, and crops to that
-mask's bounding box. Dark interior ink is converted to transparent linework
-while the boundary is preserved as a solid white silhouette, matching the
-game's monochrome icon language. This is an explicit geometric prior, not
-object recognition.
+mask's bounding box. It then performs two deterministic style passes: median
+denoising plus no-dither palette quantization creates flat colour blocks;
+every colour block is mapped to white while the near-black boundaries between
+blocks are mapped to transparency. The protected outer boundary remains white.
+This is an explicit geometric prior, not object recognition.
 
 ## Example
 

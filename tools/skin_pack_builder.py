@@ -178,20 +178,24 @@ def derive_small_icon_binary(
     normalized_region: tuple[float, float, float, float],
     size: tuple[int, int] = (512, 512),
     padding_fraction: float = 0.05,
-    ink_threshold: int = 60,
+    gap_threshold: int = 70,
     boundary_width: int = 4,
+    palette_colors: int = 8,
 ) -> Image.Image:
     """Extract a configured region as a one-colour stencil icon.
 
     The normalized crop is an explicit geometric prior. Within that region,
-    the final crop is the bounding box of the binary alpha mask. Dark interior
-    ink becomes transparent linework while the outer silhouette remains solid
-    white; no model or semantic segmentation is involved.
+    the final crop is the bounding box of the binary alpha mask. The crop is
+    first quantized into flat colour blocks. Every non-dark block becomes
+    white and the near-black boundaries between blocks become transparent;
+    no model or semantic segmentation is involved.
     """
-    if not 0 <= ink_threshold <= 255:
-        raise ValueError("Icon ink threshold must be between 0 and 255.")
+    if not 0 <= gap_threshold <= 255:
+        raise ValueError("Icon gap threshold must be between 0 and 255.")
     if boundary_width < 0:
         raise ValueError("Icon boundary width must be non-negative.")
+    if not 2 <= palette_colors <= 256:
+        raise ValueError("Icon palette size must be between 2 and 256.")
     image = foreground.convert("RGBA")
     left, top, right, bottom = normalized_region
     if not (0 <= left < right <= 1 and 0 <= top < bottom <= 1):
@@ -224,16 +228,29 @@ def derive_small_icon_binary(
     binary_alpha = fitted.getchannel("A").point(
         lambda value: 255 if value > ALPHA_THRESHOLD else 0
     )
-    dark_ink = fitted.convert("L").point(
-        lambda value: 255 if value < ink_threshold else 0
+    block_colours = (
+        fitted.convert("RGB")
+        .filter(ImageFilter.MedianFilter(3))
+        .quantize(
+            colors=palette_colors,
+            method=Image.Quantize.MEDIANCUT,
+            dither=Image.Dither.NONE,
+        )
+        .convert("RGB")
+    )
+    red, green, blue = block_colours.split()
+    brightest_channel = ImageChops.lighter(ImageChops.lighter(red, green), blue)
+    gap_ink = brightest_channel.point(
+        lambda value: 255 if value < gap_threshold else 0
     )
     if boundary_width:
         kernel_size = boundary_width * 2 + 1
         interior = binary_alpha.filter(ImageFilter.MinFilter(kernel_size))
     else:
         interior = binary_alpha
-    internal_cutouts = ImageChops.multiply(dark_ink, interior)
+    internal_cutouts = ImageChops.multiply(gap_ink, interior)
     stencil_alpha = ImageChops.subtract(binary_alpha, internal_cutouts)
+    stencil_alpha = stencil_alpha.filter(ImageFilter.MedianFilter(5))
     stencil = Image.new("RGBA", size, (255, 255, 255, 0))
     stencil.putalpha(stencil_alpha)
     return stencil
