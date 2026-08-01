@@ -504,7 +504,7 @@ def main() -> int:
         nargs=4,
         type=float,
         metavar=("LEFT", "TOP", "RIGHT", "BOTTOM"),
-        default=(0.15, 0.12, 0.98, 0.59),
+        default=(0.20, 0.07, 0.94, 0.76),
     )
     parser.add_argument("--input-metadata", type=Path)
     parser.add_argument("--workspace-root", required=True, type=Path)

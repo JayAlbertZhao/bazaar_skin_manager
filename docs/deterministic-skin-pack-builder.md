@@ -53,7 +53,7 @@ object recognition.
   --character C:\path\to\character.jpg `
   --background C:\path\to\background.png `
   --derive-small-icon-output C:\path\to\small-icon.png `
-  --small-icon-region 0.15 0.12 0.98 0.59 `
+  --small-icon-region 0.20 0.07 0.94 0.76 `
   --input-metadata C:\path\to\input-metadata.json `
   --workspace-root .\packs `
   --output .\releases\private\dooley-example.zip `
