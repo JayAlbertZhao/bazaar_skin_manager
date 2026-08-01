@@ -20,6 +20,7 @@ from mod_studio_core import StudioWorkspace, sha256_file
 
 GENERATOR_ID = "deterministic-raster-v1"
 ALPHA_THRESHOLD = 8
+SMALL_ICON_PRESETS = ("outline", "block-gaps", "silhouette")
 
 
 def _distance(rgb: tuple[int, int, int], background: tuple[int, int, int]) -> float:
@@ -172,30 +173,147 @@ def fit_cover(source: Image.Image, *, size: tuple[int, int]) -> Image.Image:
     return resized.crop((left, top, left + size[0], top + size[1]))
 
 
+def _outline_stencil_alpha(
+    fitted: Image.Image,
+    binary_alpha: Image.Image,
+    *,
+    gap_threshold: int,
+    boundary_width: int,
+    palette_colors: int,
+) -> Image.Image:
+    block_colours = (
+        fitted.convert("RGB")
+        .filter(ImageFilter.MedianFilter(3))
+        .quantize(
+            colors=palette_colors,
+            method=Image.Quantize.MEDIANCUT,
+            dither=Image.Dither.NONE,
+        )
+        .convert("RGB")
+    )
+    red, green, blue = block_colours.split()
+    brightest_channel = ImageChops.lighter(ImageChops.lighter(red, green), blue)
+    gap_ink = brightest_channel.point(
+        lambda value: 255 if value < gap_threshold else 0
+    )
+    if boundary_width:
+        kernel_size = boundary_width * 2 + 1
+        interior = binary_alpha.filter(ImageFilter.MinFilter(kernel_size))
+    else:
+        interior = binary_alpha
+    internal_cutouts = ImageChops.multiply(gap_ink, interior)
+    return ImageChops.subtract(binary_alpha, internal_cutouts).filter(
+        ImageFilter.MedianFilter(5)
+    )
+
+
+def _block_gap_stencil_alpha(
+    fitted: Image.Image,
+    binary_alpha: Image.Image,
+    *,
+    palette_colors: int,
+    palette_merge_distance: int,
+    gap_width: int,
+) -> Image.Image:
+    opaque_rgb = Image.new("RGB", fitted.size, "white")
+    opaque_rgb.paste(fitted.convert("RGB"), mask=binary_alpha)
+    block_labels = opaque_rgb.filter(ImageFilter.MedianFilter(5)).quantize(
+        colors=palette_colors,
+        method=Image.Quantize.MEDIANCUT,
+        dither=Image.Dither.NONE,
+    )
+    palette = block_labels.getpalette() or []
+    used_indices = sorted(
+        index
+        for _count, index in (block_labels.getcolors(maxcolors=256) or [])
+    )
+    colours = {
+        index: tuple(palette[index * 3 : index * 3 + 3])
+        for index in used_indices
+    }
+    parent = {index: index for index in used_indices}
+
+    def find_group(index: int) -> int:
+        while parent[index] != index:
+            parent[index] = parent[parent[index]]
+            index = parent[index]
+        return index
+
+    for position, first in enumerate(used_indices):
+        for second in used_indices[position + 1 :]:
+            distance = math.sqrt(
+                sum(
+                    (colours[first][channel] - colours[second][channel]) ** 2
+                    for channel in range(3)
+                )
+            )
+            if distance > palette_merge_distance:
+                continue
+            first_root = find_group(first)
+            second_root = find_group(second)
+            if first_root != second_root:
+                parent[second_root] = first_root
+
+    group_lookup = [
+        find_group(index) if index in parent else -1
+        for index in range(256)
+    ]
+    kernel_size = gap_width * 2 + 1
+    block_interiors = Image.new("L", fitted.size, 0)
+    for group in sorted({find_group(index) for index in used_indices}):
+        group_mask = block_labels.point(
+            [255 if group_lookup[value] == group else 0 for value in range(256)],
+            mode="L",
+        )
+        group_mask = ImageChops.multiply(group_mask, binary_alpha)
+        block_interiors = ImageChops.lighter(
+            block_interiors,
+            group_mask.filter(ImageFilter.MinFilter(kernel_size)),
+        )
+    outer_boundary = ImageChops.subtract(
+        binary_alpha,
+        binary_alpha.filter(ImageFilter.MinFilter(kernel_size)),
+    )
+    return ImageChops.lighter(block_interiors, outer_boundary).filter(
+        ImageFilter.MedianFilter(3)
+    )
+
+
 def derive_small_icon_binary(
     foreground: Image.Image,
     *,
     normalized_region: tuple[float, float, float, float],
     size: tuple[int, int] = (512, 512),
     padding_fraction: float = 0.05,
+    preset: str = "outline",
     gap_threshold: int = 70,
     boundary_width: int = 4,
     palette_colors: int = 8,
+    palette_merge_distance: int = 45,
+    block_gap_width: int = 4,
 ) -> Image.Image:
     """Extract a configured region as a one-colour stencil icon.
 
     The normalized crop is an explicit geometric prior. Within that region,
-    the final crop is the bounding box of the binary alpha mask. The crop is
-    first quantized into flat colour blocks. Every non-dark block becomes
-    white and the near-black boundaries between blocks become transparent;
-    no model or semantic segmentation is involved.
+    the final crop is the bounding box of the binary alpha mask. A selectable
+    deterministic preset converts it to a white-on-transparent game icon; no
+    model or semantic segmentation is involved.
     """
+    if preset not in SMALL_ICON_PRESETS:
+        raise ValueError(
+            f"Unsupported small-icon preset: {preset}. "
+            f"Expected one of {', '.join(SMALL_ICON_PRESETS)}."
+        )
     if not 0 <= gap_threshold <= 255:
         raise ValueError("Icon gap threshold must be between 0 and 255.")
     if boundary_width < 0:
         raise ValueError("Icon boundary width must be non-negative.")
     if not 2 <= palette_colors <= 256:
         raise ValueError("Icon palette size must be between 2 and 256.")
+    if palette_merge_distance < 0:
+        raise ValueError("Icon palette merge distance must be non-negative.")
+    if block_gap_width < 1:
+        raise ValueError("Icon block gap width must be positive.")
     image = foreground.convert("RGBA")
     left, top, right, bottom = normalized_region
     if not (0 <= left < right <= 1 and 0 <= top < bottom <= 1):
@@ -228,29 +346,24 @@ def derive_small_icon_binary(
     binary_alpha = fitted.getchannel("A").point(
         lambda value: 255 if value > ALPHA_THRESHOLD else 0
     )
-    block_colours = (
-        fitted.convert("RGB")
-        .filter(ImageFilter.MedianFilter(3))
-        .quantize(
-            colors=palette_colors,
-            method=Image.Quantize.MEDIANCUT,
-            dither=Image.Dither.NONE,
+    if preset == "outline":
+        stencil_alpha = _outline_stencil_alpha(
+            fitted,
+            binary_alpha,
+            gap_threshold=gap_threshold,
+            boundary_width=boundary_width,
+            palette_colors=palette_colors,
         )
-        .convert("RGB")
-    )
-    red, green, blue = block_colours.split()
-    brightest_channel = ImageChops.lighter(ImageChops.lighter(red, green), blue)
-    gap_ink = brightest_channel.point(
-        lambda value: 255 if value < gap_threshold else 0
-    )
-    if boundary_width:
-        kernel_size = boundary_width * 2 + 1
-        interior = binary_alpha.filter(ImageFilter.MinFilter(kernel_size))
+    elif preset == "block-gaps":
+        stencil_alpha = _block_gap_stencil_alpha(
+            fitted,
+            binary_alpha,
+            palette_colors=palette_colors,
+            palette_merge_distance=palette_merge_distance,
+            gap_width=block_gap_width,
+        )
     else:
-        interior = binary_alpha
-    internal_cutouts = ImageChops.multiply(gap_ink, interior)
-    stencil_alpha = ImageChops.subtract(binary_alpha, internal_cutouts)
-    stencil_alpha = stencil_alpha.filter(ImageFilter.MedianFilter(5))
+        stencil_alpha = binary_alpha.filter(ImageFilter.MedianFilter(5))
     stencil = Image.new("RGBA", size, (255, 255, 255, 0))
     stencil.putalpha(stencil_alpha)
     return stencil
@@ -261,6 +374,7 @@ def derive_small_icon_file(
     destination: Path,
     *,
     normalized_region: tuple[float, float, float, float],
+    preset: str = "outline",
     tolerance: int = 34,
     feather: int = 90,
 ) -> Path:
@@ -274,6 +388,7 @@ def derive_small_icon_file(
     icon = derive_small_icon_binary(
         foreground,
         normalized_region=normalized_region,
+        preset=preset,
     )
     _save_png(icon, destination)
     return destination.resolve()
@@ -523,6 +638,11 @@ def main() -> int:
         metavar=("LEFT", "TOP", "RIGHT", "BOTTOM"),
         default=(0.20, 0.07, 0.94, 0.76),
     )
+    parser.add_argument(
+        "--small-icon-preset",
+        choices=SMALL_ICON_PRESETS,
+        default="outline",
+    )
     parser.add_argument("--input-metadata", type=Path)
     parser.add_argument("--workspace-root", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
@@ -530,16 +650,21 @@ def main() -> int:
     parser.add_argument("--name", required=True)
     parser.add_argument("--version", default="0.1.0")
     args = parser.parse_args()
+    input_metadata = None
+    if args.input_metadata:
+        input_metadata = json.loads(args.input_metadata.read_text(encoding="utf-8"))
     small_icon = args.small_icon
     if args.derive_small_icon_output:
         small_icon = derive_small_icon_file(
             args.character,
             args.derive_small_icon_output,
             normalized_region=tuple(args.small_icon_region),
+            preset=args.small_icon_preset,
         )
-    input_metadata = None
-    if args.input_metadata:
-        input_metadata = json.loads(args.input_metadata.read_text(encoding="utf-8"))
+        input_metadata = dict(input_metadata or {})
+        small_icon_metadata = dict(input_metadata.get("small_icon") or {})
+        small_icon_metadata["preset"] = args.small_icon_preset
+        input_metadata["small_icon"] = small_icon_metadata
     result = generate_pack(
         adapter_id=args.adapter,
         character=args.character,

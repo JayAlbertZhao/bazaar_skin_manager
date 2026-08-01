@@ -23,7 +23,7 @@ from skin_pack_builder import (  # noqa: E402
 
 
 class SkinPackBuilderTests(unittest.TestCase):
-    def test_small_icon_flattens_colour_blocks_and_inverts_dark_gaps(self) -> None:
+    def test_outline_preset_inverts_dark_ink(self) -> None:
         source = Image.new("RGBA", (128, 128), (0, 0, 0, 0))
         draw = ImageDraw.Draw(source)
         draw.rectangle((16, 16, 63, 111), fill=(190, 0, 45, 255))
@@ -35,12 +35,53 @@ class SkinPackBuilderTests(unittest.TestCase):
             normalized_region=(0.0, 0.0, 1.0, 1.0),
             size=(128, 128),
             padding_fraction=0.0,
+            preset="outline",
             boundary_width=2,
         )
 
         self.assertEqual(output.getpixel((30, 64)), (255, 255, 255, 255))
         self.assertEqual(output.getpixel((98, 64)), (255, 255, 255, 255))
         self.assertEqual(output.getpixel((64, 64))[3], 0)
+
+    def test_block_gap_preset_insets_every_colour_block(self) -> None:
+        source = Image.new("RGBA", (128, 128), (190, 0, 45, 255))
+        draw = ImageDraw.Draw(source)
+        draw.rectangle((40, 0, 79, 127), fill=(8, 8, 8, 255))
+        draw.rectangle((80, 0, 127, 127), fill=(10, 190, 90, 255))
+
+        output = derive_small_icon_binary(
+            source,
+            normalized_region=(0.0, 0.0, 1.0, 1.0),
+            size=(128, 128),
+            padding_fraction=0.0,
+            preset="block-gaps",
+            block_gap_width=3,
+        )
+
+        self.assertEqual(output.getpixel((20, 64)), (255, 255, 255, 255))
+        self.assertEqual(output.getpixel((60, 64)), (255, 255, 255, 255))
+        self.assertEqual(output.getpixel((104, 64)), (255, 255, 255, 255))
+        self.assertEqual(output.getpixel((40, 64))[3], 0)
+        self.assertEqual(output.getpixel((80, 64))[3], 0)
+
+    def test_silhouette_preset_keeps_dark_regions_filled(self) -> None:
+        source = Image.new("RGBA", (64, 64), (8, 8, 8, 255))
+        output = derive_small_icon_binary(
+            source,
+            normalized_region=(0.0, 0.0, 1.0, 1.0),
+            size=(64, 64),
+            padding_fraction=0.0,
+            preset="silhouette",
+        )
+        self.assertEqual(output.getpixel((32, 32)), (255, 255, 255, 255))
+
+    def test_unknown_small_icon_preset_is_rejected(self) -> None:
+        with self.assertRaisesRegex(ValueError, "Unsupported small-icon preset"):
+            derive_small_icon_binary(
+                Image.new("RGBA", (32, 32), "white"),
+                normalized_region=(0.0, 0.0, 1.0, 1.0),
+                preset="unknown",
+            )
 
     def test_edge_connected_removal_preserves_enclosed_white(self) -> None:
         source = Image.new("RGB", (64, 64), "white")

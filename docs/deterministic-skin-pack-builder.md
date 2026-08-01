@@ -40,11 +40,18 @@ processing rather than semantic segmentation.
 For a source image without a separate icon, `--derive-small-icon-output`
 applies the same matte removal, limits processing to a caller-supplied
 normalized rectangle, thresholds alpha to a binary mask, and crops to that
-mask's bounding box. It then performs two deterministic style passes: median
-denoising plus no-dither palette quantization creates flat colour blocks;
-every colour block is mapped to white while the near-black boundaries between
-blocks are mapped to transparency. The protected outer boundary remains white.
-This is an explicit geometric prior, not object recognition.
+mask's bounding box. The selected `--small-icon-preset` then applies one of
+three deterministic conversions:
+
+- `outline` (default): flatten colours, map coloured regions to white, and map
+  near-black ink to transparent gaps. Best for cartoons with explicit ink;
+- `block-gaps`: flatten and merge palette regions, map every region to white,
+  and geometrically inset adjacent regions to create transparent gaps. It does
+  not assume any particular outline colour;
+- `silhouette`: map the complete alpha silhouette to solid white.
+
+All three preserve the outer silhouette and use explicit raster geometry
+rather than object recognition.
 
 ## Example
 
@@ -55,6 +62,7 @@ This is an explicit geometric prior, not object recognition.
   --background C:\path\to\background.png `
   --derive-small-icon-output C:\path\to\small-icon.png `
   --small-icon-region 0.20 0.07 0.94 0.76 `
+  --small-icon-preset outline `
   --input-metadata C:\path\to\input-metadata.json `
   --workspace-root .\packs `
   --output .\releases\private\dooley-example.zip `
