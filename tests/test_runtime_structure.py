@@ -173,7 +173,7 @@ class RuntimeStructureTests(unittest.TestCase):
             STANDING_STATE,
         )
 
-    def test_runtime_version_is_0_9_6(self) -> None:
+    def test_runtime_version_is_0_9_61(self) -> None:
         plugin = (
             ROOT / "src" / "BazaarSkinManager.Runtime" / "Plugin.cs"
         ).read_text(encoding="utf-8")
@@ -181,8 +181,8 @@ class RuntimeStructureTests(unittest.TestCase):
             ROOT / "src" / "BazaarSkinManager.Runtime" / "AssemblyInfo.cs"
         ).read_text(encoding="utf-8")
 
-        self.assertIn('PluginVersion = "0.9.6"', plugin)
-        self.assertIn('AssemblyVersion("0.9.6.0")', assembly)
+        self.assertIn('PluginVersion = "0.9.61"', plugin)
+        self.assertIn('AssemblyVersion("0.9.61.0")', assembly)
 
     def test_audio_replacement_is_exact_predecoded_and_fail_open(self) -> None:
         root = ROOT / "src" / "BazaarSkinManager.Runtime"

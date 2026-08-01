@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.9.61
+
+- Detect an existing per-user installation through the stable Inno Setup
+  application identity and upgrade it in place instead of creating a parallel
+  installation.
+- Preserve manager workspaces and deployed-mod state while replacing the
+  installed manager binary and release metadata.
+- Publish the matching version section from this changelog on every GitHub
+  Release; a missing section now fails the release job.
+- Keep the runtime behavior and asset scope of 0.9.6 unchanged. The deferred
+  hero-select badge authoring pipeline remains excluded.
+
 ## 0.9.6
 
 - Keep `PvpScreen`, `EndOfDayScreen`, and other exact SkinEdit placements

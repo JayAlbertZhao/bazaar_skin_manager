@@ -141,3 +141,36 @@ Local artifact SHA-256 values:
   `bcd2fb5da6161fe7b6b66c15fe1f8dfc2cfe5001cfcd446fb496f4b238b2ef75`;
 - portable ZIP:
   `2eb35ddac589e7815cf38fb19ab477cd5f1f4f7bcc1a6aae292c860683fb40d4`.
+
+## 0.9.61 in-place upgrade validation
+
+Version 0.9.61 keeps the stable installer `AppId` and explicitly enables the
+Inno Setup previous-directory and previous-group behavior. Setup reads the
+existing per-user uninstall record and reports that it will upgrade the
+installed version in place.
+
+The upgrade path was exercised from the published 0.9.6 installation:
+
+- the existing 0.9.6 installation was detected and replaced by 0.9.61;
+- the install directory remained
+  `%LOCALAPPDATA%\Programs\TheBazaarModManager`;
+- exactly one uninstall record remained under the stable application id;
+- all 144 existing manager/workspace files outside the application directory
+  retained timestamps predating the upgrade;
+- the installed executable matched the newly built 0.9.61 manager and passed
+  the embedded-runtime self-test;
+- the preserved 0.9.3 asset pack passed the frozen-manager import smoke;
+- all 76 unit tests passed;
+- the release workflow now requires and publishes the matching version section
+  from `CHANGELOG.md`.
+
+Local artifact SHA-256 values:
+
+- runtime DLL:
+  `3a306b392d8062c8666a4e36be7d7c03573c43b6fc061ddcac63cdb53dc26923`;
+- frozen manager:
+  `3e1867a041bd76697800a06b66030e771439087d7dc5d44dac1e7542820e9c3d`;
+- installer:
+  `d1bc557aa72242e2d64a0318e6805941893ec86efff64ed714a585e991b67b63`;
+- portable ZIP:
+  `c9f2caf006c7dce400c8204f3a1b17e9d119c62c6739aee063cf6bc3a933d63b`.

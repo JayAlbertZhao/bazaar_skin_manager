@@ -20,7 +20,7 @@ from typing import Iterable
 
 
 APP_ID = "1617400"
-MANAGER_VERSION = "0.9.6"
+MANAGER_VERSION = "0.9.61"
 PROJECT_ROOT = Path(
     getattr(sys, "_MEIPASS", Path(__file__).resolve().parents[1])
 )

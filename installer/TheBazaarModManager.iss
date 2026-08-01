@@ -1,5 +1,5 @@
 #ifndef MyAppVersion
-  #define MyAppVersion "0.9.6"
+  #define MyAppVersion "0.9.61"
 #endif
 #ifndef SourceRoot
   #define SourceRoot ".."
@@ -17,6 +17,9 @@ AppVersion={#MyAppVersion}
 AppPublisher={#MyAppPublisher}
 DefaultDirName={localappdata}\Programs\TheBazaarModManager
 DefaultGroupName={#MyAppName}
+UsePreviousAppDir=yes
+UsePreviousGroup=yes
+DisableDirPage=auto
 DisableProgramGroupPage=yes
 PrivilegesRequired=lowest
 ArchitecturesAllowed=x64compatible
@@ -55,6 +58,29 @@ Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChang
 Filename: "{app}\{#MyAppExeName}"; Parameters: "--restore-before-uninstall"; StatusMsg: "Restoring manager-owned game files..."; Flags: runhidden waituntilterminated skipifdoesntexist; RunOnceId: "RestoreGameFiles"
 
 [Code]
+const
+  UninstallKey = 'Software\Microsoft\Windows\CurrentVersion\Uninstall\{8AE8DDF3-4E85-4722-9282-881D6567A02A}_is1';
+
+function InstalledVersion(var Version: String): Boolean;
+begin
+  Result := RegQueryStringValue(
+    HKCU64, UninstallKey, 'DisplayVersion', Version);
+  if not Result then
+    Result := RegQueryStringValue(
+      HKCU32, UninstallKey, 'DisplayVersion', Version);
+end;
+
+procedure InitializeWizard();
+var
+  PreviousVersion: String;
+begin
+  if InstalledVersion(PreviousVersion) then
+    WizardForm.WelcomeLabel2.Caption :=
+      'Version ' + PreviousVersion + ' is already installed.' + #13#10 + #13#10 +
+      'Setup will upgrade it in place to version {#MyAppVersion}. ' +
+      'Manager workspaces and deployed-mod state will be preserved.';
+end;
+
 function InitializeUninstall(): Boolean;
 begin
   if UninstallSilent then

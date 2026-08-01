@@ -37,16 +37,26 @@ class ReleaseSurfaceTests(unittest.TestCase):
         self.assertNotIn("packs/", workflow)
         self.assertIn("TheBazaarModManager-Setup-", workflow)
 
-    def test_0_9_6_release_is_stable(self) -> None:
+    def test_release_workflow_publishes_versioned_changelog_notes(self) -> None:
         workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text(
             encoding="utf-8"
         )
-        self.assertIn('default: "0.9.6"', workflow)
-        self.assertIn('if ($tag.EndsWith("-experimental"))', workflow)
-        self.assertNotIn("v0.9.6-experimental", workflow)
-        self.assertNotIn("0.9.6 (experimental)", workflow)
+        self.assertIn('Get-Content "CHANGELOG.md" -Raw', workflow)
+        self.assertIn('throw "CHANGELOG.md has no section for $version"', workflow)
+        self.assertIn('"--notes-file", $notesPath', workflow)
+        self.assertIn("gh release edit $tag", workflow)
+        self.assertNotIn('"--generate-notes"', workflow)
 
-    def test_0_9_6_excludes_badge_authoring_pipeline(self) -> None:
+    def test_0_9_61_release_is_stable(self) -> None:
+        workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn('default: "0.9.61"', workflow)
+        self.assertIn('if ($tag.EndsWith("-experimental"))', workflow)
+        self.assertNotIn("v0.9.61-experimental", workflow)
+        self.assertNotIn("0.9.61 (experimental)", workflow)
+
+    def test_0_9_61_excludes_badge_authoring_pipeline(self) -> None:
         self.assertFalse((ROOT / "tools" / "badge_compositor.py").exists())
         studio = (ROOT / "tools" / "mod_studio_core.py").read_text(
             encoding="utf-8"
@@ -68,6 +78,17 @@ class ReleaseSurfaceTests(unittest.TestCase):
         ).read_text(encoding="utf-8")
         self.assertIn("if UninstallSilent then", installer)
         self.assertIn("Result := True", installer)
+
+    def test_installer_detects_and_upgrades_previous_installation(self) -> None:
+        installer = (
+            ROOT / "installer" / "TheBazaarModManager.iss"
+        ).read_text(encoding="utf-8")
+        self.assertIn('AppId={#MyAppId}', installer)
+        self.assertIn('UsePreviousAppDir=yes', installer)
+        self.assertIn('UsePreviousGroup=yes', installer)
+        self.assertIn('function InstalledVersion(var Version: String)', installer)
+        self.assertIn("RegQueryStringValue(", installer)
+        self.assertIn("Setup will upgrade it in place", installer)
 
     def test_manager_build_bundles_and_checks_the_fmod_runtime(self) -> None:
         build = (ROOT / "build-manager.ps1").read_text(encoding="utf-8")
