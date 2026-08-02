@@ -59,7 +59,20 @@ jobs:
 
       - name: Build asset generator
         shell: pwsh
-        run: .\build-asset-generator.ps1 -Version "${{ steps.version.outputs.value }}"
+        run: |
+          try {
+            $output = .\build-asset-generator.ps1 -Version "${{ steps.version.outputs.value }}" 2>&1 | Out-String
+            $exitCode = $LASTEXITCODE
+          } catch {
+            $output = "$_`n$($_.ScriptStackTrace)"
+            $exitCode = 1
+          }
+          $output
+          if ($exitCode -ne 0) {
+            $annotation = $output.Replace('%', '%25').Replace("`r", '').Replace("`n", '%0A')
+            Write-Host "::error title=Asset generator build failed::$annotation"
+            exit $exitCode
+          }
 
       - name: Sign software executables
         if: env.SIGNING_CERT_BASE64 != ''
