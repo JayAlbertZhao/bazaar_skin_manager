@@ -172,6 +172,8 @@ class ReleaseSurfaceTests(unittest.TestCase):
         )
         self.assertIn("if source.is_dir():", ui)
         self.assertNotIn("内置徽章模板缺失", ui)
+        self.assertIn("$env:PYTHON", build)
+        self.assertIn("Get-Command python", build)
 
 
 if __name__ == "__main__":

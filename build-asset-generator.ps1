@@ -5,7 +5,18 @@ param(
 
 $ErrorActionPreference = "Stop"
 $root = [IO.Path]::GetFullPath((Split-Path -Parent $MyInvocation.MyCommand.Path))
-$python = Join-Path $root ".venv-manager\Scripts\python.exe"
+$bundledPython = Join-Path $root ".venv-manager\Scripts\python.exe"
+$python = if ($env:PYTHON) {
+    if (Test-Path -LiteralPath $env:PYTHON) {
+        $env:PYTHON
+    } else {
+        (Get-Command $env:PYTHON -ErrorAction Stop).Source
+    }
+} elseif (Test-Path -LiteralPath $bundledPython) {
+    $bundledPython
+} else {
+    (Get-Command python -ErrorAction Stop).Source
+}
 $entry = Join-Path $root "tools\asset_generator_ui.py"
 $output = if ($OutputDirectory) {
     [IO.Path]::GetFullPath($OutputDirectory)
