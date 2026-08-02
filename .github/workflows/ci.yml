@@ -32,9 +32,12 @@ jobs:
       - name: Validate generator manager capabilities
         if: always()
         run: python -m unittest discover -s tests -p test_asset_generator_core.py -k installed_manager -v
-      - name: Validate generator profiles
+      - name: Validate generator profile metadata
         if: always()
-        run: python -m unittest discover -s tests -p test_asset_generator_core.py -k profile_ -v
+        run: python -m unittest discover -s tests -p test_asset_generator_core.py -k profile_rejects -v
+      - name: Validate generator profile round trip
+        if: always()
+        run: python -m unittest discover -s tests -p test_asset_generator_core.py -k profile_round_trip -v
       - name: Validate generator rendering and pipeline
         if: always()
         run: python -m unittest discover -s tests -p test_asset_generator_core.py -k authoring_ -k character_ -k pipeline_ -k live_ -v
