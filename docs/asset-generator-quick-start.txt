@@ -13,3 +13,7 @@ The Bazaar Asset Generator 1.0.0
 
 The generator does not install a second runtime. Import and deployment reuse
 the verified Skin Manager adapter and reversible backup path.
+
+Public source and GitHub software archives do not bundle game artwork. Badge
+generation therefore needs a locally prepared template directory selected in
+Advanced Settings. Private/netdisk builds may include that local resource.

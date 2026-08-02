@@ -160,6 +160,19 @@ class ReleaseSurfaceTests(unittest.TestCase):
         self.assertIn("_scrollable_notebook_page", ui)
         self.assertIn("both authoring tabs must provide vertical scrolling", ui)
 
+    def test_public_generator_build_does_not_require_badge_game_art(self) -> None:
+        build = (ROOT / "build-asset-generator.ps1").read_text(encoding="utf-8")
+        ui = (ROOT / "tools" / "asset_generator_ui.py").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn('$badgeAssets = Join-Path $root "manager\\assets"', build)
+        self.assertIn(
+            "if (Test-Path -LiteralPath $badgeAssets -PathType Container)",
+            build,
+        )
+        self.assertIn("if source.is_dir():", ui)
+        self.assertNotIn("内置徽章模板缺失", ui)
+
 
 if __name__ == "__main__":
     unittest.main()

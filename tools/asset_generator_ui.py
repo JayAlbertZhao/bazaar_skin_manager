@@ -760,9 +760,8 @@ class AssetGeneratorUI:
     def _ensure_local_badge_assets(self) -> Path:
         source = PROJECT_ROOT / "manager" / "assets"
         destination = USER_PROJECT_ROOT / "resources" / "manager-assets"
-        if not source.is_dir():
-            raise FileNotFoundError(f"生成器内置徽章模板缺失：{source}")
-        shutil.copytree(source, destination, dirs_exist_ok=True)
+        if source.is_dir():
+            shutil.copytree(source, destination, dirs_exist_ok=True)
         return destination
 
     def _populate_profile(self, profile: GeneratorProfile) -> None:

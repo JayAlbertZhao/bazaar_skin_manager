@@ -35,27 +35,35 @@ if (-not (Test-Path -LiteralPath $runtime) -or -not (Test-Path -LiteralPath $run
 }
 
 New-Item -ItemType Directory -Force -Path $output, $work, $spec | Out-Null
-& $python -m PyInstaller `
-    --noconfirm `
-    --clean `
-    --onefile `
-    --windowed `
-    --name "TheBazaarAssetGenerator" `
-    --distpath $output `
-    --workpath $work `
-    --specpath $spec `
-    --collect-all tkinterdnd2 `
-    --collect-all UnityPy `
-    --collect-all archspec `
-    --hidden-import unity_bundle_texture_patch `
-    --add-binary "$fmodDll;fmod_toolkit\libfmod\Windows\x64" `
-    --add-data "$root\manager\hero-catalog.json;manager" `
-    --add-data "$root\manager\adapters;manager\adapters" `
-    --add-data "$root\manager\assets;manager\assets" `
-    --add-data "$runtime;dist\runtime" `
-    --add-data "$runtimeMetadata;dist\runtime" `
-    --add-data "$root\tools\unity_bundle_texture_patch.py;tools" `
-    $entry
+$pyInstallerArguments = @(
+    "-m", "PyInstaller",
+    "--noconfirm",
+    "--clean",
+    "--onefile",
+    "--windowed",
+    "--name", "TheBazaarAssetGenerator",
+    "--distpath", $output,
+    "--workpath", $work,
+    "--specpath", $spec,
+    "--collect-all", "tkinterdnd2",
+    "--collect-all", "UnityPy",
+    "--collect-all", "archspec",
+    "--hidden-import", "unity_bundle_texture_patch",
+    "--add-binary", "$fmodDll;fmod_toolkit\libfmod\Windows\x64",
+    "--add-data", "$root\manager\hero-catalog.json;manager",
+    "--add-data", "$root\manager\adapters;manager\adapters",
+    "--add-data", "$runtime;dist\runtime",
+    "--add-data", "$runtimeMetadata;dist\runtime",
+    "--add-data", "$root\tools\unity_bundle_texture_patch.py;tools"
+)
+$badgeAssets = Join-Path $root "manager\assets"
+if (Test-Path -LiteralPath $badgeAssets -PathType Container) {
+    # Locally prepared badge templates may be bundled in private/netdisk
+    # builds. Public source and GitHub releases intentionally omit game art.
+    $pyInstallerArguments += @("--add-data", "$badgeAssets;manager\assets")
+}
+$pyInstallerArguments += $entry
+& $python @pyInstallerArguments
 if ($LASTEXITCODE -ne 0) {
     throw "Asset generator PyInstaller build failed with exit code $LASTEXITCODE"
 }
