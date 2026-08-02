@@ -11,6 +11,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 RUNTIME = ROOT / "dist" / "runtime" / "BazaarSkinManager.Runtime.dll"
+if not RUNTIME.is_file():
+    RUNTIME = ROOT / "manager" / "runtime" / "BazaarSkinManager.Runtime.dll"
 CSC = Path(r"C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe")
 
 
