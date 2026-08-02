@@ -13,47 +13,21 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v6
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
           cache: pip
           cache-dependency-path: manager/requirements-build.txt
       - run: python -m pip install -r manager/requirements-build.txt
-      - run: python -m py_compile tools/bazaar_skin_manager.py tools/mod_studio_core.py tools/bazaar_skin_manager_ui.py
+      - run: python -m compileall -q tools tests
       - shell: pwsh
         run: |
           New-Item -ItemType Directory -Force dist/runtime | Out-Null
           Copy-Item manager/runtime/BazaarSkinManager.Runtime.dll dist/runtime/BazaarSkinManager.Runtime.dll
       - name: Validate adapters
         run: python -m unittest discover -s tests -p test_adapter_registry.py -v
-      - name: Validate generator builds
-        if: always()
-        run: python -m unittest discover -s tests -p test_asset_generator_core.py -k generate_ -v
-      - name: Validate generator manager capabilities
-        if: always()
-        run: python -m unittest discover -s tests -p test_asset_generator_core.py -k installed_manager -v
-      - name: Validate generator profile metadata
-        if: always()
-        run: python -m unittest discover -s tests -p test_asset_generator_core.py -k profile_rejects -v
-      - name: Validate generator profile round trip
-        if: always()
-        shell: pwsh
-        run: |
-          $output = python -m unittest discover -s tests -p test_asset_generator_core.py -k profile_round_trip -v 2>&1 | Out-String
-          $exitCode = $LASTEXITCODE
-          $output
-          if ($exitCode -ne 0) {
-            $annotation = $output.Replace('%', '%25').Replace("`r", '').Replace("`n", '%0A')
-            Write-Host "::error title=Generator profile round-trip failed::$annotation"
-            "### Generator profile round-trip failure" | Add-Content $env:GITHUB_STEP_SUMMARY
-            '```text' | Add-Content $env:GITHUB_STEP_SUMMARY
-            $output | Add-Content $env:GITHUB_STEP_SUMMARY
-            '```' | Add-Content $env:GITHUB_STEP_SUMMARY
-            exit $exitCode
-          }
-      - name: Validate generator rendering and pipeline
-        if: always()
-        run: python -m unittest discover -s tests -p test_asset_generator_core.py -k authoring_ -k character_ -k pipeline_ -k live_ -v
+      - name: Validate generator
+        run: python -m unittest discover -s tests -p test_asset_generator_core.py -v
       - name: Validate audio and manager
         run: |
           python -m unittest discover -s tests -p test_audio_manifest_validator.py -v
