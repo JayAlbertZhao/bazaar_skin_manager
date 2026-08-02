@@ -43,6 +43,8 @@ jobs:
           $exitCode = $LASTEXITCODE
           $output
           if ($exitCode -ne 0) {
+            $annotation = $output.Replace('%', '%25').Replace("`r", '').Replace("`n", '%0A')
+            Write-Host "::error title=Generator profile round-trip failed::$annotation"
             "### Generator profile round-trip failure" | Add-Content $env:GITHUB_STEP_SUMMARY
             '```text' | Add-Content $env:GITHUB_STEP_SUMMARY
             $output | Add-Content $env:GITHUB_STEP_SUMMARY
