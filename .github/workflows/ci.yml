@@ -37,7 +37,18 @@ jobs:
         run: python -m unittest discover -s tests -p test_asset_generator_core.py -k profile_rejects -v
       - name: Validate generator profile round trip
         if: always()
-        run: python -m unittest discover -s tests -p test_asset_generator_core.py -k profile_round_trip -v
+        shell: pwsh
+        run: |
+          $output = python -m unittest discover -s tests -p test_asset_generator_core.py -k profile_round_trip -v 2>&1 | Out-String
+          $exitCode = $LASTEXITCODE
+          $output
+          if ($exitCode -ne 0) {
+            "### Generator profile round-trip failure" | Add-Content $env:GITHUB_STEP_SUMMARY
+            '```text' | Add-Content $env:GITHUB_STEP_SUMMARY
+            $output | Add-Content $env:GITHUB_STEP_SUMMARY
+            '```' | Add-Content $env:GITHUB_STEP_SUMMARY
+            exit $exitCode
+          }
       - name: Validate generator rendering and pipeline
         if: always()
         run: python -m unittest discover -s tests -p test_asset_generator_core.py -k authoring_ -k character_ -k pipeline_ -k live_ -v
