@@ -26,8 +26,18 @@ jobs:
           Copy-Item manager/runtime/BazaarSkinManager.Runtime.dll dist/runtime/BazaarSkinManager.Runtime.dll
       - name: Validate adapters
         run: python -m unittest discover -s tests -p test_adapter_registry.py -v
-      - name: Validate generator
-        run: python -m unittest discover -s tests -p test_asset_generator_core.py -v
+      - name: Validate generator builds
+        if: always()
+        run: python -m unittest discover -s tests -p test_asset_generator_core.py -k generate_ -v
+      - name: Validate generator manager capabilities
+        if: always()
+        run: python -m unittest discover -s tests -p test_asset_generator_core.py -k installed_manager -v
+      - name: Validate generator profiles
+        if: always()
+        run: python -m unittest discover -s tests -p test_asset_generator_core.py -k profile_ -v
+      - name: Validate generator rendering and pipeline
+        if: always()
+        run: python -m unittest discover -s tests -p test_asset_generator_core.py -k authoring_ -k character_ -k pipeline_ -k live_ -v
       - name: Validate audio and manager
         run: |
           python -m unittest discover -s tests -p test_audio_manifest_validator.py -v
