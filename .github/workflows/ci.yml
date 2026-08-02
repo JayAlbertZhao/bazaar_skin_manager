@@ -24,4 +24,20 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force dist/runtime | Out-Null
           Copy-Item manager/runtime/BazaarSkinManager.Runtime.dll dist/runtime/BazaarSkinManager.Runtime.dll
-      - run: python -m unittest discover -s tests -v
+      - name: Validate adapters and generator
+        run: |
+          python -m unittest discover -s tests -p test_adapter_registry.py -v
+          python -m unittest discover -s tests -p test_asset_generator_core.py -v
+      - name: Validate audio and manager
+        run: |
+          python -m unittest discover -s tests -p test_audio_manifest_validator.py -v
+          python -m unittest discover -s tests -p test_manager.py -v
+          python -m unittest discover -s tests -p test_mod_studio.py -v
+      - name: Validate release surface
+        run: python -m unittest discover -s tests -p test_release_surface.py -v
+      - name: Validate compiled runtime
+        run: python -m unittest discover -s tests -p test_runtime_behavior.py -v
+      - name: Validate runtime contracts
+        run: python -m unittest discover -s tests -p test_runtime_structure.py -v
+      - name: Validate asset builder
+        run: python -m unittest discover -s tests -p test_skin_pack_builder.py -v
