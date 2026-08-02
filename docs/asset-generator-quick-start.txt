@@ -3,6 +3,8 @@ The Bazaar Asset Generator 1.0.0
 1. Install The Bazaar Skin Manager 1.0.0 first.
 2. Extract this ZIP to a normal writable folder.
 3. Run TheBazaarAssetGenerator.exe.
+   New projects write their asset-pack ZIP beside this executable by default;
+   Advanced Settings can override the output path.
 4. Select the target hero and supply the available character, background,
    and small-icon inputs. Empty optional inputs remain empty.
 5. Adjust the shared character position or an individual output preview.

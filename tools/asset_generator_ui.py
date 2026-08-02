@@ -61,6 +61,14 @@ DEFAULT_PROFILE = (
 )
 USER_PROJECT_ROOT = manager_root() / "asset-generator" / "current"
 USER_PROFILE = USER_PROJECT_ROOT / "generator-profile.json"
+
+
+def default_output_directory() -> Path:
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).resolve().parent
+    return PROJECT_ROOT
+
+
 PREVIEW_SLOTS = (
     ("中央立绘", "standing_overlay"),
     ("徽章", "hero_select"),
@@ -740,7 +748,7 @@ class AssetGeneratorUI:
             input_metadata=metadata,
             badge_template_root=self._ensure_local_badge_assets(),
             workspace_root=USER_PROJECT_ROOT / "workspaces",
-            output_zip=USER_PROJECT_ROOT / "releases" / "Dooley-Custom-0.1.0.zip",
+            output_zip=default_output_directory() / "Dooley-Custom-0.1.0.zip",
             game_dir=None,
             small_icon_source=None,
         )

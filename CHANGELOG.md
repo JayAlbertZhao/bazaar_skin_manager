@@ -31,6 +31,8 @@
   layout validation in the frozen executable self-test.
 - Accept sparse monochrome icons produced by the included deterministic icon
   presets without weakening the transparent-border guard.
+- Default new Asset Generator projects to writing the generated pack beside
+  the Asset Generator executable.
 
 ## 0.9.63
 
