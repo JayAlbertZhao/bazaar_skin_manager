@@ -1,0 +1,67 @@
+{
+  "schema_version": 1,
+  "id": "pygmalien-default",
+  "adapter_version": 2,
+  "supported_builds": ["24001960"],
+  "target": {
+    "game": "the-bazaar",
+    "hero": "Pygmalien",
+    "skin": "Skin_PYG_01/A",
+    "skin_name_contains": "PYG_01a"
+  },
+  "visual_replacements": [
+    {"slot": "portrait_gameplay", "pixels_per_unit": 256, "match_mode": "exact", "match_names": ["Skin_PYG_01a_Portrait"]},
+    {"slot": "portrait_background", "direct_only": true, "match_mode": "exact", "match_names": []},
+    {"slot": "portrait_small", "match_mode": "exact", "match_names": ["Skin_PYG_01a_Portrait"]},
+    {
+      "slot": "store_image",
+      "deployment": {"mode": "preload_unity_texture2d", "target": "TheBazaar_Data/StreamingAssets/aa/StandaloneWindows64/skin_pyg_01_assets_all.bundle", "asset_name": "Skin_PYG_01a_StoreImage", "unity_version": "6000.3.11f1", "target_size": [2048, 2048], "supported_original_sha256": ["54ac0543578db051af6cadf39388f00be7ac26511ae39740ad72cffba1006c8c"]},
+      "match_names": ["Skin_PYG_01a_StoreImage"]
+    },
+    {
+      "slot": "marketplace_list",
+      "deployment": {"mode": "preload_unity_texture2d", "target": "TheBazaar_Data/StreamingAssets/aa/StandaloneWindows64/skin_pyg_01_assets_all.bundle", "asset_name": "Skin_PYG_01a_StoreImage", "unity_version": "6000.3.11f1", "target_size": [2048, 2048], "supported_original_sha256": ["54ac0543578db051af6cadf39388f00be7ac26511ae39740ad72cffba1006c8c"]},
+      "match_names": ["Skin_PYG_01a_StoreImage"]
+    },
+    {
+      "slot": "marketplace_details",
+      "deployment": {"mode": "preload_unity_texture2d", "target": "TheBazaar_Data/StreamingAssets/aa/StandaloneWindows64/skin_pyg_01_assets_all.bundle", "asset_name": "Skin_PYG_01a_StoreImage", "unity_version": "6000.3.11f1", "target_size": [2048, 2048], "supported_original_sha256": ["54ac0543578db051af6cadf39388f00be7ac26511ae39740ad72cffba1006c8c"]},
+      "match_names": ["Skin_PYG_01a_StoreImage"]
+    },
+    {
+      "slot": "collection_list",
+      "deployment": {"mode": "preload_unity_texture2d", "target": "TheBazaar_Data/StreamingAssets/aa/StandaloneWindows64/skin_pyg_01_assets_all.bundle", "asset_name": "Skin_PYG_01a_PreviewCollection_TUI", "unity_version": "6000.3.11f1", "target_size": [512, 512], "supported_original_sha256": ["54ac0543578db051af6cadf39388f00be7ac26511ae39740ad72cffba1006c8c"]},
+      "match_names": ["Skin_PYG_01a_PreviewCollection_TUI"]
+    },
+    {"slot": "collection_details", "direct_only": true, "match_mode": "exact", "match_names": ["Skin_PYG_01a_Base_P", "Skin_PYG_01a_P"]},
+    {
+      "slot": "daily_weekly",
+      "deployment": {"mode": "preload_unity_texture2d", "target": "TheBazaar_Data/StreamingAssets/aa/StandaloneWindows64/skin_pyg_01_assets_all.bundle", "asset_name": "Skin_PYG_01a_PreviewCollection_TUI", "unity_version": "6000.3.11f1", "target_size": [512, 512], "supported_original_sha256": ["54ac0543578db051af6cadf39388f00be7ac26511ae39740ad72cffba1006c8c"]},
+      "match_names": ["Skin_PYG_01a_PreviewCollection_TUI"]
+    },
+    {
+      "slot": "hero_select",
+      "deployment": {"mode": "preload_unity_texture2d", "target": "TheBazaar_Data/StreamingAssets/aa/StandaloneWindows64/defaultlocalgroup_assets_assets_thebazaar_art_mainmenu_heroselect_hero_button_pygmalien.png.bundle", "asset_name": "Pygmalien", "unity_version": "6000.3.11f1", "target_size": [512, 512], "supported_original_sha256": ["9feaa015a6bda0216b822f3cc0dd8f4cea70999dd99ac3c95e265aa938087043"]},
+      "direct_only": true,
+      "match_mode": "exact",
+      "match_names": []
+    },
+    {
+      "slot": "hero_icon_small",
+      "pixels_per_unit": 100,
+      "deployment": {"mode": "preload_unity_texture2d", "target": "TheBazaar_Data/StreamingAssets/aa/StandaloneWindows64/defaultlocalgroup_assets_assets_thebazaar_art_ui_icons_heros_rough_icon_flatrough_pyg_tui.png.bundle", "asset_name": "Icon_FlatRough_PYG_TUI", "unity_version": "6000.3.11f1", "target_size": [256, 256], "supported_original_sha256": ["69536e2de9fa0ec4a8558b59141b204ae60cd25edbd3c077af6ab0b20382d18b"]},
+      "match_mode": "exact",
+      "match_names": ["Icon_FlatRough_PYG_TUI"]
+    },
+    {"slot": "standing_overlay", "direct_only": true, "match_mode": "exact", "match_names": ["Skin_PYG_01a_Base_P", "Skin_PYG_01a_UI_Base_P", "Skin_PYG_01a_SE_P", "Skin_PYG_01a_SkeletonData"]}
+  ],
+  "authoring_recipe": {
+    "id": "deterministic-raster-v1",
+    "version": 2,
+    "inherits_adapter": "dooley-default",
+    "overrides": {
+      "foreground": {"transparent_lassos": null, "cast_shadow_lasso": null},
+      "outputs": {"hero_select": {"size": [512, 512]}}
+    }
+  }
+}

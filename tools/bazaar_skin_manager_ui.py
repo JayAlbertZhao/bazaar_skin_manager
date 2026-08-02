@@ -1644,6 +1644,11 @@ def main() -> int:
                 workspace.undeploy()
                 deployed = False
         except Exception:
+            if os.environ.get("BAZAAR_SKIN_MANAGER_STUDIO_DEBUG") == "1":
+                Path(
+                    tempfile.gettempdir(),
+                    "bazaar-manager-smoke-deploy.log",
+                ).write_text(traceback.format_exc(), encoding="utf-8")
             if workspace is not None:
                 try:
                     workspace.undeploy()

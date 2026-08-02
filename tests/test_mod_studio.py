@@ -206,6 +206,11 @@ class ModStudioTests(unittest.TestCase):
                 "hero_select",
                 Image.new("RGBA", (32, 32), (10, 20, 30, 255)),
             )
+            source.state["authoring"] = {
+                "generator": {"id": "test-generator", "version": 1},
+                "inputs": {"character": {"sha256": "abc"}},
+            }
+            source.save()
             archive = source.export_zip(root / "complete.zip")
             destination = StudioWorkspace.create(
                 "test.roundtrip.destination",
@@ -218,6 +223,11 @@ class ModStudioTests(unittest.TestCase):
                 destination.state["pack"]["id"],
                 "test.roundtrip.source",
             )
+            destination.build_pack()
+            rebuilt = json.loads(
+                (destination.directory / "mod.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(rebuilt["authoring"], source.state["authoring"])
 
     def test_zip_traversal_is_rejected(self):
         with tempfile.TemporaryDirectory() as temp:

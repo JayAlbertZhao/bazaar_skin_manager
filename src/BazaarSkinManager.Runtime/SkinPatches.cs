@@ -154,6 +154,16 @@ namespace BazaarSkinManager.TheBazaar
                     slot = "daily_weekly";
                     break;
                 case "LoadPortrait":
+                    // The game's argument is named isSmallImage. The false
+                    // path is shared by the hero-select skin preview and the
+                    // local in-match portrait sprite. Keep portrait_gameplay
+                    // transparent: the hero-select preview supplies its own
+                    // panel, while GenerateEncounterData assigns the separate
+                    // portrait_background behind the in-match sprite. Baking a
+                    // background into portrait_gameplay places that rectangle
+                    // above the native portrait frame and breaks its occlusion.
+                    // Calls passing true use the self-contained portrait_small
+                    // asset instead.
                     slot = __args != null && __args.Length > 0 &&
                         __args[0] is bool && (bool)__args[0]
                         ? "portrait_small"

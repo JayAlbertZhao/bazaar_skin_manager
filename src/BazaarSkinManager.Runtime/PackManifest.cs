@@ -68,6 +68,9 @@ namespace BazaarSkinManager.TheBazaar
         [DataMember(Name = "pixels_per_unit")]
         public float PixelsPerUnit;
 
+        [DataMember(Name = "scale_multiplier")]
+        public float ScaleMultiplier;
+
         [DataMember(Name = "deployment")]
         public VisualDeployment Deployment;
     }

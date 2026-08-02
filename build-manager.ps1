@@ -1,5 +1,5 @@
 param(
-    [string]$Version = "0.9.63"
+    [string]$Version = "1.0.0"
 )
 
 $ErrorActionPreference = "Stop"
@@ -105,14 +105,41 @@ if ($selfTest.ExitCode -ne 0) {
     throw "Frozen release runtime self-test failed with exit code $($selfTest.ExitCode)"
 }
 
+$adapterCapabilities = @(
+    Get-ChildItem -LiteralPath (Join-Path $root "manager\adapters") -Filter "*.json" |
+        Sort-Object Name |
+        ForEach-Object {
+            $adapterPath = $_.FullName
+            $adapter = Get-Content -LiteralPath $adapterPath -Raw -Encoding utf8 |
+                ConvertFrom-Json
+            [ordered]@{
+                id = [string]$adapter.id
+                adapter_version = [int]$adapter.adapter_version
+                hero = [string]$adapter.target.hero
+                skin = [string]$adapter.target.skin
+                sha256 = (Get-FileHash -LiteralPath $adapterPath -Algorithm SHA256).Hash.ToLowerInvariant()
+                authoring_recipe_id = if ($adapter.authoring_recipe) {
+                    [string]$adapter.authoring_recipe.id
+                } else {
+                    $null
+                }
+                authoring_recipe_version = if ($adapter.authoring_recipe) {
+                    [int]$adapter.authoring_recipe.version
+                } else {
+                    $null
+                }
+            }
+        }
+)
 $metadata = [ordered]@{
     schema_version = 1
     version = $Version
     executable = "TheBazaarModManager.exe"
     sha256 = (Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash.ToLowerInvariant()
     bytes = (Get-Item -LiteralPath $exe).Length
+    adapters = $adapterCapabilities
 }
-$metadata | ConvertTo-Json -Depth 3 |
+$metadata | ConvertTo-Json -Depth 5 |
     Set-Content -LiteralPath (Join-Path $output "manager-build.json") -Encoding utf8
 
 Write-Host "Built manager: $exe"

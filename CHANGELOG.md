@@ -1,5 +1,37 @@
 # Changelog
 
+## 1.0.0
+
+- Add verified default-skin adapters for Mak, Vanessa, Pygmalien, Dooley, and
+  Jules, including audited native Texture2D targets for the current Steam
+  build.
+- Let the asset generator select any verified hero target and reuse one
+  deterministic rendering recipe with narrow per-hero output overrides.
+- Publish the exact adapter ids, versions, targets, and hashes in
+  `manager-build.json` so companion tools can check compatibility before
+  modifying a Manager workspace.
+- Replace cascaded per-slot errors for an unsupported hero with one actionable
+  update/target compatibility error.
+- Keep verified adapters fail-closed: asset packs still cannot supply or
+  override Manager deployment contracts.
+- Generalize the request-gated central-standing diagnostic to every target
+  hero and verify attach, idempotence, and native-state restoration in-game.
+- Make runtime audit validation understand deploy-time patched inspector
+  backgrounds and explicitly scoped local-player portrait loads.
+- Restore the proven Mak portrait layering contract for generated packs:
+  `portrait_gameplay` is a transparent foreground, while
+  `portrait_background` remains the separate lower layer. This removes the
+  unwanted background in the hero-select preview and keeps the in-match HUD
+  frame above the portrait art.
+- Ship the Skin Manager and the independent Asset Generator as the two public
+  software components. Character and artwork packs remain outside the GitHub
+  release and are distributed separately.
+- Keep the Asset Generator pipeline actions pinned above the window bottom and
+  add vertical scrolling to both authoring tabs, including minimum-window
+  layout validation in the frozen executable self-test.
+- Accept sparse monochrome icons produced by the included deterministic icon
+  presets without weakening the transparent-border guard.
+
 ## 0.9.63
 
 - Fix Windows startup failures caused by a packaged Tcl DLL and Tcl library

@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "dooley-default",
-  "adapter_version": 2,
+  "adapter_version": 13,
   "supported_builds": [
     "24001960"
   ],
@@ -18,20 +18,20 @@
       "match_mode": "exact",
       "match_names": [
         "Skin_DOO_01a_Portrait"
-      ],
-      "deployment": {
-        "mode": "preload_unity_texture2d",
-        "target": "TheBazaar_Data/StreamingAssets/aa/StandaloneWindows64/skin_doo_01_assets_all.bundle",
-        "asset_name": "Skin_DOO_01a_Portrait",
-        "unity_version": "6000.3.11f1",
-        "target_size": [
-          1024,
-          1024
-        ],
-        "supported_original_sha256": [
-          "d6ed77d564f6918487e5a1863d79106e37ce93eede1fedf72875d0b64ed5a843"
-        ]
-      }
+      ]
+    },
+    {
+      "slot": "portrait_background",
+      "direct_only": true,
+      "match_mode": "exact",
+      "match_names": []
+    },
+    {
+      "slot": "portrait_small",
+      "match_mode": "exact",
+      "match_names": [
+        "Skin_DOO_01a_Portrait"
+      ]
     },
     {
       "slot": "store_image",
@@ -110,6 +110,15 @@
       }
     },
     {
+      "slot": "collection_details",
+      "direct_only": true,
+      "match_mode": "exact",
+      "match_names": [
+        "Skin_DOO_01a_Base_P",
+        "Skin_DOO_01a_P"
+      ]
+    },
+    {
       "slot": "daily_weekly",
       "match_names": [
         "Skin_DOO_01a_PreviewCollection_TUI"
@@ -125,6 +134,25 @@
         ],
         "supported_original_sha256": [
           "d6ed77d564f6918487e5a1863d79106e37ce93eede1fedf72875d0b64ed5a843"
+        ]
+      }
+    },
+    {
+      "slot": "hero_select",
+      "direct_only": true,
+      "match_mode": "exact",
+      "match_names": [],
+      "deployment": {
+        "mode": "preload_unity_texture2d",
+        "target": "TheBazaar_Data/StreamingAssets/aa/StandaloneWindows64/defaultlocalgroup_assets_assets_thebazaar_art_mainmenu_heroselect_hero_button_dooley.png.bundle",
+        "asset_name": "Dooley",
+        "unity_version": "6000.3.11f1",
+        "target_size": [
+          256,
+          256
+        ],
+        "supported_original_sha256": [
+          "0be504cabb2b01487dbeae8a24faf6c0c302e32f0cea6ea30dea5092d846b739"
         ]
       }
     },
@@ -148,6 +176,18 @@
           "543d0fb67fda5d258d45fd4ab978b6104db614541ebe581472f29c61178ef1e8"
         ]
       }
+    },
+    {
+      "slot": "standing_overlay",
+      "scale_multiplier": 1.5,
+      "direct_only": true,
+      "match_mode": "exact",
+      "match_names": [
+        "Skin_DOO_01a_Base_P",
+        "Skin_DOO_01a_UI_Base_P",
+        "Skin_DOO_01a_SE_P",
+        "Skin_DOO_01a_SkeletonData"
+      ]
     }
   ],
   "authoring_recipe": {
@@ -181,6 +221,25 @@
           ".jpeg",
           ".webp"
         ]
+      },
+      "small_icon_source": {
+        "optional": true,
+        "semantic": "optional authoring source used to derive the final small icon",
+        "accepted_extensions": [
+          ".png",
+          ".jpg",
+          ".jpeg",
+          ".webp",
+          ".bmp"
+        ]
+      },
+      "standing_prop": {
+        "optional": true,
+        "semantic": "transparent prop placed behind the central standing character",
+        "accepted_extensions": [
+          ".png",
+          ".webp"
+        ]
       }
     },
     "foreground": {
@@ -189,19 +248,50 @@
         "method": "edge_connected",
         "tolerance": 34,
         "feather": 90
+      },
+      "transparent_lassos": {
+        "method": "authored-coordinate-lasso",
+        "coordinate_space": [1182, 1330],
+        "polygons": [
+          [
+            [1027, 641], [1052, 638], [1050, 653],
+            [1041, 668], [1026, 673], [1014, 666]
+          ]
+        ]
+      },
+      "cast_shadow_lasso": {
+        "method": "authored-coordinate-lasso",
+        "coordinate_space": [1182, 1330],
+        "polygons": [
+          [
+            [895, 390], [940, 395], [940, 360], [950, 330],
+            [975, 300], [1025, 290], [1025, 320], [1035, 310],
+            [1045, 350], [1060, 375], [1050, 400], [1070, 410],
+            [1055, 445], [1045, 480], [1028, 465], [1010, 470],
+            [990, 458], [970, 448], [945, 435], [920, 428],
+            [895, 415]
+          ],
+          [
+            [1015, 430], [1050, 440], [1080, 475], [1100, 520],
+            [1110, 570], [1110, 620], [1095, 670], [1070, 700],
+            [1055, 705], [1050, 760], [1045, 850], [1038, 950],
+            [1020, 1010], [1000, 1070], [980, 1130], [970, 1205],
+            [930, 1210], [890, 1190], [850, 1150], [840, 1100],
+            [870, 1085], [925, 1075], [955, 1055], [980, 1015],
+            [1000, 960], [1013, 900], [1020, 840], [1025, 770],
+            [1033, 710], [1045, 685], [1063, 675], [1077, 650],
+            [1085, 615], [1085, 575], [1075, 535], [1060, 492],
+            [1038, 465]
+          ]
+        ]
       }
     },
     "outputs": {
       "portrait_gameplay": {
         "depends_on": [
-          "background",
           "character"
         ],
         "layers": [
-          {
-            "input": "background",
-            "fit": "cover"
-          },
           {
             "input": "character",
             "fit": "alpha_contain"
@@ -222,9 +312,34 @@
           0.5,
           1.0
         ],
+        "minimum_alpha_coverage": 0.1,
+        "maximum_alpha_coverage": 0.82,
+        "minimum_transparent_border": 0.5
+      },
+      "portrait_background": {
+        "depends_on": [
+          "background"
+        ],
+        "layers": [
+          {
+            "input": "background",
+            "fit": "cover"
+          }
+        ],
+        "size": [
+          1024,
+          1024
+        ],
         "minimum_alpha_coverage": 0.99,
         "maximum_alpha_coverage": 1.0,
         "minimum_transparent_border": 0.0
+      },
+      "portrait_small": {
+        "alias_of": "collection_list",
+        "depends_on": [
+          "background",
+          "character"
+        ]
       },
       "store_image": {
         "depends_on": [
@@ -235,6 +350,10 @@
           {
             "input": "background",
             "fit": "cover"
+          },
+          {
+            "input": "character_shadow",
+            "fit": "alpha_contain"
           },
           {
             "input": "character",
@@ -285,6 +404,10 @@
             "fit": "cover"
           },
           {
+            "input": "character_shadow",
+            "fit": "alpha_contain"
+          },
+          {
             "input": "character",
             "fit": "alpha_contain"
           }
@@ -307,6 +430,151 @@
         "minimum_alpha_coverage": 0.99,
         "maximum_alpha_coverage": 1.0,
         "minimum_transparent_border": 0.0
+      },
+      "standing_overlay": {
+        "depends_on": [
+          "character",
+          "standing_prop"
+        ],
+        "layers": [
+          {
+            "input": "character",
+            "fit": "alpha_contain",
+            "when_input_present": {
+              "standing_prop": {
+                "target_alpha_bounds": [
+                  10,
+                  215,
+                  790,
+                  1391
+                ],
+                "anchor": [
+                  0.5,
+                  1.0
+                ]
+              }
+            }
+          },
+          {
+            "input": "standing_prop",
+            "optional": true,
+            "fit": "alpha_contain",
+            "flip_x": true,
+            "target_alpha_bounds": [
+              498,
+              374,
+              1041,
+              1395
+            ],
+            "anchor": [
+              0.0,
+              1.0
+            ]
+          }
+        ],
+        "size": [
+          1086,
+          1448
+        ],
+        "fit": "alpha_contain",
+        "target_alpha_bounds": [
+          12,
+          12,
+          1074,
+          1436
+        ],
+        "anchor": [
+          0.5,
+          1.0
+        ],
+        "minimum_alpha_coverage": 0.1,
+        "maximum_alpha_coverage": 0.82,
+        "minimum_transparent_border": 0.65
+      },
+      "collection_details": {
+        "depends_on": [
+          "background",
+          "character"
+        ],
+        "layers": [
+          {
+            "input": "background",
+            "fit": "cover"
+          },
+          {
+            "input": "character_shadow",
+            "fit": "alpha_contain"
+          },
+          {
+            "input": "character",
+            "fit": "alpha_contain"
+          }
+        ],
+        "size": [
+          1086,
+          1448
+        ],
+        "fit": "alpha_contain",
+        "target_alpha_bounds": [
+          65,
+          75,
+          1021,
+          1398
+        ],
+        "anchor": [
+          0.5,
+          1.0
+        ],
+        "minimum_alpha_coverage": 0.99,
+        "maximum_alpha_coverage": 1.0,
+        "minimum_transparent_border": 0.0
+      },
+      "hero_select": {
+        "renderer": "layered_badge",
+        "depends_on": [
+          "character",
+          "badge_template"
+        ],
+        "layers": [
+          {
+            "input": "badge_template.base",
+            "fit": "native"
+          },
+          {
+            "input": "character_shadow",
+            "fit": "alpha_contain"
+          },
+          {
+            "input": "badge_template.frame_upper",
+            "fit": "native"
+          },
+          {
+            "input": "character",
+            "fit": "alpha_contain"
+          },
+          {
+            "input": "badge_template.frame_lower",
+            "fit": "native",
+            "transparent_knockout": "badge_template.frame_lower_occlusion"
+          }
+        ],
+        "template": {
+          "directory": "badge-templates/hero-select-gold"
+        },
+        "character_crop": [0.0, 0.0, 1.0, 1.0],
+        "target_alpha_bounds": [
+          80,
+          5,
+          432,
+          455
+        ],
+        "size": [
+          256,
+          256
+        ],
+        "minimum_alpha_coverage": 0.2,
+        "maximum_alpha_coverage": 0.9,
+        "minimum_transparent_border": 0.5
       },
       "daily_weekly": {
         "alias_of": "collection_list",
@@ -340,7 +608,7 @@
           0.5,
           0.5
         ],
-        "minimum_alpha_coverage": 0.2,
+        "minimum_alpha_coverage": 0.08,
         "maximum_alpha_coverage": 0.82,
         "minimum_transparent_border": 0.65
       }

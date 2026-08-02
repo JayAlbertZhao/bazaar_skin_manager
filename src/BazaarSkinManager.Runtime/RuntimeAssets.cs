@@ -11,6 +11,7 @@ namespace BazaarSkinManager.TheBazaar
     {
         private const float DefaultPixelsPerUnit = 100f;
         private const float MaximumPixelsPerUnit = 4096f;
+        private const float MaximumScaleMultiplier = 4f;
 
         private readonly Dictionary<string, Texture2D> _textures;
         private readonly Dictionary<string, Sprite> _sprites;
@@ -42,6 +43,7 @@ namespace BazaarSkinManager.TheBazaar
 
         public static RuntimePack LoadFirstEnabled(string modsRoot, ManualLogSource log)
         {
+            log.LogInfo("Scanning external skin packs at: " + modsRoot);
             if (!Directory.Exists(modsRoot))
             {
                 log.LogWarning("Mods root does not exist: " + modsRoot);
@@ -49,6 +51,7 @@ namespace BazaarSkinManager.TheBazaar
             }
 
             string[] manifests = Directory.GetFiles(modsRoot, "mod.json", SearchOption.AllDirectories);
+            log.LogInfo("Found " + manifests.Length + " external skin-pack manifest(s).");
             Array.Sort(manifests, StringComparer.OrdinalIgnoreCase);
             foreach (string manifestPath in manifests)
             {
@@ -57,7 +60,7 @@ namespace BazaarSkinManager.TheBazaar
                     RuntimePack pack = Load(manifestPath);
                     if (pack.Manifest.Enabled &&
                         pack.Manifest.Target != null &&
-                        string.Equals(pack.Manifest.Target.Hero, "Mak", StringComparison.OrdinalIgnoreCase))
+                        !string.IsNullOrWhiteSpace(pack.Manifest.Target.Hero))
                     {
                         try
                         {
@@ -131,6 +134,7 @@ namespace BazaarSkinManager.TheBazaar
                         "Unsupported match_mode for " + replacement.Slot +
                         ": " + replacement.MatchMode);
                 }
+                ResolveScaleMultiplier(replacement);
 
                 string assetPath = Path.GetFullPath(Path.Combine(packDirectory, replacement.File));
                 if (!assetPath.StartsWith(safePrefix, StringComparison.OrdinalIgnoreCase))
@@ -188,6 +192,27 @@ namespace BazaarSkinManager.TheBazaar
             return pixelsPerUnit;
         }
 
+        private static float ResolveScaleMultiplier(
+            VisualReplacement replacement)
+        {
+            float multiplier = replacement.ScaleMultiplier;
+            if (multiplier == 0f)
+            {
+                return 1f;
+            }
+            if (float.IsNaN(multiplier) ||
+                float.IsInfinity(multiplier) ||
+                multiplier < 0.1f ||
+                multiplier > MaximumScaleMultiplier)
+            {
+                throw new InvalidDataException(
+                    "Replacement scale_multiplier must be between 0.1 and " +
+                    MaximumScaleMultiplier + ": " + replacement.Slot);
+            }
+
+            return multiplier;
+        }
+
         public bool IsTargetSkin(object instance)
         {
             UnityEngine.Object unityObject = instance as UnityEngine.Object;
@@ -201,6 +226,28 @@ namespace BazaarSkinManager.TheBazaar
                 unityObject.name.IndexOf(needle, StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
+        public bool IsTargetHero(string heroName)
+        {
+            return Manifest != null &&
+                Manifest.Target != null &&
+                !string.IsNullOrEmpty(heroName) &&
+                string.Equals(
+                    Manifest.Target.Hero,
+                    heroName,
+                    StringComparison.OrdinalIgnoreCase);
+        }
+
+        public string TargetHeroCode()
+        {
+            string needle = Manifest == null || Manifest.Target == null
+                ? string.Empty
+                : Manifest.Target.SkinNameContains ?? string.Empty;
+            int separator = needle.IndexOf('_');
+            return (separator > 0
+                ? needle.Substring(0, separator)
+                : needle).ToUpperInvariant();
+        }
+
         public Texture2D Texture(string slot)
         {
             Texture2D value;
@@ -211,6 +258,30 @@ namespace BazaarSkinManager.TheBazaar
         {
             Sprite value;
             return _sprites.TryGetValue(slot, out value) ? value : null;
+        }
+
+        public float ScaleMultiplier(string slot)
+        {
+            if (string.IsNullOrEmpty(slot) ||
+                Manifest == null ||
+                Manifest.VisualReplacements == null)
+            {
+                return 1f;
+            }
+
+            foreach (VisualReplacement replacement in
+                Manifest.VisualReplacements)
+            {
+                if (replacement != null &&
+                    string.Equals(
+                        replacement.Slot,
+                        slot,
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    return ResolveScaleMultiplier(replacement);
+                }
+            }
+            return 1f;
         }
 
         public bool UsesPreloadedDeployment(string slot)

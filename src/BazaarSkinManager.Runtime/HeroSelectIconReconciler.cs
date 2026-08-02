@@ -27,7 +27,15 @@ namespace BazaarSkinManager.TheBazaar
 
         public static void Reconcile(object candidate)
         {
-            if (!EnsureBindings() || candidate == null)
+            if (!EnsureBindings() || candidate == null ||
+                Plugin.ActivePack == null)
+            {
+                return;
+            }
+
+            Sprite replacement = Plugin.ActivePack.Sprite("hero_select");
+            if (replacement == null ||
+                Plugin.ActivePack.UsesPreloadedDeployment("hero_select"))
             {
                 return;
             }
@@ -49,14 +57,7 @@ namespace BazaarSkinManager.TheBazaar
                 ? null
                 : _heroIdField.GetValue(heroSo);
             if (heroId == null ||
-                !string.Equals(
-                    heroId.ToString(),
-                    "Mak",
-                    StringComparison.OrdinalIgnoreCase))
-            {
-                return;
-            }
-            if (Plugin.ActivePack.UsesPreloadedDeployment("hero_select"))
+                !Plugin.ActivePack.IsTargetHero(heroId.ToString()))
             {
                 return;
             }
@@ -68,14 +69,13 @@ namespace BazaarSkinManager.TheBazaar
             Image icon = iconTransform == null
                 ? null
                 : iconTransform.GetComponent<Image>();
-            Sprite replacement = Plugin.ActivePack.Sprite("hero_select");
             if (icon == null || replacement == null)
             {
                 RuntimeSkinAudit.RecordLoader(
                     "HeroItemView.Content.Icon",
                     "not loaded",
                     icon == null
-                        ? "Exact Mak Content/Icon Image is not loaded."
+                        ? "Exact target-hero Content/Icon Image is not loaded."
                         : "hero_select pack sprite is unavailable.",
                     icon);
                 return;
@@ -102,7 +102,7 @@ namespace BazaarSkinManager.TheBazaar
             icon.sprite = replacement;
             RuntimeDiagnostics.ReportReplacement(
                 "hero_select",
-                "Mak-only direct reconcile -> " +
+                "Target-hero direct reconcile -> " +
                 HierarchyName(iconTransform));
             RuntimeSkinAudit.RecordLoader(
                 "HeroItemView.Content.Icon",

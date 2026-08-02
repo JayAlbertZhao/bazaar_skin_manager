@@ -13,7 +13,7 @@ namespace BazaarSkinManager.TheBazaar
         private const string DisplayTypeName = "HeroSelectDisplay";
 
         private static Type _displayType;
-        private static FieldInfo _makGraphicField;
+        private static FieldInfo _targetGraphicField;
         private static FieldInfo _loadedAssetField;
         private static FieldInfo _selectedHeroField;
         private static FieldInfo _skinEditActiveSkinField;
@@ -44,7 +44,8 @@ namespace BazaarSkinManager.TheBazaar
             }
 
             Component component = display as Component;
-            Graphic makGraphic = _makGraphicField.GetValue(display) as Graphic;
+            Graphic targetGraphic =
+                _targetGraphicField.GetValue(display) as Graphic;
             object loadedAsset = _loadedAssetField.GetValue(display);
             object selectedHero = _selectedHeroField.GetValue(display);
             GameObject skinEditActiveSkin =
@@ -53,32 +54,29 @@ namespace BazaarSkinManager.TheBazaar
                 component.gameObject.activeInHierarchy;
             bool supportedCentralDisplay =
                 IsSupportedCentralDisplay(component);
-            bool makGraphicActive = makGraphic != null &&
-                makGraphic.gameObject.activeInHierarchy;
+            bool targetGraphicActive = targetGraphic != null &&
+                targetGraphic.gameObject.activeInHierarchy;
             bool skinEditActive = skinEditActiveSkin != null &&
                 skinEditActiveSkin.activeInHierarchy;
             string selectedName = selectedHero == null
                 ? "<null>"
                 : selectedHero.ToString();
-            bool selectedMak = string.Equals(
-                selectedName,
-                "Mak",
-                StringComparison.OrdinalIgnoreCase);
+            bool selectedTarget = Plugin.ActivePack.IsTargetHero(selectedName);
             bool selectedCommon = string.Equals(
                 selectedName,
                 "Common",
                 StringComparison.OrdinalIgnoreCase);
-            bool selectedAllowsMak = selectedMak || selectedCommon;
+            bool selectedAllowsTarget = selectedTarget || selectedCommon;
             bool isTargetDefault = SkinPatchTargets.ShouldReplace(loadedAsset);
             bool shouldAttachGraphic = displayActive &&
                 supportedCentralDisplay &&
-                makGraphicActive &&
-                selectedAllowsMak &&
+                targetGraphicActive &&
+                selectedAllowsTarget &&
                 isTargetDefault;
             bool shouldAttachSkinEdit = displayActive &&
                 supportedCentralDisplay &&
                 skinEditActive &&
-                selectedAllowsMak &&
+                selectedAllowsTarget &&
                 isTargetDefault;
             bool shouldAttach = shouldAttachGraphic ||
                 shouldAttachSkinEdit;
@@ -86,7 +84,7 @@ namespace BazaarSkinManager.TheBazaar
 
             RuntimeDiagnostics.ReportCentralState(
                 displayActive,
-                makGraphicActive,
+                targetGraphicActive,
                 skinEditActive,
                 selectedName,
                 loadedUnity == null ? "<null>" : loadedUnity.name,
@@ -102,39 +100,39 @@ namespace BazaarSkinManager.TheBazaar
             if (!supportedCentralDisplay)
             {
                 RuntimeSkinAudit.RecordLoader(
-                    "HeroSelectDisplay.MAK",
+                    TargetLoaderName(),
                     "unsupported type",
                     "Non-central HeroSelectDisplay is owned by its exact " +
                         "SkinEdit placement patch; no overlay state changed.",
                     skinEditActiveSkin == null
-                        ? (UnityEngine.Object)makGraphic
+                        ? (UnityEngine.Object)targetGraphic
                         : skinEditActiveSkin);
                 return;
             }
 
             if (!shouldAttach)
             {
-                StandingOverlay.RemoveFromGraphic(makGraphic);
+                StandingOverlay.RemoveFromGraphic(targetGraphic);
                 StandingOverlay.RemoveFromWorld(skinEditActiveSkin);
                 string state = !displayActive ||
-                    (!makGraphicActive && !skinEditActive) ||
+                    (!targetGraphicActive && !skinEditActive) ||
                     loadedAsset == null
                     ? "not loaded"
-                    : !selectedAllowsMak || !isTargetDefault
+                    : !selectedAllowsTarget || !isTargetDefault
                         ? "wrong hero/skin"
                         : "unsupported type";
                 RuntimeSkinAudit.RecordLoader(
-                    "HeroSelectDisplay.MAK",
+                    TargetLoaderName(),
                     state,
                     "displayActive=" + displayActive +
                     " supportedCentralDisplay=" +
                     supportedCentralDisplay +
-                    " makGraphicActive=" + makGraphicActive +
+                    " targetGraphicActive=" + targetGraphicActive +
                     " skinEditActive=" + skinEditActive +
                     " selected=" + selectedName +
                     " targetDefault=" + isTargetDefault,
                     skinEditActiveSkin == null
-                        ? (UnityEngine.Object)makGraphic
+                        ? (UnityEngine.Object)targetGraphic
                         : skinEditActiveSkin);
                 return;
             }
@@ -165,18 +163,18 @@ namespace BazaarSkinManager.TheBazaar
             else
             {
                 alreadyApplied =
-                    StandingOverlay.HasGraphicOverlay(makGraphic);
+                    StandingOverlay.HasGraphicOverlay(targetGraphic);
                 StandingOverlay.AttachToGraphic(
-                    makGraphic,
+                    targetGraphic,
                     overlay,
-                    "HeroSelectDisplay active MAK/_selectedHero=" +
+                    "HeroSelectDisplay active target/_selectedHero=" +
                     selectedName + "/_loadedAsset=" + loadedUnity.name);
-                auditTarget = makGraphic;
+                auditTarget = targetGraphic;
             }
             RuntimeSkinAudit.RecordLoader(
-                "HeroSelectDisplay.MAK",
+                TargetLoaderName(),
                 alreadyApplied ? "already applied" : "applied",
-                "Active Mak visual with target default asset, selected=" +
+                "Active target visual with target default asset, selected=" +
                 selectedName + ", mode=" +
                 (shouldAttachSkinEdit ? "skin-edit-prefab" : "graphic") +
                 ".",
@@ -198,7 +196,7 @@ namespace BazaarSkinManager.TheBazaar
             {
                 Component component = candidate as Component;
                 Graphic graphic =
-                    _makGraphicField.GetValue(candidate) as Graphic;
+                    _targetGraphicField.GetValue(candidate) as Graphic;
                 if (component == null || graphic == null)
                 {
                     continue;
@@ -299,7 +297,8 @@ namespace BazaarSkinManager.TheBazaar
                 }
             }
 
-            detail = "No reachable HeroSelectDisplay/MAK graphic pair exists.";
+            detail = "No reachable " + TargetLoaderName() +
+                " graphic pair exists.";
             return false;
         }
 
@@ -324,9 +323,9 @@ namespace BazaarSkinManager.TheBazaar
             if (!EnsureBindings())
             {
                 RuntimeDiagnostics.ReportLoaderState(
-                    "HeroSelectDisplay.MAK",
+                    TargetLoaderName(),
                     "unsupported type",
-                    "MAK/_loadedAsset/_selectedHero binding is unavailable.");
+                    "Target graphic/_loadedAsset/_selectedHero binding is unavailable.");
                 return;
             }
 
@@ -347,7 +346,8 @@ namespace BazaarSkinManager.TheBazaar
             foreach (UnityEngine.Object display in
                 Resources.FindObjectsOfTypeAll(_displayType))
             {
-                Graphic graphic = _makGraphicField.GetValue(display) as Graphic;
+                Graphic graphic =
+                    _targetGraphicField.GetValue(display) as Graphic;
                 StandingOverlay.RemoveFromGraphic(graphic);
                 GameObject skinEditActiveSkin =
                     _skinEditActiveSkinField.GetValue(display) as GameObject;
@@ -402,7 +402,7 @@ namespace BazaarSkinManager.TheBazaar
         {
             if (_displayType != null)
             {
-                return _makGraphicField != null &&
+                return _targetGraphicField != null &&
                     _loadedAssetField != null &&
                     _selectedHeroField != null &&
                     _skinEditActiveSkinField != null;
@@ -414,16 +414,28 @@ namespace BazaarSkinManager.TheBazaar
                 return false;
             }
 
-            _makGraphicField = AccessTools.Field(_displayType, "MAK");
+            _targetGraphicField = AccessTools.Field(
+                _displayType,
+                Plugin.ActivePack == null
+                    ? string.Empty
+                    : Plugin.ActivePack.TargetHeroCode());
             _loadedAssetField = AccessTools.Field(_displayType, "_loadedAsset");
             _selectedHeroField =
                 AccessTools.Field(_displayType, "_selectedHero");
             _skinEditActiveSkinField =
                 AccessTools.Field(_displayType, "_skinEditActiveSkin");
-            return _makGraphicField != null &&
+            return _targetGraphicField != null &&
                 _loadedAssetField != null &&
                 _selectedHeroField != null &&
                 _skinEditActiveSkinField != null;
+        }
+
+        private static string TargetLoaderName()
+        {
+            string code = Plugin.ActivePack == null
+                ? string.Empty
+                : Plugin.ActivePack.TargetHeroCode();
+            return "HeroSelectDisplay." + code;
         }
     }
 }

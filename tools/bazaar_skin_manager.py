@@ -20,7 +20,7 @@ from typing import Iterable
 
 
 APP_ID = "1617400"
-MANAGER_VERSION = "0.9.63"
+MANAGER_VERSION = "1.0.0"
 PROJECT_ROOT = Path(
     getattr(sys, "_MEIPASS", Path(__file__).resolve().parents[1])
 )
@@ -29,6 +29,7 @@ DEFAULT_RUNTIME_METADATA = (
     PROJECT_ROOT / "dist" / "runtime" / "runtime-build.json"
 )
 PRELOAD_TEXTURE_MODE = "preload_unity_texture2d"
+RUNTIME_CONFIG_FILENAME = "bazaar-skin-manager.the-bazaar.runtime.cfg"
 
 
 def _load_bundle_patcher():
@@ -71,6 +72,40 @@ def _load_adapter_registry():
         sys.modules[specification.name] = module
         specification.loader.exec_module(module)
         return module.AdapterRegistry.load(PROJECT_ROOT / "manager" / "adapters")
+
+
+def configure_runtime_mods_root(game: "GameInstall") -> Path:
+    """Persist the manager-owned pack root for the Unity/BepInEx runtime.
+
+    Unity's implementation of SpecialFolder.LocalApplicationData is not
+    reliable enough to serve as an implicit cross-process contract. Preserve
+    all existing BepInEx settings and update only General.ModsRoot.
+    """
+    config_path = (
+        game.game_dir / "BepInEx" / "config" / RUNTIME_CONFIG_FILENAME
+    )
+    root_value = str(mods_root().resolve())
+    if config_path.is_file():
+        text = config_path.read_text(encoding="utf-8-sig")
+        pattern = re.compile(r"(?m)^ModsRoot\s*=.*$")
+        if pattern.search(text):
+            text = pattern.sub(
+                lambda _match: f"ModsRoot = {root_value}",
+                text,
+                count=1,
+            )
+        else:
+            separator = "" if text.endswith(("\n", "\r")) else "\n"
+            text += f"{separator}\n[General]\nModsRoot = {root_value}\n"
+    else:
+        text = (
+            "[General]\n\n"
+            "Enabled = true\n"
+            f"ModsRoot = {root_value}\n"
+            "UiRescanSeconds = 2\n"
+        )
+    atomic_write_text(config_path, text)
+    return config_path
 
 
 @dataclass
@@ -351,7 +386,8 @@ def validate_pack(pack_dir: Path) -> list[str]:
     if adapter is None:
         errors.append(
             "no verified adapter for target: "
-            f"{target.get('hero')} / {target.get('skin')}"
+            f"{target.get('hero')} / {target.get('skin')}; "
+            "update Skin Manager or choose a target supported by this build"
         )
     elif target.get("skin_name_contains") != adapter.skin_name_contains:
         errors.append(
@@ -375,10 +411,19 @@ def validate_pack(pack_dir: Path) -> list[str]:
     for replacement in manifest.get("visual_replacements", []):
         slot = replacement.get("slot")
         verified = verified_visuals.get(slot)
-        if adapter_claim and verified is None:
+        # A missing target adapter already produces the actionable error above.
+        # Do not turn that single compatibility problem into one misleading
+        # "slot is not declared" error for every asset in the pack.
+        if adapter_claim and adapter is not None and verified is None:
             errors.append(f"slot is not declared by verified adapter: {slot}")
-        elif adapter_claim and verified is not None:
-            for field in ("direct_only", "match_mode", "match_names", "pixels_per_unit"):
+        elif adapter_claim and adapter is not None and verified is not None:
+            for field in (
+                "direct_only",
+                "match_mode",
+                "match_names",
+                "pixels_per_unit",
+                "scale_multiplier",
+            ):
                 if replacement.get(field) != verified.get(field):
                     errors.append(
                         f"slot {slot} field {field} does not match verified adapter"
@@ -1047,6 +1092,7 @@ def install(runtime: Path, pack: Path, game: GameInstall) -> dict:
     manifest = json.loads((pack / "mod.json").read_text(encoding="utf-8"))
     pack_dest = mods_root() / manifest["id"]
     atomic_copy_tree(pack, pack_dest)
+    runtime_config = configure_runtime_mods_root(game)
 
     applied_native_patches: list[dict] = []
     applied_catalog_patch: dict | None = None
@@ -1095,6 +1141,10 @@ def install(runtime: Path, pack: Path, game: GameInstall) -> dict:
             "runtime_compatibility": {
                 "path": str(compatibility_path),
                 "sha256": compatibility_sha256,
+            },
+            "runtime_config": {
+                "path": str(runtime_config),
+                "mods_root": str(mods_root().resolve()),
             },
             "native_patches": applied_native_patches,
             "native_catalog_patch": applied_catalog_patch,

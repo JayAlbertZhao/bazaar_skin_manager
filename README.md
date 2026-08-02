@@ -3,14 +3,22 @@
 A Windows manager for importing, deploying, updating, and removing external
 skin packs for **The Bazaar**.
 
-This repository contains only the manager, its runtime adapter, pack contracts,
-tests, and release tooling. It does **not** contain or distribute character
-art, portraits, voice recordings, generated media, or third-party skin packs.
-Creators distribute those packs separately as ZIP files.
+This repository contains the Skin Manager, the deterministic Asset Generator,
+its runtime adapter, pack contracts, tests, and release tooling. It does
+**not** contain or distribute character art, portraits, voice recordings,
+generated media, or third-party skin packs. Creators distribute those packs
+separately as ZIP files.
 
 The source also includes an adapter-driven deterministic raster builder; see
 [`docs/deterministic-skin-pack-builder.md`](docs/deterministic-skin-pack-builder.md).
-It deliberately excludes hero-select badge/frame generation.
+Run `launch-asset-generator.ps1` for the independent desktop generator. It
+builds a complete ZIP from the three declared author inputs, imports that ZIP
+into the existing Skin Manager workspace format, and delegates reversible
+deployment to the Manager rather than implementing a second installer.
+Its hero-select compositor uses a locally extracted, hash-verified copy of the
+installed game's badge frame; those official pixels are not stored here.
+Fidelity-critical extraction rules are recorded in
+[`docs/asset-pipeline-invariants.md`](docs/asset-pipeline-invariants.md).
 
 ## Features
 
@@ -30,18 +38,19 @@ It deliberately excludes hero-select badge/frame generation.
 - Restores manager-owned changes during undeploy or uninstall.
 - Starts the game through Steam.
 
-The current adapters have verified deployment support for Mak's default skin
-and Dooley's independently replaceable default-skin Texture2D surfaces on
-Steam build `24001960`. Other heroes remain visible in the catalog but are
-disabled until their adapters have been verified.
+The current adapters have verified deployment support for the default skins
+of Mak, Vanessa, Pygmalien, Dooley, and Jules on Steam build `24001960`.
+Additional skins remain visible in the catalog but are disabled until their
+adapters have been verified.
 
 ## Install
 
-Download one of the manager-only artifacts from
+Download the software artifacts from
 [GitHub Releases](https://github.com/JayAlbertZhao/bazaar_skin_manager/releases):
 
 - `TheBazaarModManager-Setup-<version>.exe`
 - `TheBazaarModManager-Portable-<version>.zip`
+- `TheBazaarAssetGenerator-Portable-<version>.zip`
 
 The installer is per-user and does not require administrator rights. If a
 release is unsigned, Windows may display a reputation warning; verify the
@@ -145,9 +154,12 @@ Build the runtime and manager:
 
 ```powershell
 .\build.ps1 -Configuration Release
-.\build-manager.ps1 -Version 0.9.63
-.\build-installer.ps1 -Version 0.9.63
-.\package-manager-portable.ps1 -Version 0.9.63
+.\build.ps1 -Version 1.0.0
+.\build-manager.ps1 -Version 1.0.0
+.\build-asset-generator.ps1 -Version 1.0.0
+.\build-installer.ps1 -Version 1.0.0
+.\package-manager-portable.ps1 -Version 1.0.0
+.\package-asset-generator-portable.ps1 -Version 1.0.0
 ```
 
 Useful source commands:
@@ -158,6 +170,7 @@ python tools\bazaar_skin_manager.py status
 python tools\bazaar_skin_manager.py doctor
 python tools\bazaar_skin_manager.py --pack C:\path\to\pack validate-pack
 python tools\bazaar_skin_manager.py --pack C:\path\to\pack plan-install
+python tools\asset_generator_core.py --profile C:\path\to\generator-profile.json --all
 ```
 
 ## Release policy

@@ -10,12 +10,20 @@ namespace BazaarSkinManager.TheBazaar
     {
         private const string PvpPlacementName = "PvpScreen";
 
+        [ThreadStatic]
+        private static int _diagnosticLocalPortraitDepth;
+
         private static Type _heroViewTransitionType;
         private static FieldInfo _selectedHeroField;
         private static FieldInfo _isHeroField;
 
         public static bool IsLocalHeroPortraitLoad()
         {
+            if (_diagnosticLocalPortraitDepth > 0)
+            {
+                return true;
+            }
+
             StackFrame[] frames = new StackTrace(false).GetFrames();
             if (frames == null)
             {
@@ -40,6 +48,12 @@ namespace BazaarSkinManager.TheBazaar
                 }
             }
             return false;
+        }
+
+        public static IDisposable AssumeLocalPortraitForDiagnostic()
+        {
+            _diagnosticLocalPortraitDepth++;
+            return new DiagnosticLocalPortraitScope();
         }
 
         public static bool IsOpponentHierarchy(Component component)
@@ -149,6 +163,23 @@ namespace BazaarSkinManager.TheBazaar
                 ? null
                 : AccessTools.Field(_heroViewTransitionType, "_isHero");
             return _selectedHeroField != null && _isHeroField != null;
+        }
+
+        private sealed class DiagnosticLocalPortraitScope : IDisposable
+        {
+            private bool _disposed;
+
+            public void Dispose()
+            {
+                if (_disposed)
+                {
+                    return;
+                }
+                _disposed = true;
+                _diagnosticLocalPortraitDepth = Math.Max(
+                    0,
+                    _diagnosticLocalPortraitDepth - 1);
+            }
         }
     }
 }

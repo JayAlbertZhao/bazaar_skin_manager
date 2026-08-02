@@ -12,13 +12,14 @@ from collections import deque
 from pathlib import Path
 from statistics import median
 
-from PIL import Image, ImageChops, ImageFilter
+from PIL import Image, ImageChops, ImageDraw, ImageFilter
 
 from adapter_registry import AdapterRegistry, DEFAULT_ADAPTER_DIRECTORY
 from mod_studio_core import StudioWorkspace, sha256_file
 
 
 GENERATOR_ID = "deterministic-raster-v1"
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
 ALPHA_THRESHOLD = 8
 SMALL_ICON_PRESETS = ("outline", "block-gaps", "silhouette")
 
@@ -135,19 +136,34 @@ def fit_alpha_contain(
     size: tuple[int, int],
     target_bounds: tuple[int, int, int, int],
     anchor: tuple[float, float] = (0.5, 1.0),
+    fit_reference: Image.Image | None = None,
 ) -> Image.Image:
     source = source.convert("RGBA")
-    bounds = alpha_bounds(source)
+    reference = source if fit_reference is None else fit_reference.convert("RGBA")
+    if source.size != reference.size:
+        raise ValueError("Alpha-contained layers and their fit reference must share a canvas.")
+    bounds = alpha_bounds(reference)
     if bounds is None:
         raise ValueError("Foreground has no visible pixels after background removal.")
     left, top, right, bottom = target_bounds
-    if not (0 <= left < right <= size[0] and 0 <= top < bottom <= size[1]):
+    if not (
+        left < right
+        and top < bottom
+        and right > 0
+        and bottom > 0
+        and left < size[0]
+        and top < size[1]
+    ):
         raise ValueError(f"Invalid target alpha bounds {target_bounds} for {size}.")
     cropped = source.crop(bounds)
-    scale = min((right - left) / cropped.width, (bottom - top) / cropped.height)
+    reference_crop = reference.crop(bounds)
+    scale = min(
+        (right - left) / reference_crop.width,
+        (bottom - top) / reference_crop.height,
+    )
     fitted_size = (
-        max(1, int(round(cropped.width * scale))),
-        max(1, int(round(cropped.height * scale))),
+        max(1, int(round(reference_crop.width * scale))),
+        max(1, int(round(reference_crop.height * scale))),
     )
     fitted = cropped.resize(fitted_size, Image.Resampling.LANCZOS)
     x = int(round(left + ((right - left) - fitted.width) * anchor[0]))
@@ -155,6 +171,84 @@ def fit_alpha_contain(
     canvas = Image.new("RGBA", size, (0, 0, 0, 0))
     canvas.alpha_composite(fitted, (x, y))
     return canvas
+
+
+def alpha_contain_scale(
+    reference: Image.Image,
+    *,
+    target_bounds: tuple[int, int, int, int],
+) -> float:
+    """Return the exact scale used by :func:`fit_alpha_contain`."""
+    bounds = alpha_bounds(reference)
+    if bounds is None:
+        raise ValueError("Foreground has no visible pixels after background removal.")
+    left, top, right, bottom = target_bounds
+    source_width = bounds[2] - bounds[0]
+    source_height = bounds[3] - bounds[1]
+    return min((right - left) / source_width, (bottom - top) / source_height)
+
+
+def translate_rgba(source: Image.Image, offset: tuple[int, int]) -> Image.Image:
+    """Translate an already-fitted layer without changing its output canvas."""
+    image = source.convert("RGBA")
+    output = Image.new("RGBA", image.size, (0, 0, 0, 0))
+    output.alpha_composite(image, dest=(int(offset[0]), int(offset[1])))
+    return output
+
+
+def _normalise_output_offsets(
+    value: dict[str, tuple[int, int]] | None,
+) -> dict[str, tuple[int, int]]:
+    offsets: dict[str, tuple[int, int]] = {}
+    for slot, offset in (value or {}).items():
+        if len(offset) != 2:
+            raise ValueError(f"Output offset for {slot} must contain X and Y.")
+        pair = (int(offset[0]), int(offset[1]))
+        if pair != (0, 0):
+            offsets[str(slot)] = pair
+    return offsets
+
+
+def split_authored_underlay(
+    source: Image.Image,
+    declaration: dict,
+) -> tuple[Image.Image, Image.Image, Image.Image]:
+    """Split a manually lassoed underlay without inspecting pixel colours.
+
+    The polygons are interpreted in the declaration's coordinate space and
+    rasterized as a hard partition. Hard 0/255 membership keeps the source
+    RGBA lossless when the parts are recombined with no intervening layer;
+    antialiasing belongs to the source artwork, not to this mask.
+    """
+    source = source.convert("RGBA")
+    coordinate_space = tuple(
+        int(value) for value in declaration.get("coordinate_space", source.size)
+    )
+    if len(coordinate_space) != 2 or min(coordinate_space) <= 0:
+        raise ValueError("Authored underlay coordinate_space must be [width, height].")
+    polygons = declaration.get("polygons") or []
+    if not polygons:
+        raise ValueError("Authored underlay mask requires at least one polygon.")
+    scale_x = source.width / coordinate_space[0]
+    scale_y = source.height / coordinate_space[1]
+    mask = Image.new("L", source.size, 0)
+    draw = ImageDraw.Draw(mask)
+    for polygon in polygons:
+        if len(polygon) < 3:
+            raise ValueError("Every authored underlay polygon needs at least 3 points.")
+        draw.polygon(
+            [
+                (round(float(x) * scale_x), round(float(y) * scale_y))
+                for x, y in polygon
+            ],
+            fill=255,
+        )
+    original_alpha = source.getchannel("A")
+    underlay = source.copy()
+    underlay.putalpha(ImageChops.multiply(original_alpha, mask))
+    foreground = source.copy()
+    foreground.putalpha(ImageChops.multiply(original_alpha, ImageChops.invert(mask)))
+    return foreground, underlay, mask
 
 
 def fit_cover(source: Image.Image, *, size: tuple[int, int]) -> Image.Image:
@@ -434,19 +528,115 @@ def _save_png(image: Image.Image, destination: Path) -> None:
     )
 
 
+def _load_badge_template(
+    declaration: dict,
+    *,
+    template_root: Path,
+) -> tuple[dict[str, Image.Image], dict]:
+    """Load a locally extracted, non-AIGC badge template and verify its ledger.
+
+    The adapter names a template directory but does not contain or pin game-art
+    pixels. ``template.json`` is generated beside locally extracted layers and
+    is the authority for their filenames and hashes. This keeps official art
+    out of the public source tree while making every build reproducible.
+    """
+    directory_name = declaration.get("directory")
+    if not isinstance(directory_name, str) or not directory_name.strip():
+        raise ValueError("Badge template must declare a directory.")
+    root = template_root.resolve()
+    directory = (root / directory_name).resolve()
+    try:
+        directory.relative_to(root)
+    except ValueError as error:
+        raise ValueError(f"Badge template escapes its root: {directory}") from error
+
+    ledger_path = directory / "template.json"
+    if not ledger_path.is_file():
+        raise FileNotFoundError(
+            f"Badge template is not prepared: {ledger_path}. "
+            "Extract it from an installed game with tools/badge_pipeline.py."
+        )
+    ledger = json.loads(ledger_path.read_text(encoding="utf-8"))
+    if int(ledger.get("schema_version") or 0) != 2:
+        raise ValueError("Unsupported badge template schema.")
+    if not isinstance(ledger.get("aigc"), bool):
+        raise ValueError("Badge template must explicitly declare whether it is AIGC.")
+    if ledger.get("colour_inference") is not False:
+        raise ValueError(
+            "Badge template must explicitly disable colour-based mask inference."
+        )
+    expected_order = ["base", "frame_upper", "character", "frame_lower"]
+    if ledger.get("layer_order_back_to_front") != expected_order:
+        raise ValueError("Badge template has an invalid layer order.")
+
+    outputs = ledger.get("outputs") or {}
+    images: dict[str, Image.Image] = {}
+    verified_outputs: dict[str, dict] = {}
+    expected_size = tuple(int(value) for value in ledger.get("size") or [])
+    if len(expected_size) != 2 or min(expected_size) <= 0:
+        raise ValueError("Badge template has an invalid canvas size.")
+    for layer_name in (
+        "base",
+        "frame_upper",
+        "frame_lower",
+        "frame_lower_occlusion",
+    ):
+        layer = outputs.get(layer_name) or {}
+        filename = layer.get("file")
+        expected_hash = layer.get("sha256")
+        if not isinstance(filename, str) or not filename:
+            raise ValueError(f"Badge template is missing {layer_name} filename.")
+        path = (directory / filename).resolve()
+        try:
+            path.relative_to(directory)
+        except ValueError as error:
+            raise ValueError(f"Badge layer escapes its template: {path}") from error
+        actual_hash = sha256_file(path)
+        if not isinstance(expected_hash, str) or actual_hash != expected_hash:
+            raise ValueError(f"Badge template hash mismatch: {layer_name}")
+        with Image.open(path) as loaded:
+            image = loaded.convert("RGBA")
+        if image.size != expected_size:
+            raise ValueError(
+                f"Badge template layer {layer_name} is {image.size}; "
+                f"expected {expected_size}."
+            )
+        images[layer_name] = image
+        verified_outputs[layer_name] = {
+            "file": filename,
+            "sha256": actual_hash,
+        }
+    metadata = {
+        "schema_version": 1,
+        "method": ledger.get("method"),
+        "aigc": ledger["aigc"],
+        "colour_inference": False,
+        "size": list(expected_size),
+        "layer_order_back_to_front": expected_order,
+        "outputs": verified_outputs,
+        "ledger_sha256": sha256_file(ledger_path),
+    }
+    return images, metadata
+
+
 def generate_pack(
     *,
     adapter_id: str,
     character: Path,
-    background: Path,
-    small_icon: Path,
+    background: Path | None,
+    small_icon: Path | None,
     workspace_root: Path,
     output_zip: Path,
     pack_id: str,
     name: str,
     version: str,
     input_metadata: dict | None = None,
+    supplemental_inputs: dict[str, Path] | None = None,
     adapter_directory: Path = DEFAULT_ADAPTER_DIRECTORY,
+    badge_template_root: Path | None = None,
+    character_canvas_offset: tuple[int, int] = (0, 0),
+    output_offsets: dict[str, tuple[int, int]] | None = None,
+    allow_partial: bool = False,
 ) -> dict:
     registry = AdapterRegistry.load(adapter_directory)
     adapter = registry.find_by_id(adapter_id)
@@ -456,11 +646,31 @@ def generate_pack(
     if recipe.get("id") != GENERATOR_ID or int(recipe.get("version") or 0) != 2:
         raise ValueError(f"Adapter {adapter_id} has no supported deterministic recipe.")
 
-    input_paths = {
-        "character": character.resolve(),
-        "background": background.resolve(),
-        "small_icon": small_icon.resolve(),
-    }
+    input_paths = {"character": character.resolve()}
+    for input_name, input_path in (
+        ("background", background),
+        ("small_icon", small_icon),
+    ):
+        if input_path is not None:
+            input_paths[input_name] = input_path.resolve()
+    input_specs = recipe.get("inputs") or {}
+    for input_name, input_path in (supplemental_inputs or {}).items():
+        if input_name in input_paths:
+            raise ValueError(f"Supplemental input duplicates core input: {input_name}")
+        if input_name not in input_specs:
+            raise ValueError(
+                f"Adapter {adapter_id} does not declare supplemental input: {input_name}"
+            )
+        input_paths[input_name] = input_path.resolve()
+    missing_required_inputs = [
+        input_name
+        for input_name, specification in input_specs.items()
+        if not specification.get("optional") and input_name not in input_paths
+    ]
+    if missing_required_inputs and not allow_partial:
+        raise ValueError(
+            "Missing required adapter input(s): " + ", ".join(missing_required_inputs)
+        )
     loaded_inputs: dict[str, Image.Image] = {}
     for input_name, input_path in input_paths.items():
         if not input_path.is_file():
@@ -486,14 +696,47 @@ def generate_pack(
         metadata["aigc"] = False
         input_metadata[input_name] = metadata
 
+    character_metadata = input_metadata.get("character") or {}
+    authoritative_alpha = bool(character_metadata.get("authoritative_alpha"))
     removal = (recipe.get("foreground") or {}).get("remove_background") or {}
     if removal.get("method") != "edge_connected":
         raise ValueError("Only edge_connected background removal is supported.")
-    foreground = remove_edge_connected_background(
-        loaded_inputs["character"],
-        tolerance=int(removal.get("tolerance", 34)),
-        feather=int(removal.get("feather", 30)),
+    if authoritative_alpha:
+        foreground = loaded_inputs["character"].copy()
+    else:
+        foreground = remove_edge_connected_background(
+            loaded_inputs["character"],
+            tolerance=int(removal.get("tolerance", 34)),
+            feather=int(removal.get("feather", 30)),
+        )
+    transparency_declaration = None if authoritative_alpha else (
+        (recipe.get("foreground") or {}).get("transparent_lassos")
     )
+    authored_transparency_mask = None
+    if transparency_declaration:
+        foreground, _discarded, authored_transparency_mask = split_authored_underlay(
+            foreground,
+            transparency_declaration,
+        )
+    # The source depicts the character leaning against a room corner. Its dark
+    # cast shadow is background underlay, not character anatomy. Keep the
+    # original full silhouette as the shared fit reference, then split the
+    # explicitly traced shadow before rendering any output.
+    foreground_fit_reference = foreground.copy()
+    cast_shadow_declaration = None if authoritative_alpha else (
+        (recipe.get("foreground") or {}).get("cast_shadow_lasso")
+    )
+    character_shadow = (
+        Image.new("RGBA", foreground.size, (0, 0, 0, 0))
+        if authoritative_alpha
+        else None
+    )
+    cast_shadow_mask = None
+    if cast_shadow_declaration:
+        foreground, character_shadow, cast_shadow_mask = split_authored_underlay(
+            foreground,
+            cast_shadow_declaration,
+        )
 
     target = adapter.payload["target"]
     workspace = StudioWorkspace.create(
@@ -520,52 +763,270 @@ def generate_pack(
         archived_inputs[input_name] = archived_input
     outputs: dict[str, Image.Image] = {}
     output_metadata: dict[str, dict] = {}
+    skipped_outputs: dict[str, list[str]] = {}
     output_recipes = recipe.get("outputs") or {}
+    character_canvas_offset = (
+        int(character_canvas_offset[0]),
+        int(character_canvas_offset[1]),
+    )
+    requested_output_offsets = _normalise_output_offsets(output_offsets)
+    unknown_adjustments = set(requested_output_offsets) - set(output_recipes)
+    if unknown_adjustments:
+        raise ValueError(
+            "Output adjustment references unknown slot(s): "
+            + ", ".join(sorted(unknown_adjustments))
+        )
+
+    def canonical_slot(slot_name: str) -> str:
+        current = slot_name
+        visited = {slot_name}
+        while output_recipes[current].get("alias_of"):
+            current = str(output_recipes[current]["alias_of"])
+            if current in visited or current not in output_recipes:
+                raise ValueError(f"Invalid output alias chain for {slot_name}.")
+            visited.add(current)
+        return current
+
+    # Alias slots backed by one native texture are one generated asset family.
+    # Manager validation intentionally rejects different pixels for that same
+    # target, so a local adjustment made through any alias is canonicalized to
+    # the shared recipe and inherited by every consumer of that asset.
+    output_offsets: dict[str, tuple[int, int]] = {}
+    for requested_slot, offset in requested_output_offsets.items():
+        canonical = canonical_slot(requested_slot)
+        existing = output_offsets.get(canonical)
+        if existing is not None and existing != offset:
+            raise ValueError(
+                f"Conflicting output adjustments share native asset {canonical}."
+            )
+        output_offsets[canonical] = offset
+
     for slot, output_recipe in output_recipes.items():
         alias = output_recipe.get("alias_of")
         if alias:
             continue
+        unavailable_dependencies = [
+            dependency
+            for dependency in output_recipe.get("depends_on") or []
+            if dependency != "badge_template"
+            and dependency not in input_paths
+            and not (input_specs.get(dependency) or {}).get("optional")
+        ]
+        if unavailable_dependencies:
+            if not allow_partial:
+                raise ValueError(
+                    f"{slot} is missing input dependencies: "
+                    + ", ".join(unavailable_dependencies)
+                )
+            skipped_outputs[slot] = unavailable_dependencies
+            continue
+        local_offset = output_offsets.get(slot, (0, 0))
+        renderer = output_recipe.get("renderer", "layers")
+        if renderer == "layered_badge":
+            from badge_pipeline import compose_badge
+
+            template_images, template_metadata = _load_badge_template(
+                output_recipe["template"],
+                template_root=(badge_template_root or PROJECT_ROOT / "manager" / "assets"),
+            )
+
+            crop = output_recipe.get("character_crop", [0.0, 0.0, 1.0, 1.0])
+            crop_box = (
+                round(float(crop[0]) * foreground.width),
+                round(float(crop[1]) * foreground.height),
+                round(float(crop[2]) * foreground.width),
+                round(float(crop[3]) * foreground.height),
+            )
+            cropped_foreground = foreground.crop(crop_box)
+            fit_reference = foreground_fit_reference.crop(crop_box)
+            shadow = (
+                None if character_shadow is None else character_shadow.crop(crop_box)
+            )
+            scale = alpha_contain_scale(
+                fit_reference,
+                target_bounds=tuple(
+                    int(value) for value in output_recipe["target_alpha_bounds"]
+                ),
+            )
+            badge_canvas_size = template_images["base"].size
+            output_size = tuple(int(value) for value in output_recipe["size"])
+            local_template_offset = (
+                round(local_offset[0] * badge_canvas_size[0] / output_size[0]),
+                round(local_offset[1] * badge_canvas_size[1] / output_size[1]),
+            )
+            character_template_offset = (
+                round(character_canvas_offset[0] * scale) + local_template_offset[0],
+                round(character_canvas_offset[1] * scale) + local_template_offset[1],
+            )
+            target_bounds = tuple(
+                int(value) for value in output_recipe["target_alpha_bounds"]
+            )
+            target_bounds = (
+                target_bounds[0] + character_template_offset[0],
+                target_bounds[1] + character_template_offset[1],
+                target_bounds[2] + character_template_offset[0],
+                target_bounds[3] + character_template_offset[1],
+            )
+            rendered = compose_badge(
+                cropped_foreground,
+                shadow=shadow,
+                fit_reference=fit_reference,
+                base=template_images["base"],
+                frame_upper=template_images["frame_upper"],
+                frame_lower=template_images["frame_lower"],
+                frame_lower_occlusion=template_images["frame_lower_occlusion"],
+                target_bounds=target_bounds,
+                output_size=output_size,
+            )
+            metrics = image_metrics(rendered)
+            _validate_metrics(slot, metrics, output_recipe)
+            metrics["depends_on"] = list(
+                output_recipe.get("depends_on") or []
+            )
+            metrics["layers"] = list(output_recipe.get("layers") or [])
+            metrics["template"] = template_metadata
+            metrics["character_crop"] = list(crop)
+            if character_canvas_offset != (0, 0) or local_offset != (0, 0):
+                metrics["adjustment"] = {
+                    "character_canvas": list(character_canvas_offset),
+                    "local_output": list(local_offset),
+                    "effective_output": [
+                        round(character_template_offset[0] * output_size[0] / badge_canvas_size[0]),
+                        round(character_template_offset[1] * output_size[1] / badge_canvas_size[1]),
+                    ],
+                }
+            if cast_shadow_declaration:
+                metrics["cast_shadow_lasso"] = {
+                    "method": "authored-coordinate-lasso",
+                    "coordinate_space": list(
+                        cast_shadow_declaration["coordinate_space"]
+                    ),
+                    "polygons": list(cast_shadow_declaration["polygons"]),
+                    "merged_into": "badge_template.base",
+                    "selected_pixels": (
+                        cast_shadow_mask.width * cast_shadow_mask.height
+                        - cast_shadow_mask.histogram()[0]
+                    ),
+                }
+            outputs[slot] = rendered
+            output_metadata[slot] = metrics
+            continue
+        if renderer != "layers":
+            raise ValueError(f"Unsupported renderer for {slot}: {renderer}")
         size = tuple(int(value) for value in output_recipe["size"])
         layers = output_recipe.get("layers") or []
         dependencies = list(output_recipe.get("depends_on") or [])
-        if not dependencies or {layer.get("input") for layer in layers} != set(dependencies):
+        active_layers = []
+        for declared_layer in layers:
+            if (
+                declared_layer.get("optional")
+                and declared_layer.get("input") not in loaded_inputs
+            ):
+                continue
+            layer = dict(declared_layer)
+            conditional_overrides = layer.pop("when_input_present", {})
+            for condition_input, overrides in conditional_overrides.items():
+                if condition_input in loaded_inputs:
+                    layer.update(overrides)
+            active_layers.append(layer)
+        active_dependencies = [
+            dependency
+            for dependency in dependencies
+            if dependency in input_paths or dependency == "badge_template"
+        ]
+        declared_layer_dependencies = {
+            "character" if layer.get("input") == "character_shadow" else layer.get("input")
+            for layer in active_layers
+        }
+        if not active_dependencies or declared_layer_dependencies != set(active_dependencies):
             raise ValueError(f"{slot} must declare exact input dependencies and layers.")
         rendered = Image.new("RGBA", size, (0, 0, 0, 0))
-        for layer in layers:
+        effective_character_offset = (0, 0)
+        for layer in active_layers:
             input_name = layer["input"]
             fit = layer.get("fit")
             if input_name == "character":
                 layer_source = foreground
+                fit_reference = foreground_fit_reference
+            elif input_name == "character_shadow":
+                if character_shadow is None:
+                    raise ValueError(
+                        f"{slot} requests character_shadow but no cast-shadow lasso is declared."
+                    )
+                layer_source = character_shadow
+                fit_reference = foreground_fit_reference
             else:
                 layer_source = loaded_inputs[input_name]
+                fit_reference = None
+            if layer.get("flip_x"):
+                layer_source = layer_source.transpose(Image.Transpose.FLIP_LEFT_RIGHT)
+                if fit_reference is not None:
+                    fit_reference = fit_reference.transpose(Image.Transpose.FLIP_LEFT_RIGHT)
             if fit == "cover":
                 fitted = fit_cover(layer_source, size=size)
             elif fit == "alpha_contain":
+                target_bounds = tuple(
+                    int(value)
+                    for value in layer.get(
+                        "target_alpha_bounds",
+                        output_recipe["target_alpha_bounds"],
+                    )
+                )
                 fitted = fit_alpha_contain(
                     layer_source,
                     size=size,
-                    target_bounds=tuple(
-                        int(value) for value in output_recipe["target_alpha_bounds"]
-                    ),
+                    target_bounds=target_bounds,
                     anchor=tuple(
                         float(value)
-                        for value in output_recipe.get("anchor", [0.5, 1.0])
+                        for value in layer.get(
+                            "anchor",
+                            output_recipe.get("anchor", [0.5, 1.0]),
+                        )
                     ),
+                    fit_reference=fit_reference,
                 )
             else:
                 raise ValueError(f"Unsupported fit mode for {slot}: {fit}")
+            if input_name in {"character", "character_shadow"}:
+                scale = alpha_contain_scale(
+                    fit_reference if fit_reference is not None else layer_source,
+                    target_bounds=target_bounds,
+                )
+                effective_character_offset = (
+                    round(character_canvas_offset[0] * scale) + local_offset[0],
+                    round(character_canvas_offset[1] * scale) + local_offset[1],
+                )
+                fitted = translate_rgba(fitted, effective_character_offset)
+            elif input_name == "small_icon" and local_offset != (0, 0):
+                fitted = translate_rgba(fitted, local_offset)
             rendered.alpha_composite(fitted)
         metrics = image_metrics(rendered)
         _validate_metrics(slot, metrics, output_recipe)
-        metrics["depends_on"] = dependencies
-        metrics["layers"] = layers
+        metrics["depends_on"] = active_dependencies
+        metrics["layers"] = active_layers
+        if (
+            "character" in active_dependencies
+            and character_canvas_offset != (0, 0)
+        ) or local_offset != (0, 0):
+            metrics["adjustment"] = {
+                "character_canvas": list(character_canvas_offset),
+                "local_output": list(local_offset),
+                "effective_output": list(
+                    effective_character_offset
+                    if "character" in active_dependencies
+                    else local_offset
+                ),
+            }
         outputs[slot] = rendered
         output_metadata[slot] = metrics
 
     for slot, output_recipe in output_recipes.items():
         alias = output_recipe.get("alias_of")
-        if alias:
+        if alias and slot not in outputs:
             if alias not in outputs:
+                if allow_partial and alias in skipped_outputs:
+                    skipped_outputs[slot] = list(skipped_outputs[alias])
+                    continue
                 raise ValueError(f"Alias {slot} references missing output {alias}.")
             outputs[slot] = outputs[alias].copy()
             output_metadata[slot] = dict(
@@ -581,6 +1042,10 @@ def generate_pack(
         output_metadata[slot]["sha256"] = sha256_file(destination)
         output_metadata[slot]["bytes"] = destination.stat().st_size
 
+    badge_template_aigc = any(
+        bool((metadata.get("template") or {}).get("aigc"))
+        for metadata in output_metadata.values()
+    )
     workspace.state["authoring"] = {
         "generator": {
             "id": recipe["id"],
@@ -589,8 +1054,15 @@ def generate_pack(
             "adapter_version": adapter.adapter_version,
         },
         "asset_policy": {
-            "aigc_allowed": False,
-            "declaration": "All three inputs are non-AIGC assets or deterministic derivatives.",
+            "aigc_allowed": badge_template_aigc,
+            "declaration": (
+                "Creator inputs are non-AIGC. The local completed badge template "
+                + (
+                    "contains a declared ImageGen reconstruction."
+                    if badge_template_aigc
+                    else "contains no AIGC pixels."
+                )
+            ),
         },
         "inputs": {
             input_name: {
@@ -606,7 +1078,52 @@ def generate_pack(
         },
         "foreground": image_metrics(foreground),
         "outputs": output_metadata,
+        "skipped_outputs": skipped_outputs,
     }
+    if character_canvas_offset != (0, 0) or output_offsets:
+        workspace.state["authoring"]["adjustments"] = {
+            "character_canvas": list(character_canvas_offset),
+            "per_output": {
+                slot: list(offset)
+                for slot, offset in sorted(requested_output_offsets.items())
+            },
+            "canonical_assets": {
+                slot: canonical_slot(slot)
+                for slot in sorted(requested_output_offsets)
+            },
+        }
+    if transparency_declaration:
+        workspace.state["authoring"]["foreground"]["authored_transparency"] = {
+            "method": "authored-coordinate-lasso",
+            "coordinate_space": list(transparency_declaration["coordinate_space"]),
+            "polygons": list(transparency_declaration["polygons"]),
+            "selected_pixels": (
+                authored_transparency_mask.width * authored_transparency_mask.height
+                - authored_transparency_mask.histogram()[0]
+            ),
+        }
+    if authoritative_alpha:
+        workspace.state["authoring"]["foreground"]["authoritative_alpha"] = {
+            "declared": True,
+            "method": character_metadata.get(
+                "alpha_method",
+                "pack-author-supplied alpha is used verbatim",
+            ),
+            "background_removal": False,
+            "authored_lasso_postprocessing": False,
+        }
+    if cast_shadow_declaration:
+        workspace.state["authoring"]["foreground"]["cast_shadow"] = {
+            "method": "authored-coordinate-lasso",
+            "semantic": "character cast shadow on the room-corner background",
+            "coordinate_space": list(cast_shadow_declaration["coordinate_space"]),
+            "polygons": list(cast_shadow_declaration["polygons"]),
+            "selected_pixels": (
+                cast_shadow_mask.width * cast_shadow_mask.height
+                - cast_shadow_mask.histogram()[0]
+            ),
+            "composition": "background -> character_shadow -> character",
+        }
     workspace.save()
     errors = workspace.validation_errors()
     if errors:
@@ -620,6 +1137,7 @@ def generate_pack(
         "zip": str(output_zip),
         "zip_sha256": sha256_file(output_zip),
         "outputs": output_metadata,
+        "skipped_outputs": skipped_outputs,
     }
 
 
@@ -644,6 +1162,19 @@ def main() -> int:
         default="outline",
     )
     parser.add_argument("--input-metadata", type=Path)
+    parser.add_argument(
+        "--supplemental-input",
+        action="append",
+        default=[],
+        metavar="NAME=PATH",
+        help="Optional adapter-declared input. Repeat for multiple supplemental layers.",
+    )
+    parser.add_argument(
+        "--badge-template-root",
+        type=Path,
+        default=PROJECT_ROOT / "manager" / "assets",
+        help="Root containing locally extracted badge-templates/ (official art is not bundled).",
+    )
     parser.add_argument("--workspace-root", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--pack-id", required=True)
@@ -653,6 +1184,15 @@ def main() -> int:
     input_metadata = None
     if args.input_metadata:
         input_metadata = json.loads(args.input_metadata.read_text(encoding="utf-8"))
+    supplemental_inputs: dict[str, Path] = {}
+    for declaration in args.supplemental_input:
+        input_name, separator, input_path = declaration.partition("=")
+        if not separator or not input_name.strip() or not input_path.strip():
+            parser.error("--supplemental-input must use NAME=PATH")
+        input_name = input_name.strip()
+        if input_name in supplemental_inputs:
+            parser.error(f"duplicate --supplemental-input name: {input_name}")
+        supplemental_inputs[input_name] = Path(input_path.strip())
     small_icon = args.small_icon
     if args.derive_small_icon_output:
         small_icon = derive_small_icon_file(
@@ -676,6 +1216,8 @@ def main() -> int:
         name=args.name,
         version=args.version,
         input_metadata=input_metadata,
+        supplemental_inputs=supplemental_inputs,
+        badge_template_root=args.badge_template_root,
     )
     print(json.dumps(result, ensure_ascii=False, indent=2))
     return 0

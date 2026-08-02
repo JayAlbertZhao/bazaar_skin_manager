@@ -278,6 +278,9 @@ namespace BazaarSkinManager.TheBazaar
 
             SpriteRenderer spriteRenderer = overlay.GetComponent<SpriteRenderer>();
             spriteRenderer.sprite = sprite;
+            float scaleMultiplier = Plugin.ActivePack == null
+                ? 1f
+                : Plugin.ActivePack.ScaleMultiplier(slot);
             if (visibleRenderers.Length > 0)
             {
                 Renderer top = visibleRenderers
@@ -297,7 +300,18 @@ namespace BazaarSkinManager.TheBazaar
                 }
                 float scale = bounds.size.y /
                     Math.Max(0.001f, sprite.bounds.size.y * inheritedScale);
+                scale *= scaleMultiplier;
                 transform.localScale = Vector3.one * scale;
+
+                // Native Spine bounds differ substantially between heroes.
+                // The optional pack multiplier keeps the existing bounds-fit
+                // algorithm and changes only the authored composition scale.
+                // Anchor the enlarged replacement to the native lower edge so
+                // it grows upward instead of sinking into the menu controls.
+                float replacementHeight =
+                    sprite.bounds.size.y * inheritedScale * scale;
+                transform.position += Vector3.up *
+                    ((replacementHeight - bounds.size.y) * 0.5f);
             }
             else if (hasBounds && bounds.size.z > 0.001f)
             {
@@ -327,7 +341,7 @@ namespace BazaarSkinManager.TheBazaar
                         spriteRenderer.bounds,
                         out replacementScreenHeight);
                     float targetScreenHeight = Math.Min(
-                        screenHeight,
+                        screenHeight * scaleMultiplier,
                         renderCamera.pixelHeight * 0.82f);
                     float scale = targetScreenHeight /
                         Math.Max(0.5f, replacementScreenHeight);

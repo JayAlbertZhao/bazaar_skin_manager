@@ -325,6 +325,12 @@ class StudioWorkspace:
             manifest.get("animation")
             or {"mode": "none", "files": [], "runtime_ready": False}
         )
+        if manifest.get("authoring") is not None:
+            # Complete generated packs carry deterministic input/output
+            # provenance here. Preserve it across Manager import and rebuild;
+            # otherwise deploy would silently replace the imported manifest
+            # with a provenance-stripped variant.
+            state["authoring"] = deepcopy(manifest["authoring"])
         return state
 
     @property

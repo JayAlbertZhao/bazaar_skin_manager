@@ -669,8 +669,11 @@ namespace BazaarSkinManager.TheBazaar
                             await Task.Delay(500);
                         }
                     }
+                    string targetCode = Plugin.ActivePack == null
+                        ? "UNKNOWN"
+                        : Plugin.ActivePack.TargetHeroCode();
                     RuntimeSkinAudit.RecordLoader(
-                        "HeroSelectDisplay.MAK.Diagnostic",
+                        "HeroSelectDisplay." + targetCode + ".Diagnostic",
                         completed ? "applied" : "not loaded",
                         centralDetail,
                         null);
@@ -759,7 +762,22 @@ namespace BazaarSkinManager.TheBazaar
             object result = null;
             try
             {
-                Task task = method.Invoke(target, arguments) as Task;
+                Task task;
+                IDisposable ownershipScope =
+                    loader == "LoadPortraitSpriteAsync"
+                        ? VisualOwnership.AssumeLocalPortraitForDiagnostic()
+                        : null;
+                try
+                {
+                    task = method.Invoke(target, arguments) as Task;
+                }
+                finally
+                {
+                    if (ownershipScope != null)
+                    {
+                        ownershipScope.Dispose();
+                    }
+                }
                 if (task == null)
                 {
                     RuntimeSkinAudit.RecordLoader(
@@ -809,17 +827,29 @@ namespace BazaarSkinManager.TheBazaar
             FieldInfo backgroundField = AccessTools.Field(
                 result.GetType(),
                 "HeroSkinBackgroundImage");
+            bool preloaded = Plugin.ActivePack.UsesPreloadedDeployment(
+                "store_image");
             Texture2D expected = Plugin.ActivePack.Texture("store_image");
             bool replaced = backgroundField != null &&
-                object.ReferenceEquals(
-                    backgroundField.GetValue(result),
-                    expected);
+                (preloaded
+                    ? backgroundField.GetValue(result) is Texture2D
+                    : object.ReferenceEquals(
+                        backgroundField.GetValue(result),
+                        expected));
             RuntimeSkinAudit.RecordLoader(
                 loader + ".ValueTypeValidation",
                 replaced ? "applied" : "not loaded",
                 replaced
-                    ? "Returned CollectibleInspectorData carries the replacement background."
-                    : "Returned CollectibleInspectorData lost its mutated background.",
+                    ? preloaded
+                        ? "Returned CollectibleInspectorData retains the " +
+                            "deploy-time patched background reference."
+                        : "Returned CollectibleInspectorData carries the " +
+                            "replacement background."
+                    : preloaded
+                        ? "Returned CollectibleInspectorData lost its " +
+                            "deploy-time patched background reference."
+                        : "Returned CollectibleInspectorData lost its " +
+                            "mutated background.",
                 result);
         }
 

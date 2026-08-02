@@ -2,12 +2,13 @@
 
 ## What GitHub publishes
 
-A version tag such as `v0.9.63` produces:
+A version tag such as `v1.0.0` produces:
 
 - GitHub's automatic source ZIP and source tarball for the tag;
-- `TheBazaarModManager-Setup-0.9.63.exe`;
+- `TheBazaarModManager-Setup-1.0.0.exe`;
 - the installer's SHA-256 file;
-- `TheBazaarModManager-Portable-0.9.63.zip`.
+- `TheBazaarModManager-Portable-1.0.0.zip` and its SHA-256 file;
+- `TheBazaarAssetGenerator-Portable-1.0.0.zip` and its SHA-256 file.
 
 The public workflow does not package a skin's art or audio. Complete asset
 packs remain ordinary ZIP inputs to the manager and can be distributed through
@@ -15,18 +16,19 @@ any separate channel.
 
 ## Maintainer release
 
-1. Update the manager and runtime-adapter versions independently, then update
-   the changelog. Asset-pack versions remain in each external `mod.json`.
+1. Update the manager, runtime adapter, and asset generator versions, then
+   update the changelog. Asset-pack versions remain in each external
+   `mod.json`.
 2. Copy the audited runtime DLL to
    `manager/runtime/BazaarSkinManager.Runtime.dll`.
 3. Run `python -m unittest discover -s tests -v`.
-4. Run `build-manager.ps1`, `build-installer.ps1`, and the installer smoke
-   test.
+4. Run `build-manager.ps1`, `build-asset-generator.ps1`,
+   `build-installer.ps1`, both portable packaging scripts, and the smoke tests.
 5. Commit the source, create an immutable semantic tag, and push it:
 
    ```powershell
-   git tag v0.9.63
-   git push origin main v0.9.63
+   git tag v1.0.0
+   git push origin main v1.0.0
    ```
 
 6. The release workflow builds on `windows-latest`, uploads its workflow
@@ -38,7 +40,8 @@ any separate channel.
 
 For Authenticode signing, configure repository secrets
 `WINDOWS_SIGNING_CERT_BASE64` and `WINDOWS_SIGNING_CERT_PASSWORD`. The workflow
-then signs both the manager and final installer and refreshes their hashes.
+then signs the manager, Asset Generator, and final installer and refreshes
+their hashes.
 Without these secrets, Windows reports the result as unsigned and SmartScreen
 may warn.
 

@@ -6,6 +6,7 @@ from __future__ import annotations
 import json
 import re
 import sys
+from copy import deepcopy
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -54,9 +55,60 @@ class AdapterRegistry:
 
     @classmethod
     def load(cls, directory: Path = DEFAULT_ADAPTER_DIRECTORY) -> "AdapterRegistry":
-        records: list[AdapterRecord] = []
+        def merge_recipe(base: dict, override: dict) -> dict:
+            merged = deepcopy(base)
+            for key, value in override.items():
+                if (
+                    isinstance(value, dict)
+                    and isinstance(merged.get(key), dict)
+                ):
+                    merged[key] = merge_recipe(merged[key], value)
+                else:
+                    merged[key] = deepcopy(value)
+            return merged
+
+        raw_payloads: list[tuple[Path, dict]] = []
         for path in sorted(directory.glob("*.json")):
-            payload = json.loads(path.read_text(encoding="utf-8"))
+            raw_payloads.append(
+                (path, json.loads(path.read_text(encoding="utf-8")))
+            )
+        payloads_by_id = {
+            str(payload.get("id") or "").casefold(): payload
+            for _path, payload in raw_payloads
+        }
+
+        def resolve_recipe(payload: dict, stack: tuple[str, ...] = ()) -> dict:
+            recipe = payload.get("authoring_recipe") or {}
+            parent_id = str(recipe.get("inherits_adapter") or "").strip()
+            if not parent_id:
+                return recipe
+            key = parent_id.casefold()
+            if key in stack:
+                raise ValueError(
+                    "Circular authoring recipe inheritance: "
+                    + " -> ".join((*stack, key))
+                )
+            parent = payloads_by_id.get(key)
+            if parent is None:
+                raise ValueError(
+                    f"Unknown inherited authoring adapter: {parent_id}"
+                )
+            inherited = resolve_recipe(parent, (*stack, key))
+            resolved = merge_recipe(inherited, recipe.get("overrides") or {})
+            # Identity remains explicit in every child adapter so build
+            # metadata can advertise capabilities without interpreting the
+            # complete rendering recipe.
+            resolved["id"] = recipe.get("id") or inherited.get("id")
+            resolved["version"] = int(
+                recipe.get("version") or inherited.get("version") or 0
+            )
+            return resolved
+
+        records: list[AdapterRecord] = []
+        for path, raw_payload in raw_payloads:
+            payload = deepcopy(raw_payload)
+            if payload.get("authoring_recipe"):
+                payload["authoring_recipe"] = resolve_recipe(raw_payload)
             target = payload.get("target") or {}
             adapter_id = str(payload.get("id") or "").strip()
             hero = str(target.get("hero") or "").strip()

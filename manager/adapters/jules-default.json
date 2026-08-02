@@ -1,0 +1,67 @@
+{
+  "schema_version": 1,
+  "id": "jules-default",
+  "adapter_version": 2,
+  "supported_builds": ["24001960"],
+  "target": {
+    "game": "the-bazaar",
+    "hero": "Jules",
+    "skin": "Skin_JUL_01/A",
+    "skin_name_contains": "JUL_01a"
+  },
+  "visual_replacements": [
+    {"slot": "portrait_gameplay", "pixels_per_unit": 256, "match_mode": "exact", "match_names": ["Skin_JUL_01a_Portrait"]},
+    {"slot": "portrait_background", "direct_only": true, "match_mode": "exact", "match_names": []},
+    {"slot": "portrait_small", "match_mode": "exact", "match_names": ["Skin_JUL_01a_Portrait"]},
+    {
+      "slot": "store_image",
+      "deployment": {"mode": "preload_unity_texture2d", "target": "TheBazaar_Data/StreamingAssets/aa/StandaloneWindows64/skin_jul_01_assets_all.bundle", "asset_name": "Skin_JUL_01a_StoreImage", "unity_version": "6000.3.11f1", "target_size": [2048, 2048], "supported_original_sha256": ["dbf4feb01ccb4b4c4a8240bd829e9b590a036687d3f0da3997bf6f2b71263683"]},
+      "match_names": ["Skin_JUL_01a_StoreImage"]
+    },
+    {
+      "slot": "marketplace_list",
+      "deployment": {"mode": "preload_unity_texture2d", "target": "TheBazaar_Data/StreamingAssets/aa/StandaloneWindows64/skin_jul_01_assets_all.bundle", "asset_name": "Skin_JUL_01a_StoreImage", "unity_version": "6000.3.11f1", "target_size": [2048, 2048], "supported_original_sha256": ["dbf4feb01ccb4b4c4a8240bd829e9b590a036687d3f0da3997bf6f2b71263683"]},
+      "match_names": ["Skin_JUL_01a_StoreImage"]
+    },
+    {
+      "slot": "marketplace_details",
+      "deployment": {"mode": "preload_unity_texture2d", "target": "TheBazaar_Data/StreamingAssets/aa/StandaloneWindows64/skin_jul_01_assets_all.bundle", "asset_name": "Skin_JUL_01a_StoreImage", "unity_version": "6000.3.11f1", "target_size": [2048, 2048], "supported_original_sha256": ["dbf4feb01ccb4b4c4a8240bd829e9b590a036687d3f0da3997bf6f2b71263683"]},
+      "match_names": ["Skin_JUL_01a_StoreImage"]
+    },
+    {
+      "slot": "collection_list",
+      "deployment": {"mode": "preload_unity_texture2d", "target": "TheBazaar_Data/StreamingAssets/aa/StandaloneWindows64/skin_jul_01_assets_all.bundle", "asset_name": "Skin_JUL_01a_PreviewCollection_TUI", "unity_version": "6000.3.11f1", "target_size": [512, 512], "supported_original_sha256": ["dbf4feb01ccb4b4c4a8240bd829e9b590a036687d3f0da3997bf6f2b71263683"]},
+      "match_names": ["Skin_JUL_01a_PreviewCollection_TUI"]
+    },
+    {"slot": "collection_details", "direct_only": true, "match_mode": "exact", "match_names": ["Skin_JUL_01a_Base_P", "Skin_JUL_01a_P"]},
+    {
+      "slot": "daily_weekly",
+      "deployment": {"mode": "preload_unity_texture2d", "target": "TheBazaar_Data/StreamingAssets/aa/StandaloneWindows64/skin_jul_01_assets_all.bundle", "asset_name": "Skin_JUL_01a_PreviewCollection_TUI", "unity_version": "6000.3.11f1", "target_size": [512, 512], "supported_original_sha256": ["dbf4feb01ccb4b4c4a8240bd829e9b590a036687d3f0da3997bf6f2b71263683"]},
+      "match_names": ["Skin_JUL_01a_PreviewCollection_TUI"]
+    },
+    {
+      "slot": "hero_select",
+      "deployment": {"mode": "preload_unity_texture2d", "target": "TheBazaar_Data/StreamingAssets/aa/StandaloneWindows64/defaultlocalgroup_assets_assets_thebazaar_art_mainmenu_heroselect_hero_button_jules.png.bundle", "asset_name": "Jules", "unity_version": "6000.3.11f1", "target_size": [512, 512], "supported_original_sha256": ["5e5ead5c54eae1296fd748f50baba1c133e5c9e2f05a036e7a82459c43397851"]},
+      "direct_only": true,
+      "match_mode": "exact",
+      "match_names": []
+    },
+    {
+      "slot": "hero_icon_small",
+      "pixels_per_unit": 100,
+      "deployment": {"mode": "preload_unity_texture2d", "target": "TheBazaar_Data/StreamingAssets/aa/StandaloneWindows64/defaultlocalgroup_assets_assets_thebazaar_art_ui_icons_heros_rough_icon_flatrough_jul_tui.png.bundle", "asset_name": "Icon_FlatRough_JUL_TUI", "unity_version": "6000.3.11f1", "target_size": [256, 256], "supported_original_sha256": ["0293850c2126dd45c818ec10659e942652e37f04d492ee3271a271b54ffcf823"]},
+      "match_mode": "exact",
+      "match_names": ["Icon_FlatRough_JUL_TUI"]
+    },
+    {"slot": "standing_overlay", "direct_only": true, "match_mode": "exact", "match_names": ["Skin_JUL_01a_Base_P", "Skin_JUL_01a_UI_Base_P", "Skin_JUL_01a_SE_P", "Skin_JUL_01a_SkeletonData"]}
+  ],
+  "authoring_recipe": {
+    "id": "deterministic-raster-v1",
+    "version": 2,
+    "inherits_adapter": "dooley-default",
+    "overrides": {
+      "foreground": {"transparent_lassos": null, "cast_shadow_lasso": null},
+      "outputs": {"hero_select": {"size": [512, 512]}}
+    }
+  }
+}

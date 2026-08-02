@@ -88,6 +88,28 @@ def write_game(root: Path) -> Path:
 
 
 class ManagerTests(unittest.TestCase):
+    def test_missing_target_adapter_reports_one_actionable_error(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            pack = write_pack(Path(temp))
+            manifest_path = pack / "mod.json"
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            manifest["target"]["hero"] = "UnknownHero"
+            manifest["target"]["skin"] = "Skin_UNK_01/A"
+            manifest["adapter"] = {"id": "unknown-default", "version": 1}
+            manifest_path.write_text(
+                json.dumps(manifest, indent=2) + "\n",
+                encoding="utf-8",
+            )
+
+            errors = manager.validate_pack(pack)
+
+            self.assertEqual(
+                sum("no verified adapter for target" in item for item in errors),
+                1,
+            )
+            self.assertTrue(any("update Skin Manager" in item for item in errors))
+            self.assertFalse(any("slot is not declared" in item for item in errors))
+
     def test_adapter_claim_binds_visual_contract_fail_closed(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             pack = write_pack(Path(temp))
@@ -277,9 +299,15 @@ class ManagerTests(unittest.TestCase):
                 plugin = Path(record["plugin"]["path"])
                 deployed_pack = Path(record["pack"]["path"])
                 compatibility = Path(record["runtime_compatibility"]["path"])
+                runtime_config = Path(record["runtime_config"]["path"])
                 self.assertTrue(plugin.is_file())
                 self.assertTrue(deployed_pack.is_dir())
                 self.assertTrue(compatibility.is_file())
+                self.assertTrue(runtime_config.is_file())
+                self.assertIn(
+                    f"ModsRoot = {(local / 'BazaarSkinManager' / 'TheBazaar' / 'mods').resolve()}",
+                    runtime_config.read_text(encoding="utf-8"),
+                )
                 removed = manager.uninstall()
                 self.assertIn(str(plugin), removed)
                 self.assertIn(str(deployed_pack), removed)
@@ -322,7 +350,7 @@ class ManagerTests(unittest.TestCase):
                     manager.explicit_install(game),
                 )
                 diagnostics = manager.installation_diagnostics()
-            self.assertEqual(record["manager"]["version"], "0.9.63")
+            self.assertEqual(record["manager"]["version"], manager.MANAGER_VERSION)
             self.assertEqual(record["runtime"]["version"], "7.4.2")
             self.assertEqual(record["pack"]["version"], "1.0.0")
             self.assertEqual(

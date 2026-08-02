@@ -47,6 +47,11 @@ ADAPTER = json.loads(
         ROOT / "manager" / "adapters" / "mak-default.json"
     ).read_text(encoding="utf-8")
 )
+DOOLEY_ADAPTER = json.loads(
+    (
+        ROOT / "manager" / "adapters" / "dooley-default.json"
+    ).read_text(encoding="utf-8")
+)
 
 
 class RuntimeStructureTests(unittest.TestCase):
@@ -63,17 +68,29 @@ class RuntimeStructureTests(unittest.TestCase):
             PATCHES,
         )
 
-    def test_existing_mak_icon_is_reconciled_without_update_callback(self) -> None:
+    def test_existing_target_icon_is_reconciled_without_update_callback(self) -> None:
         self.assertIn(
             "Resources.FindObjectsOfTypeAll(_heroItemType)",
             ICON_RECONCILER,
         )
-        self.assertIn('"Mak"', ICON_RECONCILER)
+        self.assertIn("Plugin.ActivePack.IsTargetHero", ICON_RECONCILER)
         self.assertIn('"Content/Icon"', ICON_RECONCILER)
         self.assertNotIn("MatchHierarchy", ICON_RECONCILER)
         self.assertNotIn("SelectedHeroItemImage", ICON_RECONCILER)
         self.assertIn('"already applied"', ICON_RECONCILER)
         self.assertIn('"not loaded"', ICON_RECONCILER)
+
+    def test_runtime_pack_selection_is_manifest_driven(self) -> None:
+        self.assertIn(
+            "!string.IsNullOrWhiteSpace(pack.Manifest.Target.Hero)",
+            RUNTIME_ASSETS,
+        )
+        self.assertIn("public bool IsTargetHero", RUNTIME_ASSETS)
+        self.assertIn("public string TargetHeroCode", RUNTIME_ASSETS)
+        self.assertNotIn(
+            'string.Equals(pack.Manifest.Target.Hero, "Mak"',
+            RUNTIME_ASSETS,
+        )
 
     def test_generic_scanner_does_not_match_parent_hierarchies(self) -> None:
         self.assertNotIn("MatchHierarchy", SCANNER)
@@ -116,6 +133,11 @@ class RuntimeStructureTests(unittest.TestCase):
             PATCHES,
         )
         self.assertIn(
+            "Keep portrait_gameplay",
+            PATCHES,
+        )
+        self.assertIn("breaks its occlusion", PATCHES)
+        self.assertIn(
             'Plugin.ActivePack.UsesPreloadedDeployment("hero_select")',
             ICON_RECONCILER,
         )
@@ -137,6 +159,14 @@ class RuntimeStructureTests(unittest.TestCase):
         for slot in ("collection_details", "standing_overlay"):
             self.assertTrue(replacements[slot]["direct_only"])
             self.assertEqual(replacements[slot]["match_mode"], "exact")
+        dooley_standing = next(
+            item
+            for item in DOOLEY_ADAPTER["visual_replacements"]
+            if item["slot"] == "standing_overlay"
+        )
+        self.assertEqual(dooley_standing["scale_multiplier"], 1.5)
+        self.assertIn("ScaleMultiplier(slot)", STANDING_OVERLAY)
+        self.assertIn("replacementHeight - bounds.size.y", STANDING_OVERLAY)
         self.assertIn("VisualReplacement bestContains", RUNTIME_ASSETS)
         self.assertIn("bestContainsLength", RUNTIME_ASSETS)
         self.assertIn(
@@ -146,20 +176,21 @@ class RuntimeStructureTests(unittest.TestCase):
 
     def test_standing_state_is_exact_and_reversible(self) -> None:
         for field_name in (
-            '"MAK"',
             '"_loadedAsset"',
             '"_selectedHero"',
             '"_skinEditActiveSkin"',
         ):
             self.assertIn(field_name, STANDING_STATE)
+        self.assertIn("_targetGraphicField", STANDING_STATE)
         self.assertIn("SkinPatchTargets.ShouldReplace(loadedAsset)", STANDING_STATE)
         self.assertIn("IsSupportedCentralDisplay(component)", STANDING_STATE)
         self.assertIn('"Hero_Placeholder"', STANDING_STATE)
         self.assertIn('"HeroSelect"', STANDING_STATE)
         self.assertIn("component.gameObject.activeInHierarchy", STANDING_STATE)
-        self.assertIn("makGraphic.gameObject.activeInHierarchy", STANDING_STATE)
+        self.assertIn("targetGraphic.gameObject.activeInHierarchy", STANDING_STATE)
         self.assertIn('"Common"', STANDING_STATE)
-        self.assertIn("selectedMak || selectedCommon", STANDING_STATE)
+        self.assertIn("selectedTarget || selectedCommon", STANDING_STATE)
+        self.assertIn("Plugin.ActivePack.TargetHeroCode()", STANDING_STATE)
         self.assertIn("StandingOverlay.AttachToGraphic", STANDING_STATE)
         self.assertIn("StandingOverlay.AttachToWorld", STANDING_STATE)
         self.assertIn("StandingOverlay.RemoveFromGraphic", STANDING_STATE)
@@ -176,7 +207,7 @@ class RuntimeStructureTests(unittest.TestCase):
             STANDING_STATE,
         )
 
-    def test_runtime_version_is_0_9_62(self) -> None:
+    def test_runtime_version_is_1_0_0(self) -> None:
         plugin = (
             ROOT / "src" / "BazaarSkinManager.Runtime" / "Plugin.cs"
         ).read_text(encoding="utf-8")
@@ -184,8 +215,8 @@ class RuntimeStructureTests(unittest.TestCase):
             ROOT / "src" / "BazaarSkinManager.Runtime" / "AssemblyInfo.cs"
         ).read_text(encoding="utf-8")
 
-        self.assertIn('PluginVersion = "0.9.62"', plugin)
-        self.assertIn('AssemblyVersion("0.9.62.0")', assembly)
+        self.assertIn('PluginVersion = "1.0.0"', plugin)
+        self.assertIn('AssemblyVersion("1.0.0.0")', assembly)
 
     def test_audio_replacement_is_exact_predecoded_and_fail_open(self) -> None:
         root = ROOT / "src" / "BazaarSkinManager.Runtime"
@@ -345,6 +376,18 @@ class RuntimeStructureTests(unittest.TestCase):
             LOADER_COVERAGE,
         )
 
+    def test_requested_audit_scopes_local_portrait_ownership(self) -> None:
+        self.assertIn("[ThreadStatic]", VISUAL_OWNERSHIP)
+        self.assertIn(
+            "AssumeLocalPortraitForDiagnostic",
+            VISUAL_OWNERSHIP,
+        )
+        self.assertIn(
+            "VisualOwnership.AssumeLocalPortraitForDiagnostic()",
+            SKIN_AUDIT,
+        )
+        self.assertIn("ownershipScope.Dispose()", SKIN_AUDIT)
+
     def test_encounter_background_is_a_dedicated_direct_only_slot(self) -> None:
         background = next(
             replacement
@@ -468,6 +511,19 @@ class RuntimeStructureTests(unittest.TestCase):
         self.assertIn("originalEnabled", STANDING_STATE)
         self.assertIn("originalColor", STANDING_STATE)
         self.assertIn("for (int attempt = 0; attempt < 60", SKIN_AUDIT)
+        self.assertIn('Plugin.ActivePack.TargetHeroCode()', SKIN_AUDIT)
+        self.assertIn('"HeroSelectDisplay." + targetCode + ".Diagnostic"', SKIN_AUDIT)
+        self.assertNotIn('"HeroSelectDisplay.MAK.Diagnostic"', SKIN_AUDIT)
+
+    def test_requested_audit_accepts_preloaded_inspector_background(self) -> None:
+        self.assertIn(
+            'UsesPreloadedDeployment(\n                "store_image")',
+            SKIN_AUDIT,
+        )
+        self.assertIn(
+            "deploy-time patched background reference",
+            SKIN_AUDIT,
+        )
 
     def test_chest_material_and_image_state_are_restored(self) -> None:
         for captured_state in (

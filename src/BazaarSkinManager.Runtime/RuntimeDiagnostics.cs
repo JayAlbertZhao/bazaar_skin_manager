@@ -43,7 +43,18 @@ namespace BazaarSkinManager.TheBazaar
         {
             string description = componentType + " " + objectName +
                 " asset=" + assetName;
-            if (description.IndexOf("mak", StringComparison.OrdinalIgnoreCase) < 0)
+            string hero = Plugin.ActivePack == null ||
+                Plugin.ActivePack.Manifest == null ||
+                Plugin.ActivePack.Manifest.Target == null
+                ? string.Empty
+                : Plugin.ActivePack.Manifest.Target.Hero ?? string.Empty;
+            string heroCode = Plugin.ActivePack == null
+                ? string.Empty
+                : Plugin.ActivePack.TargetHeroCode();
+            if ((string.IsNullOrEmpty(hero) ||
+                 description.IndexOf(hero, StringComparison.OrdinalIgnoreCase) < 0) &&
+                (string.IsNullOrEmpty(heroCode) ||
+                 description.IndexOf(heroCode, StringComparison.OrdinalIgnoreCase) < 0))
             {
                 return;
             }
@@ -57,13 +68,13 @@ namespace BazaarSkinManager.TheBazaar
             }
 
             Plugin.Log.LogInfo(
-                "Unmatched visible Mak visual for coverage diagnostics: " +
+                "Unmatched visible target-hero visual for coverage diagnostics: " +
                 description);
         }
 
         public static void ReportCentralState(
             bool displayActive,
-            bool makGraphicActive,
+            bool targetGraphicActive,
             bool skinEditActive,
             string selectedHero,
             string loadedAsset,
@@ -71,7 +82,7 @@ namespace BazaarSkinManager.TheBazaar
             bool attach)
         {
             string state = "displayActive=" + displayActive +
-                " makGraphicActive=" + makGraphicActive +
+                " targetGraphicActive=" + targetGraphicActive +
                 " skinEditActive=" + skinEditActive +
                 " selected=" + selectedHero +
                 " loadedAsset=" + loadedAsset +
@@ -172,7 +183,7 @@ namespace BazaarSkinManager.TheBazaar
                 if (replaced)
                 {
                     Plugin.Log.LogInfo(
-                        "Runtime self-test passed: Mak portrait resolves " +
+                        "Runtime self-test passed: target portrait resolves " +
                         (preloaded
                             ? "from the deploy-time patched bundle as "
                             : "to ") +
@@ -182,7 +193,7 @@ namespace BazaarSkinManager.TheBazaar
                 else
                 {
                     Plugin.Log.LogWarning(
-                        "Runtime self-test failed: Mak portrait resolved to " +
+                        "Runtime self-test failed: target portrait resolved to " +
                         (sprite == null ? "<null>" : sprite.name) + ".");
                 }
                 _selfTestComplete = true;

@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "mak-default",
-  "adapter_version": 1,
+  "adapter_version": 3,
   "default_authoring": true,
   "supported_builds": [
     "24001960"
@@ -188,6 +188,22 @@
       ]
     }
   ],
+  "authoring_recipe": {
+    "id": "deterministic-raster-v1",
+    "version": 2,
+    "inherits_adapter": "dooley-default",
+    "overrides": {
+      "foreground": {
+        "transparent_lassos": null,
+        "cast_shadow_lasso": null
+      },
+      "outputs": {
+        "hero_select": {
+          "size": [512, 512]
+        }
+      }
+    }
+  },
   "audio_template": {
     "schema_version": 1,
     "enabled": true,

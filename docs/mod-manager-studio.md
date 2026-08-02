@@ -34,15 +34,17 @@ Addressables catalog and groups them by hero. Each skin is labelled as one of:
 - **Adapter update required**: an adapter exists, but not for this game build.
 
 Adapter JSON files are discovered from `manager/adapters/` and indexed by
-hero plus skin. The current source has a verified adapter for Mak's default
-skin and a native-Texture2D-only adapter for Dooley's default skin. Other
-detected skins remain visible, but export and Deploy stay disabled until their
-real bundle, Texture2D, size, and original hashes have been audited. Catalog
-presence alone never authorizes a write.
+hero plus skin. The current source has verified default-skin adapters for Mak,
+Vanessa, Pygmalien, Dooley, and Jules. Other detected skins remain visible,
+but export and Deploy stay disabled until their real bundle, Texture2D, size,
+and original hashes have been audited. Catalog presence alone never authorizes
+a write.
 
-Dooley's deterministic source-art recipe is documented in
+The shared deterministic source-art recipe is documented in
 `docs/deterministic-skin-pack-builder.md`. It supports the independently
-replaceable small hero icon but does not generate hero-select badges.
+replaceable small hero icon and a layered hero-select badge. The badge template
+is extracted locally from the installed game and is never bundled with the
+manager source.
 
 For adapter slots backed by a verified Texture2D target, **Compare original**
 performs a read-only export from the installed bundle and shows the original
@@ -80,13 +82,32 @@ The ZIP importer rejects absolute paths, `..` traversal, multiple competing
 `mod.json` files, missing assets, hash mismatches, and archives expanding past
 2 GiB.
 
+### Portrait and standing-art requirements
+
+The names below describe Manager slots, not merely source-file appearance.
+Their current game call sites impose these concrete requirements:
+
+| Slot | Required image | Current consumers |
+| --- | --- | --- |
+| `portrait_gameplay` | Character only on a transparent square | Hero-skin right-side preview through `LoadPortrait(false)`, and the local in-match foreground through `LoadPortraitSpriteAsync` |
+| `portrait_background` | Background only | The separate encounter portrait-background field |
+| `portrait_small` | Complete compact square render: background plus character | `LoadPortrait(true)` call sites |
+| `standing_overlay` | Character only on a transparent canvas | Main-menu, transition, and SkinEdit standing-art overlays |
+
+The game's `LoadPortrait(bool isSmallImage)` implementation currently ignores
+the flag and always reads `storePortraitTextureReference`. The Runtime keeps
+the two requested sizes separate. `portrait_gameplay` must remain transparent:
+the right-side hero-select preview already owns its panel, and the in-match
+portrait receives `portrait_background` through the encounter data's separate
+background field. Flattening the background into this foreground texture puts
+the square image above the native frame and breaks its occlusion.
+
 ## First-frame native slots
 
 Every slot whose native source is an independently verified Texture2D is
-written into its exact UnityFS bundle during Deploy. The current Mak adapter
+written into its exact UnityFS bundle during Deploy. The current adapters
 preloads:
 
-- `portrait_gameplay`;
 - `store_image`, `marketplace_list`, and `marketplace_details`;
 - `collection_list` and `daily_weekly`;
 - `hero_select`;
@@ -102,9 +123,9 @@ then atomically replaces the game file. Undeploy restores only when the current
 file is still the manager-owned patched hash; a Steam-updated file is never
 overwritten with an older backup.
 
-Three visual surfaces remain runtime-managed for structural reasons:
-`portrait_small` shares its native source with collection/daily assets while
-the game ignores the loader's size flag; `collection_details` and
+Four visual surfaces remain runtime-managed for structural reasons:
+`portrait_gameplay` and `portrait_small` share the native store-portrait source
+while the game ignores the loader's size flag; `collection_details` and
 `standing_overlay` are GameObject/Spine presentations rather than standalone
 flat textures. Audio also remains runtime-managed because FMOD banks require a
 format-compatible bank rebuild rather than a byte-level WAV substitution.
@@ -177,9 +198,9 @@ dist/manager/TheBazaarModManager.exe
 Portable release:
 
 ```powershell
-.\package-manager-portable.ps1 -Version 0.9.63
+.\package-manager-portable.ps1 -Version 1.0.0
 ```
 
-This writes `dist/TheBazaarModManager-Portable-0.9.63.zip`, containing only the
+This writes `dist/TheBazaarModManager-Portable-1.0.0.zip`, containing only the
 standalone executable, hashes, and a quick-start guide. Skin packs are imported
 from separately distributed ZIP files.

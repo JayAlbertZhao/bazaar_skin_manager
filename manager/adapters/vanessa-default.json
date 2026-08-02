@@ -1,0 +1,150 @@
+{
+  "schema_version": 1,
+  "id": "vanessa-default",
+  "adapter_version": 2,
+  "supported_builds": ["24001960"],
+  "target": {
+    "game": "the-bazaar",
+    "hero": "Vanessa",
+    "skin": "Skin_VAN_01/A",
+    "skin_name_contains": "VAN_01a"
+  },
+  "visual_replacements": [
+    {
+      "slot": "portrait_gameplay",
+      "pixels_per_unit": 256,
+      "match_mode": "exact",
+      "match_names": ["Skin_VAN_01a_Portrait"]
+    },
+    {
+      "slot": "portrait_background",
+      "direct_only": true,
+      "match_mode": "exact",
+      "match_names": []
+    },
+    {
+      "slot": "portrait_small",
+      "match_mode": "exact",
+      "match_names": ["Skin_VAN_01a_Portrait"]
+    },
+    {
+      "slot": "store_image",
+      "deployment": {
+        "mode": "preload_unity_texture2d",
+        "target": "TheBazaar_Data/StreamingAssets/aa/StandaloneWindows64/skin_van_01_assets_all.bundle",
+        "asset_name": "Skin_VAN_01a_StoreImage",
+        "unity_version": "6000.3.11f1",
+        "target_size": [2048, 2048],
+        "supported_original_sha256": ["a69ee330823eaa62d24b2a9eee16f43e9f9b50347954c7c76a11ac8f642b7bc6"]
+      },
+      "match_names": ["Skin_VAN_01a_StoreImage"]
+    },
+    {
+      "slot": "marketplace_list",
+      "deployment": {
+        "mode": "preload_unity_texture2d",
+        "target": "TheBazaar_Data/StreamingAssets/aa/StandaloneWindows64/skin_van_01_assets_all.bundle",
+        "asset_name": "Skin_VAN_01a_StoreImage",
+        "unity_version": "6000.3.11f1",
+        "target_size": [2048, 2048],
+        "supported_original_sha256": ["a69ee330823eaa62d24b2a9eee16f43e9f9b50347954c7c76a11ac8f642b7bc6"]
+      },
+      "match_names": ["Skin_VAN_01a_StoreImage"]
+    },
+    {
+      "slot": "marketplace_details",
+      "deployment": {
+        "mode": "preload_unity_texture2d",
+        "target": "TheBazaar_Data/StreamingAssets/aa/StandaloneWindows64/skin_van_01_assets_all.bundle",
+        "asset_name": "Skin_VAN_01a_StoreImage",
+        "unity_version": "6000.3.11f1",
+        "target_size": [2048, 2048],
+        "supported_original_sha256": ["a69ee330823eaa62d24b2a9eee16f43e9f9b50347954c7c76a11ac8f642b7bc6"]
+      },
+      "match_names": ["Skin_VAN_01a_StoreImage"]
+    },
+    {
+      "slot": "collection_list",
+      "deployment": {
+        "mode": "preload_unity_texture2d",
+        "target": "TheBazaar_Data/StreamingAssets/aa/StandaloneWindows64/skin_van_01_assets_all.bundle",
+        "asset_name": "Skin_VAN_01a_PreviewCollection_TUI",
+        "unity_version": "6000.3.11f1",
+        "target_size": [512, 512],
+        "supported_original_sha256": ["a69ee330823eaa62d24b2a9eee16f43e9f9b50347954c7c76a11ac8f642b7bc6"]
+      },
+      "match_names": ["Skin_VAN_01a_PreviewCollection_TUI"]
+    },
+    {
+      "slot": "collection_details",
+      "direct_only": true,
+      "match_mode": "exact",
+      "match_names": ["Skin_VAN_01a_Base_P", "Skin_VAN_01a_P"]
+    },
+    {
+      "slot": "daily_weekly",
+      "deployment": {
+        "mode": "preload_unity_texture2d",
+        "target": "TheBazaar_Data/StreamingAssets/aa/StandaloneWindows64/skin_van_01_assets_all.bundle",
+        "asset_name": "Skin_VAN_01a_PreviewCollection_TUI",
+        "unity_version": "6000.3.11f1",
+        "target_size": [512, 512],
+        "supported_original_sha256": ["a69ee330823eaa62d24b2a9eee16f43e9f9b50347954c7c76a11ac8f642b7bc6"]
+      },
+      "match_names": ["Skin_VAN_01a_PreviewCollection_TUI"]
+    },
+    {
+      "slot": "hero_select",
+      "deployment": {
+        "mode": "preload_unity_texture2d",
+        "target": "TheBazaar_Data/StreamingAssets/aa/StandaloneWindows64/defaultlocalgroup_assets_assets_thebazaar_art_mainmenu_heroselect_hero_button_vanessa.png.bundle",
+        "asset_name": "Vanessa",
+        "unity_version": "6000.3.11f1",
+        "target_size": [512, 512],
+        "supported_original_sha256": ["a6ee1d1583cea4bda4ee337c1840b33a8fe8dd6717b4a97c0fdaa9e405fbbf87"]
+      },
+      "direct_only": true,
+      "match_mode": "exact",
+      "match_names": []
+    },
+    {
+      "slot": "hero_icon_small",
+      "pixels_per_unit": 100,
+      "deployment": {
+        "mode": "preload_unity_texture2d",
+        "target": "TheBazaar_Data/StreamingAssets/aa/StandaloneWindows64/defaultlocalgroup_assets_assets_thebazaar_art_ui_icons_heros_rough_icon_flatrough_van_tui.png.bundle",
+        "asset_name": "Icon_FlatRough_VAN_TUI",
+        "unity_version": "6000.3.11f1",
+        "target_size": [256, 256],
+        "supported_original_sha256": ["5c9e4c4011d34a272b33727b71ab6d6ddb70491fc0a89a7a1d07a1521a22024a"]
+      },
+      "match_mode": "exact",
+      "match_names": ["Icon_FlatRough_VAN_TUI"]
+    },
+    {
+      "slot": "standing_overlay",
+      "direct_only": true,
+      "match_mode": "exact",
+      "match_names": [
+        "Skin_VAN_01a_Base_P",
+        "Skin_VAN_01a_UI_Base_P",
+        "Skin_VAN_01a_SE_P",
+        "Skin_VAN_01a_SkeletonData"
+      ]
+    }
+  ],
+  "authoring_recipe": {
+    "id": "deterministic-raster-v1",
+    "version": 2,
+    "inherits_adapter": "dooley-default",
+    "overrides": {
+      "foreground": {
+        "transparent_lassos": null,
+        "cast_shadow_lasso": null
+      },
+      "outputs": {
+        "hero_select": {"size": [512, 512]}
+      }
+    }
+  }
+}

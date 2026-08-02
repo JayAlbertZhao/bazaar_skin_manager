@@ -398,7 +398,7 @@ namespace BazaarSkinManager.TheBazaar
                     RuntimeSkinAudit.RecordLoader(
                         loader,
                         "wrong hero/skin",
-                        "Loader call did not target Mak default Skin_MAK_01a.",
+                        "Loader call did not target the active pack hero/skin.",
                         null);
                 }
                 return;
@@ -662,7 +662,7 @@ namespace BazaarSkinManager.TheBazaar
                 status = "applied";
                 detail =
                     "Chest reward retains its original loader and resolves " +
-                    "the preloaded Mak texture from the patched Unity bundle.";
+                    "the preloaded target texture from the patched Unity bundle.";
                 return;
             }
 

@@ -35,6 +35,45 @@ def write_adapter(path: Path, adapter_id: str, hero: str, skin: str) -> None:
 
 
 class AdapterRegistryTests(unittest.TestCase):
+    def test_project_registry_covers_every_catalog_default_skin(self):
+        registry = AdapterRegistry.load(ROOT / "manager" / "adapters")
+        catalog = json.loads(
+            (ROOT / "manager" / "hero-catalog.json").read_text(encoding="utf-8")
+        )
+        expected = {
+            (hero["id"], skin["id"])
+            for hero in catalog["heroes"]
+            for skin in hero["skins"]
+        }
+        actual = {(record.hero, record.skin) for record in registry.records}
+        self.assertEqual(actual, expected)
+        for record in registry.records:
+            recipe = record.payload.get("authoring_recipe") or {}
+            self.assertEqual(recipe.get("id"), "deterministic-raster-v1")
+            self.assertEqual(recipe.get("version"), 2)
+            self.assertEqual(
+                set(recipe.get("outputs") or {}),
+                {item["id"] for item in catalog["visual_slots"]},
+            )
+
+    def test_authoring_recipe_inheritance_applies_narrow_overrides(self):
+        registry = AdapterRegistry.load(ROOT / "manager" / "adapters")
+        dooley = registry.find_by_id("dooley-default")
+        vanessa = registry.find_by_id("vanessa-default")
+        self.assertIsNotNone(dooley)
+        self.assertIsNotNone(vanessa)
+        self.assertEqual(
+            vanessa.payload["authoring_recipe"]["outputs"]["store_image"],
+            dooley.payload["authoring_recipe"]["outputs"]["store_image"],
+        )
+        self.assertEqual(
+            vanessa.payload["authoring_recipe"]["outputs"]["hero_select"]["size"],
+            [512, 512],
+        )
+        self.assertIsNone(
+            vanessa.payload["authoring_recipe"]["foreground"]["cast_shadow_lasso"]
+        )
+
     def test_registry_indexes_multiple_hero_skin_adapters(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
