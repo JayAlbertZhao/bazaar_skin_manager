@@ -240,7 +240,12 @@ class AssetGeneratorCoreTests(unittest.TestCase):
                 small_icon_source=icon_source,
             )
             profile.save()
-            loaded = generator.GeneratorProfile.load(profile.profile_path)
+            # This test covers serialization only. Adapter/input validation has
+            # dedicated tests and must not couple a profile round trip to the
+            # runner's checkout layout.
+            loaded = generator.GeneratorProfile.load(
+                profile.profile_path, validate=False
+            )
             self.assertEqual(loaded.character_offset_x, 17)
             self.assertEqual(loaded.character_offset_y, -23)
             self.assertEqual(loaded.output_offsets["portrait_small"], (8, -5))
