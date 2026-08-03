@@ -20,6 +20,20 @@ installed game's badge frame; those official pixels are not stored here.
 Fidelity-critical extraction rules are recorded in
 [`docs/asset-pipeline-invariants.md`](docs/asset-pipeline-invariants.md).
 
+## Components
+
+This repository publishes two independent Windows desktop components:
+
+- **Skin Manager** — imports, validates, deploys, updates, and removes external
+  skin packs. Its desktop entry point is `tools/bazaar_skin_manager_ui.py`.
+- **Asset Generator** — creates deterministic skin-pack ZIP files from creator
+  inputs and hands deployment back to the Skin Manager. Its desktop entry point
+  is `tools/asset_generator_ui.py`.
+
+The components share the adapter registry and pack contract so generated packs
+are validated against the same hero and skin targets used during deployment.
+They are built separately and published as separate downloadable artifacts.
+
 ## Features
 
 - Detects Steam installations across registered and conventional library paths.
@@ -175,12 +189,12 @@ python tools\asset_generator_core.py --profile C:\path\to\generator-profile.json
 
 ## Release policy
 
-GitHub releases are manager-only. CI packages:
+GitHub releases contain the two public software components. CI packages:
 
-- the manager executable;
-- the per-user installer;
-- the portable ZIP;
-- SHA-256 metadata.
+- the Skin Manager per-user installer;
+- the Skin Manager portable ZIP;
+- the Asset Generator portable ZIP;
+- SHA-256 metadata for every artifact.
 
 No skin pack is attached to a GitHub release or embedded in the installer.
 Release and verification details are in
