@@ -1,5 +1,18 @@
 # Changelog
 
+## Spine Manager 1.1.2
+
+- Accept Spine 4.1 and 4.2 JSON packages and normalize 4.1 version metadata for
+  the game's Spine 4.2 runtime during deployment.
+- Read the texture pages declared by the atlas instead of rejecting packages
+  that contain multiple runtime PNG pages or additional source images.
+- Merge multi-page atlases into the target bundle's single Texture2D while
+  translating region bounds without changing the verified deployment flow.
+- Cap offline setup-pose rendering at 4096 pixels and render from the normalized
+  atlas so large multi-page packages remain responsive and match deployment.
+- Pin deploy, restore, status, and log controls to the visible window footer so
+  preview expansion and Windows DPI scaling cannot hide critical actions.
+
 ## 1.0.0
 
 - Add verified default-skin adapters for Mak, Vanessa, Pygmalien, Dooley, and

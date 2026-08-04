@@ -1,0 +1,32 @@
+{
+  "source_bundle": "TheBazaar_Data/StreamingAssets/aa/StandaloneWindows64/scenes_heroselect_scenes_all.bundle",
+  "unity_version": "6000.3.11f1",
+  "reference_resolution": [3840, 2160],
+  "background_sprites": [
+    {
+      "name": "MainMenu_BG_LeftSide",
+      "texture_path_id": 156,
+      "sprite_path_id": 404
+    },
+    {
+      "name": "MainMenu_BG_RightSide",
+      "texture_path_id": 147,
+      "sprite_path_id": 369
+    }
+  ],
+  "hero_placeholder": {
+    "game_object": "Hero_Placeholder",
+    "rect_transform_path_id": 4771,
+    "anchor": [0.5, 0.0],
+    "anchored_position": [0.0, 350.0],
+    "size": [600.0, 1000.0],
+    "scale": [0.44, 0.44]
+  },
+  "ready_button": {
+    "game_object": "Btn_Ready",
+    "rect_transform_path_id": 4455,
+    "anchor": [0.5, 0.0],
+    "anchored_position": [0.0, 200.0],
+    "size": [700.0, 270.0]
+  }
+}
