@@ -4,7 +4,7 @@ A Windows manager for importing, deploying, updating, and removing external
 skin packs for **The Bazaar**.
 
 This repository contains the Skin Manager, the deterministic Asset Generator,
-its runtime adapter, pack contracts, tests, and release tooling. It does
+the Spine Manager, runtime adapters, pack contracts, tests, and release tooling. It does
 **not** contain or distribute character art, portraits, voice recordings,
 generated media, or third-party skin packs. Creators distribute those packs
 separately as ZIP files.
@@ -22,13 +22,16 @@ Fidelity-critical extraction rules are recorded in
 
 ## Components
 
-This repository publishes two independent Windows desktop components:
+This repository publishes three independent Windows desktop components:
 
 - **Skin Manager** — imports, validates, deploys, updates, and removes external
   skin packs. Its desktop entry point is `tools/bazaar_skin_manager_ui.py`.
 - **Asset Generator** — creates deterministic skin-pack ZIP files from creator
   inputs and hands deployment back to the Skin Manager. Its desktop entry point
   is `tools/asset_generator_ui.py`.
+- **Spine Manager** — imports Spine 4.1/4.2 JSON packages, previews root
+  placement offline, and reversibly replaces verified hero-skin bundles. Its
+  desktop entry point is `tools/bazaar_spine_manager_ui.py`.
 
 The components share the adapter registry and pack contract so generated packs
 are validated against the same hero and skin targets used during deployment.
@@ -65,6 +68,7 @@ Download the software artifacts from
 - `TheBazaarModManager-Setup-<version>.exe`
 - `TheBazaarModManager-Portable-<version>.zip`
 - `TheBazaarAssetGenerator-Portable-<version>.zip`
+- `bazaar_spine_manager-windows-x64.zip`
 
 The installer is per-user and does not require administrator rights. If a
 release is unsigned, Windows may display a reputation warning; verify the
