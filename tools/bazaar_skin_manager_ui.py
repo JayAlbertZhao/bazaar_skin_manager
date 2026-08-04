@@ -226,12 +226,20 @@ class ModManagerStudio:
             lambda _event: self.main_pages.select(2),
         )
         self.root.bind_all(
+            "<Control-Key-4>",
+            lambda _event: self.main_pages.select(3),
+        )
+        self.root.bind_all(
             "<F5>",
             lambda _event: self._refresh_deployment_status(),
         )
         self.root.bind_all(
             "<Control-Key-g>",
             lambda _event: self._launch_asset_generator(),
+        )
+        self.root.bind_all(
+            "<Control-Key-p>",
+            lambda _event: self._launch_spine_manager(),
         )
 
     def _select_hub_page(self) -> None:
@@ -342,12 +350,15 @@ class ModManagerStudio:
         hub = ttk.Frame(self.main_pages, padding=18)
         editor = ttk.Frame(self.main_pages, style="Window.TFrame")
         generator = ttk.Frame(self.main_pages, padding=24)
+        spine = ttk.Frame(self.main_pages, padding=24)
         self.main_pages.add(hub, text="皮肤控制中台")
         self.main_pages.add(editor, text="资产导入管理器")
         self.main_pages.add(generator, text="素材包制作器")
+        self.main_pages.add(spine, text="Spine 动画管理器")
         self.editor_page = editor
         self._build_control_hub(hub)
         self._build_asset_generator_component(generator)
+        self._build_spine_manager_component(spine)
 
         body = ttk.Panedwindow(editor, orient="horizontal")
         body.pack(fill="both", expand=True)
@@ -411,6 +422,63 @@ class ModManagerStudio:
             command=lambda: self.main_pages.select(0),
         ).pack(side="left", padx=(10, 0))
         self._refresh_generator_component()
+
+    def _build_spine_manager_component(self, parent: ttk.Frame) -> None:
+        heading = ttk.Frame(parent)
+        heading.pack(fill="x", pady=(0, 18))
+        ttk.Label(
+            heading,
+            text="Spine 动画管理器",
+            font=("Microsoft YaHei UI", 18, "bold"),
+        ).pack(anchor="w")
+        ttk.Label(
+            heading,
+            text=(
+                "皮肤管理器内置组件 · 导入 Spine 4.1/4.2 资源、离线预览位置，"
+                "部署与恢复继续使用统一事务。"
+            ),
+            style="Muted.TLabel",
+        ).pack(anchor="w", pady=(4, 0))
+
+        workflow = ttk.LabelFrame(parent, text="动画替换流程", padding=18)
+        workflow.pack(fill="x", pady=(0, 16))
+        for index, text in enumerate(
+            (
+                "导入 JSON、Atlas 和 Atlas 声明的贴图",
+                "选择职业默认皮肤与动画并拖拽调整位置",
+                "通过皮肤管理器事务合并当前多职业皮肤后部署",
+            ),
+            start=1,
+        ):
+            ttk.Label(
+                workflow,
+                text=f"{index}. {text}",
+                font=("Microsoft YaHei UI", 11),
+            ).pack(anchor="w", pady=4)
+
+        actions = ttk.LabelFrame(parent, text="组件操作", padding=18)
+        actions.pack(fill="x")
+        self.spine_manager_status = ttk.Label(
+            actions,
+            text="正在检查 Spine 动画管理器…",
+            style="Muted.TLabel",
+        )
+        self.spine_manager_status.pack(anchor="w", pady=(0, 12))
+        row = ttk.Frame(actions)
+        row.pack(fill="x")
+        self.spine_manager_launch_button = ttk.Button(
+            row,
+            text="打开 Spine 动画管理器（Ctrl+P）",
+            style="Accent.TButton",
+            command=self._launch_spine_manager,
+        )
+        self.spine_manager_launch_button.pack(side="left")
+        ttk.Button(
+            row,
+            text="返回皮肤控制中台",
+            command=lambda: self.main_pages.select(0),
+        ).pack(side="left", padx=(10, 0))
+        self._refresh_spine_manager_component()
 
     def _build_control_hub(self, parent: ttk.Frame) -> None:
         parent.columnconfigure(0, weight=1)
@@ -2220,6 +2288,74 @@ class ModManagerStudio:
             self._write_log("已打开素材包制作器组件。")
         except OSError as error:
             self._show_error("无法打开素材包制作器", error)
+
+    def _spine_manager_command(self) -> list[str] | None:
+        candidates: list[Path] = []
+        if getattr(sys, "frozen", False):
+            executable_dir = Path(sys.executable).resolve().parent
+            candidates.extend(
+                [
+                    executable_dir / "TheBazaarSpineManager.exe",
+                    executable_dir.parent
+                    / "spine-manager"
+                    / "TheBazaarSpineManager.exe",
+                ]
+            )
+        candidates.extend(
+            [
+                PROJECT_ROOT
+                / "dist"
+                / "spine-manager"
+                / "TheBazaarSpineManager.exe",
+                Path.home()
+                / "AppData"
+                / "Local"
+                / "Programs"
+                / "TheBazaarModManager"
+                / "TheBazaarSpineManager.exe",
+            ]
+        )
+        for candidate in candidates:
+            if candidate.is_file():
+                return [str(candidate)]
+        source = PROJECT_ROOT / "tools" / "bazaar_spine_manager_ui.py"
+        if source.is_file() and not getattr(sys, "frozen", False):
+            return [sys.executable, str(source)]
+        return None
+
+    def _refresh_spine_manager_component(self) -> None:
+        command = self._spine_manager_command()
+        if command:
+            self.spine_manager_status.configure(
+                text=f"组件可用：{command[-1]}",
+                foreground=COLORS["accent"],
+            )
+            self.spine_manager_launch_button.configure(state="normal")
+        else:
+            self.spine_manager_status.configure(
+                text="未找到 Spine 动画管理器组件，请使用完整安装包修复安装。",
+                foreground=COLORS["warning"],
+            )
+            self.spine_manager_launch_button.configure(state="disabled")
+
+    def _launch_spine_manager(self) -> None:
+        command = self._spine_manager_command()
+        if not command:
+            self._refresh_spine_manager_component()
+            messagebox.showerror(
+                "组件不可用",
+                "未找到 Spine 动画管理器，请使用完整安装包修复安装。",
+                parent=self.root,
+            )
+            return
+        try:
+            subprocess.Popen(
+                command,
+                cwd=str(Path(command[-1]).resolve().parent),
+            )
+            self._write_log("已打开 Spine 动画管理器组件。")
+        except OSError as error:
+            self._show_error("无法打开 Spine 动画管理器", error)
 
     def _launch_complete(self, result: dict) -> None:
         self.busy = False

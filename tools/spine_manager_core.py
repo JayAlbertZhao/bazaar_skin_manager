@@ -18,13 +18,20 @@ import zlib
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from copy import deepcopy
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 
 from PIL import Image, ImageChops
 
 from adapter_registry import AdapterRecord, AdapterRegistry
-from bazaar_skin_manager import GameInstall, atomic_copy_file, manager_root
+from bazaar_skin_manager import (
+    DEFAULT_RUNTIME,
+    GameInstall,
+    existing_install_record,
+    install_many,
+    manager_root,
+    uninstall,
+)
 
 
 UNITY_VERSION = "6000.3.11f1"
@@ -35,8 +42,6 @@ STATE_ROOT = Path(
     )
 )
 WORKSPACE_ROOT = STATE_ROOT / "workspace"
-BACKUP_ROOT = STATE_ROOT / "backups"
-INSTALL_MANIFEST = STATE_ROOT / "install-manifest.json"
 MAX_ARCHIVE_BYTES = 128 * 1024 * 1024
 MAX_EXTRACTED_BYTES = 512 * 1024 * 1024
 LOGGER = logging.getLogger("bazaar_spine_manager.core")
@@ -84,6 +89,14 @@ def _stage(progress: ProgressCallback | None, label: str) -> Iterator[None]:
 
 
 @dataclass(frozen=True)
+class SpineBundleContract:
+    bundle_relative: str
+    unity_version: str
+    supported_original_sha256: tuple[str, ...]
+    prefix: str | None = None
+
+
+@dataclass(frozen=True)
 class SpineTarget:
     adapter_id: str
     hero: str
@@ -93,6 +106,7 @@ class SpineTarget:
     unity_version: str
     supported_original_sha256: tuple[str, ...]
     supported_builds: tuple[str, ...]
+    additional_bundles: tuple[SpineBundleContract, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -360,18 +374,42 @@ def targets(registry: AdapterRegistry | None = None) -> tuple[SpineTarget, ...]:
 
 
 def _target_from_adapter(record: AdapterRecord) -> SpineTarget | None:
-    deployments = []
+    primary_deployments = []
+    all_deployments = []
     for slot in record.payload.get("visual_replacements") or []:
         deployment = slot.get("deployment") or {}
         target = str(deployment.get("target") or "")
         if Path(target).name.startswith("skin_") and target.endswith("_assets_all.bundle"):
-            deployments.append(deployment)
-    unique = {str(item["target"]): item for item in deployments}
-    if len(unique) != 1:
+            primary_deployments.append(deployment)
+            all_deployments.append(deployment)
+        for additional in slot.get("additional_deployments") or []:
+            additional_target = str(additional.get("target") or "")
+            if (
+                Path(additional_target).name.startswith("skin_")
+                and additional_target.endswith("_assets_all.bundle")
+            ):
+                all_deployments.append(additional)
+    primary_unique = {
+        str(item["target"]): item for item in primary_deployments
+    }
+    if len(primary_unique) != 1:
         return None
-    deployment = next(iter(unique.values()))
+    deployment = next(iter(primary_unique.values()))
+    all_unique = {str(item["target"]): item for item in all_deployments}
     prefix_token = record.skin_name_contains
     prefix = prefix_token if prefix_token.startswith("Skin_") else "Skin_" + prefix_token
+    additional_bundles = tuple(
+        SpineBundleContract(
+            bundle_relative=str(item["target"]).replace("/", os.sep),
+            unity_version=str(item.get("unity_version") or UNITY_VERSION),
+            supported_original_sha256=tuple(
+                str(value).casefold()
+                for value in item.get("supported_original_sha256") or []
+            ),
+        )
+        for key, item in sorted(all_unique.items())
+        if key != str(deployment["target"])
+    )
     return SpineTarget(
         adapter_id=record.adapter_id,
         hero=record.hero,
@@ -384,6 +422,7 @@ def _target_from_adapter(record: AdapterRecord) -> SpineTarget | None:
             for value in deployment.get("supported_original_sha256") or []
         ),
         supported_builds=record.supported_builds,
+        additional_bundles=additional_bundles,
     )
 
 
@@ -574,53 +613,313 @@ def patch_bundle(
     }
 
 
-def patch_catalog(
-    source_catalog: Path,
-    output_catalog: Path,
-    bundle_name: str,
-    source_crc: int,
-    output_crc: int,
-) -> dict:
-    LOGGER.info(
-        "patch_catalog source=%s output=%s bundle=%s source_crc=%s output_crc=%s",
-        source_catalog,
-        output_catalog,
-        bundle_name,
-        source_crc,
-        output_crc,
+def _bundle_contracts(target: SpineTarget) -> tuple[SpineBundleContract, ...]:
+    primary = SpineBundleContract(
+        bundle_relative=target.bundle_relative,
+        unity_version=target.unity_version,
+        supported_original_sha256=target.supported_original_sha256,
+        prefix=target.prefix,
     )
-    original = source_catalog.read_bytes()
-    patched = bytearray(original)
-    encoded_name = bundle_name.encode("utf-8")
-    positions = [match.start() for match in re.finditer(re.escape(encoded_name), original)]
-    if len(positions) != 1:
-        raise RuntimeError(f"Expected one catalog entry for {bundle_name}.")
-    start = positions[0] + len(encoded_name)
-    end = min(len(original), start + 128)
-    encoded_crc = struct.pack("<I", source_crc)
-    offsets = []
-    cursor = start
-    while True:
-        offset = original.find(encoded_crc, cursor, end)
-        if offset < 0:
-            break
-        offsets.append(offset)
-        cursor = offset + 1
-    if len(offsets) != 1:
-        raise RuntimeError("Could not uniquely locate the bundle CRC in catalog.bin.")
-    offset = offsets[0]
-    patched[offset : offset + 4] = struct.pack("<I", output_crc)
-    output_catalog.parent.mkdir(parents=True, exist_ok=True)
-    output_catalog.write_bytes(patched)
-    return {"crc_offset": offset, "output_sha256": sha256_file(output_catalog)}
+    return (primary,) + target.additional_bundles
 
 
-def _catalog_path(game: GameInstall) -> Path:
-    return game.game_dir / "TheBazaar_Data" / "StreamingAssets" / "aa" / "catalog.bin"
+def _bundle_path(game: GameInstall, contract: SpineBundleContract) -> Path:
+    path = (game.game_dir / contract.bundle_relative).resolve()
+    try:
+        path.relative_to(game.game_dir.resolve())
+    except ValueError as error:
+        raise RuntimeError(
+            f"Spine bundle target escapes the game directory: {contract.bundle_relative}"
+        ) from error
+    return path
 
 
-def _backup_path(path: Path, digest: str) -> Path:
-    return BACKUP_ROOT / digest / path.name
+def _resolve_contract_prefix(
+    source_bundle: Path,
+    contract: SpineBundleContract,
+) -> str:
+    if contract.prefix:
+        return contract.prefix
+    UnityPy = _unitypy(contract.unity_version)
+    environment = UnityPy.load(source_bundle.read_bytes())
+    text_names: set[str] = set()
+    skeleton_data_names: set[str] = set()
+    for item in environment.objects:
+        if item.type.name not in {"TextAsset", "MonoBehaviour"}:
+            continue
+        try:
+            name = str(getattr(item.read(), "m_Name", ""))
+        except Exception:
+            continue
+        if item.type.name == "TextAsset":
+            text_names.add(name)
+        else:
+            skeleton_data_names.add(name)
+    candidates = sorted(
+        name[:-5]
+        for name in text_names
+        if name.endswith(".skel")
+        and name[:-5] + ".atlas" in text_names
+        and name[:-5] + "_SkeletonData" in skeleton_data_names
+    )
+    return _single(candidates, f"Spine skeleton prefix in {source_bundle.name}")
+
+
+def serialize_spine_request(
+    package: SpinePackage,
+    target: SpineTarget,
+    placement: SpinePlacement,
+) -> dict:
+    return {
+        "schema_version": 1,
+        "adapter_id": target.adapter_id,
+        "target": {
+            "hero": target.hero,
+            "skin": target.skin,
+        },
+        "package": {
+            "root": str(package.root.resolve()),
+            "json_path": str(package.json_path.resolve()),
+            "atlas_path": str(package.atlas_path.resolve()),
+            "texture_path": str(package.texture_path.resolve()),
+            "json_sha256": sha256_file(package.json_path),
+            "atlas_sha256": sha256_file(package.atlas_path),
+            "texture_sha256": sha256_file(package.texture_path),
+        },
+        "placement": asdict(placement),
+    }
+
+
+def _load_spine_request(record: dict) -> tuple[SpinePackage, SpineTarget, SpinePlacement]:
+    if int(record.get("schema_version") or 0) != 1:
+        raise ValueError("Unsupported Spine deployment request schema.")
+    target = next(
+        (item for item in targets() if item.adapter_id == record.get("adapter_id")),
+        None,
+    )
+    if target is None:
+        raise ValueError(f"Unknown Spine adapter: {record.get('adapter_id')}")
+    package_record = record.get("package") or {}
+    root = Path(package_record["root"]).resolve()
+    paths = {
+        "json": Path(package_record["json_path"]).resolve(),
+        "atlas": Path(package_record["atlas_path"]).resolve(),
+        "texture": Path(package_record["texture_path"]).resolve(),
+    }
+    for label, path in paths.items():
+        try:
+            path.relative_to(root)
+        except ValueError as error:
+            raise ValueError(f"Spine {label} file escapes its workspace: {path}") from error
+        expected = str(package_record.get(f"{label}_sha256") or "").casefold()
+        if not path.is_file() or sha256_file(path).casefold() != expected:
+            raise ValueError(f"Spine {label} file is missing or changed: {path}")
+    payload = json.loads(paths["json"].read_text(encoding="utf-8-sig"))
+    skeleton = payload.get("skeleton") or {}
+    version = str(skeleton.get("spine") or "")
+    animations = tuple(str(name) for name in (payload.get("animations") or {}))
+    skins = tuple(
+        str(item.get("name"))
+        for item in payload.get("skins") or []
+        if isinstance(item, dict) and item.get("name")
+    )
+    with Image.open(paths["texture"]) as image:
+        width, height = image.size
+    package = SpinePackage(
+        root=root,
+        json_path=paths["json"],
+        atlas_path=paths["atlas"],
+        texture_path=paths["texture"],
+        version=version,
+        animations=animations,
+        skins=skins,
+        atlas_scale=atlas_scale(paths["atlas"].read_text(encoding="utf-8-sig")),
+        width=width,
+        height=height,
+    )
+    placement = SpinePlacement(**(record.get("placement") or {}))
+    if placement.animation not in package.animations:
+        raise ValueError(f"Animation does not exist: {placement.animation}")
+    return package, target, placement
+
+
+def spine_patch_plan_issues(requests: list[dict], game: GameInstall) -> list[str]:
+    issues: list[str] = []
+    seen: set[str] = set()
+    installed = existing_install_record() or {}
+    recorded_by_target = {
+        str(item.get("target") or "").casefold(): item
+        for item in installed.get("native_patches") or []
+    }
+    for record in requests:
+        try:
+            package, target, _placement = _load_spine_request(record)
+            if target.adapter_id in seen:
+                raise ValueError(f"Duplicate Spine target: {target.adapter_id}")
+            seen.add(target.adapter_id)
+            if target.supported_builds and game.build_id not in target.supported_builds:
+                raise ValueError(
+                    f"Adapter {target.adapter_id} does not support Steam build "
+                    f"{game.build_id or 'unknown'}."
+                )
+            if not package.animations:
+                raise ValueError("Spine package contains no animations.")
+            for contract in _bundle_contracts(target):
+                path = _bundle_path(game, contract)
+                if not path.is_file():
+                    raise FileNotFoundError(path)
+                current_hash = sha256_file(path).casefold()
+                supported = set(contract.supported_original_sha256)
+                if not supported or current_hash in supported:
+                    continue
+                recorded = recorded_by_target.get(str(path).casefold())
+                backup = Path(recorded.get("backup", "")) if recorded else None
+                if not (
+                    recorded
+                    and current_hash == str(recorded.get("patched_sha256") or "").casefold()
+                    and backup is not None
+                    and backup.is_file()
+                    and sha256_file(backup).casefold() in supported
+                ):
+                    raise ValueError(
+                        f"Spine bundle hash is unsupported: {path.name} ({current_hash})"
+                    )
+        except (KeyError, OSError, RuntimeError, ValueError) as error:
+            issues.append(str(error))
+    return issues
+
+
+def prepare_spine_native_patches(
+    requests: list[dict],
+    game: GameInstall,
+    staging: Path,
+    prepared: list[dict],
+) -> tuple[list[dict], list[dict]]:
+    combined = list(prepared)
+    by_target = {
+        str(item["target"]).casefold(): item for item in combined
+    }
+    normalized_requests: list[dict] = []
+    for request_index, request in enumerate(requests):
+        package, target, placement = _load_spine_request(request)
+        normalized = serialize_spine_request(package, target, placement)
+        deployed_bundles = []
+        for bundle_index, contract in enumerate(_bundle_contracts(target)):
+            target_path = _bundle_path(game, contract)
+            key = str(target_path).casefold()
+            current = by_target.get(key)
+            if current is not None:
+                source = Path(current["staged"])
+                original_sha256 = str(current["original_sha256"])
+                original_crc32 = str(current["original_crc32"])
+                backup = Path(current["backup"])
+            else:
+                source = target_path
+                original_sha256 = sha256_file(source)
+                supported = set(contract.supported_original_sha256)
+                if supported and original_sha256.casefold() not in supported:
+                    raise RuntimeError(
+                        f"Spine bundle hash is unsupported for {target.adapter_id}: "
+                        f"{target_path.name} ({original_sha256})"
+                    )
+                original_crc32 = ""
+                backup = (
+                    manager_root()
+                    / "native-backups"
+                    / original_sha256
+                    / target_path.name
+                )
+            prefix = _resolve_contract_prefix(source, contract)
+            bundle_target = replace(
+                target,
+                prefix=prefix,
+                bundle_relative=contract.bundle_relative,
+                unity_version=contract.unity_version,
+                supported_original_sha256=contract.supported_original_sha256,
+                additional_bundles=(),
+            )
+            output = staging / (
+                f"spine-{request_index:02d}-{bundle_index:02d}-{target_path.name}"
+            )
+            result = patch_bundle(
+                source,
+                output,
+                package,
+                bundle_target,
+                placement,
+            )
+            if not original_crc32:
+                original_crc32 = f"{int(result['source_crc32']):08x}"
+            patched_crc32 = f"{int(result['output_crc32']):08x}"
+            spine_entry = {
+                "adapter_id": target.adapter_id,
+                "prefix": prefix,
+                "automatic_scale": result["automatic_scale"],
+                "final_scale": result["final_scale"],
+            }
+            if current is None:
+                current = {
+                    "slot": f"spine:{target.adapter_id}:{prefix}",
+                    "slots": [f"spine:{target.adapter_id}:{prefix}"],
+                    "target": str(target_path),
+                    "backup": str(backup),
+                    "original_sha256": original_sha256,
+                    "patched_sha256": result["output_sha256"],
+                    "original_crc32": original_crc32,
+                    "patched_crc32": patched_crc32,
+                    "staged": str(output),
+                    "asset_names": [prefix],
+                    "mode": "spine_bundle",
+                    "spine": [spine_entry],
+                }
+                combined.append(current)
+                by_target[key] = current
+            else:
+                current["staged"] = str(output)
+                current["patched_sha256"] = result["output_sha256"]
+                current["patched_crc32"] = patched_crc32
+                current.setdefault("slots", []).append(
+                    f"spine:{target.adapter_id}:{prefix}"
+                )
+                current.setdefault("asset_names", []).append(prefix)
+                current.setdefault("spine", []).append(spine_entry)
+                current["mode"] = "composed_native_bundle"
+            deployed_bundles.append(
+                {
+                    "target": str(target_path),
+                    "prefix": prefix,
+                    "final_scale": result["final_scale"],
+                }
+            )
+        normalized["deployed_bundles"] = deployed_bundles
+        normalized_requests.append(normalized)
+    return combined, normalized_requests
+
+
+def _staged_existing_packs(record: dict, root: Path) -> list[Path]:
+    staged: list[Path] = []
+    for index, item in enumerate(record.get("packs") or []):
+        source = Path(item.get("path") or "")
+        if not source.is_dir():
+            raise RuntimeError(f"Managed skin pack is missing: {source}")
+        destination = root / f"pack-{index:02d}"
+        shutil.copytree(source, destination)
+        staged.append(destination)
+    return staged
+
+
+def _staged_runtime(record: dict, root: Path) -> Path:
+    source = DEFAULT_RUNTIME
+    if not source.is_file():
+        source = Path((record.get("plugin") or {}).get("path") or "")
+    if not source.is_file():
+        raise RuntimeError("The managed runtime DLL is unavailable.")
+    destination = root / "BazaarSkinManager.Runtime.dll"
+    shutil.copy2(source, destination)
+    metadata_source = source.with_name("runtime-build.json")
+    if metadata_source.is_file():
+        shutil.copy2(metadata_source, destination.with_name("runtime-build.json"))
+    return destination
 
 
 def deploy(
@@ -630,130 +929,53 @@ def deploy(
     placement: SpinePlacement,
     progress: ProgressCallback | None = None,
 ) -> dict:
-    LOGGER.info(
-        "deploy_start game_dir=%s build_id=%s target=%s package_json=%s",
-        game.game_dir,
-        game.build_id,
-        target.adapter_id,
-        package.json_path,
-    )
-    with _stage(progress, "校验游戏目录与目标版本"):
-        if target.supported_builds and game.build_id not in target.supported_builds:
-            raise RuntimeError(f"Unsupported Steam build: {game.build_id or 'unknown'}")
-        bundle = game.game_dir / target.bundle_relative
-        catalog = _catalog_path(game)
-        if not bundle.is_file() or not catalog.is_file():
-            raise FileNotFoundError("Target game bundle or catalog.bin is missing.")
-        existing = installation_manifest()
-        source_bundle = bundle
-        source_catalog = catalog
-        if existing:
-            recorded_game = Path(existing["game_dir"])
-            if recorded_game.resolve() != game.game_dir.resolve():
-                raise RuntimeError("A Spine replacement is deployed to another game directory.")
-            source_bundle = Path(existing["bundle_backup"])
-            source_catalog = Path(existing["catalog_backup"])
-
-    with _stage(progress, "计算原始文件哈希"):
-        source_bundle_hash = sha256_file(source_bundle)
-        if (
-            target.supported_original_sha256
-            and source_bundle_hash.casefold() not in target.supported_original_sha256
-        ):
-            raise RuntimeError("The original skin bundle hash is not authorized by the adapter.")
-        source_catalog_hash = sha256_file(source_catalog)
-        bundle_backup = _backup_path(bundle, source_bundle_hash)
-        catalog_backup = _backup_path(catalog, source_catalog_hash)
-
-    with _stage(progress, "创建并校验原始文件备份"):
-        if not bundle_backup.is_file():
-            atomic_copy_file(source_bundle, bundle_backup)
-        if not catalog_backup.is_file():
-            atomic_copy_file(source_catalog, catalog_backup)
-        if sha256_file(bundle_backup) != source_bundle_hash:
-            raise RuntimeError("Bundle backup hash mismatch after copy.")
-        if sha256_file(catalog_backup) != source_catalog_hash:
-            raise RuntimeError("Catalog backup hash mismatch after copy.")
-
-    with tempfile.TemporaryDirectory(prefix="bazaar-spine-") as temp:
-        staging = Path(temp)
-        staged_bundle = staging / bundle.name
-        staged_catalog = staging / catalog.name
-        bundle_result = patch_bundle(
-            bundle_backup, staged_bundle, package, target, placement, progress
-        )
-        with _stage(progress, "更新 Addressables catalog.bin"):
-            catalog_result = patch_catalog(
-                catalog_backup,
-                staged_catalog,
-                bundle.name,
-                bundle_result["source_crc32"],
-                bundle_result["output_crc32"],
-            )
-        with _stage(progress, "替换游戏 Bundle 文件"):
-            atomic_copy_file(staged_bundle, bundle)
-        with _stage(progress, "替换游戏 catalog.bin"):
-            atomic_copy_file(staged_catalog, catalog)
-
-    record = {
-        "schema_version": 1,
-        "game_dir": str(game.game_dir.resolve()),
-        "build_id": game.build_id,
-        "target": asdict(target),
-        "placement": asdict(placement),
-        "bundle": str(bundle),
-        "bundle_backup": str(bundle_backup),
-        "bundle_original_sha256": source_bundle_hash,
-        "bundle_patched_sha256": sha256_file(bundle),
-        "catalog": str(catalog),
-        "catalog_backup": str(catalog_backup),
-        "catalog_original_sha256": source_catalog_hash,
-        "catalog_patched_sha256": sha256_file(catalog),
-        "package": {
-            "version": package.version,
-            "animations": list(package.animations),
-            "json_sha256": sha256_file(package.json_path),
-            "atlas_sha256": sha256_file(package.atlas_path),
-            "texture_sha256": sha256_file(package.texture_path),
-        },
-        "bundle_result": bundle_result,
-        "catalog_result": catalog_result,
-    }
-    with _stage(progress, "写入部署记录"):
-        INSTALL_MANIFEST.parent.mkdir(parents=True, exist_ok=True)
-        INSTALL_MANIFEST.write_text(
-            json.dumps(record, ensure_ascii=False, indent=2), encoding="utf-8"
-        )
-    LOGGER.info("deploy_complete target=%s", target.adapter_id)
-    return record
+    request = serialize_spine_request(package, target, placement)
+    record = existing_install_record() or {}
+    requests = [
+        item
+        for item in record.get("spine_replacements") or []
+        if item.get("adapter_id") != target.adapter_id
+    ]
+    requests.append(request)
+    with tempfile.TemporaryDirectory(prefix="bazaar-spine-deploy-") as temp:
+        root = Path(temp)
+        with _stage(progress, "保留当前皮肤管理器工作区"):
+            packs = _staged_existing_packs(record, root)
+            runtime = _staged_runtime(record, root)
+        with _stage(progress, "通过皮肤管理器统一事务部署"):
+            return install_many(runtime, packs, game, spine_requests=requests)
 
 
 def installation_manifest() -> dict | None:
-    if not INSTALL_MANIFEST.is_file():
+    record = existing_install_record() or {}
+    requests = record.get("spine_replacements") or []
+    if not requests:
         return None
-    return json.loads(INSTALL_MANIFEST.read_text(encoding="utf-8-sig"))
+    first = dict(requests[0])
+    first["count"] = len(requests)
+    return first
 
 
 def restore(progress: ProgressCallback | None = None) -> list[str]:
     LOGGER.info("restore_start")
-    record = installation_manifest()
-    if not record:
-        LOGGER.info("restore_skipped reason=no_manifest")
+    record = existing_install_record() or {}
+    if not record.get("spine_replacements"):
+        LOGGER.info("restore_skipped reason=no_spine_replacements")
         return []
-    restored = []
-    for target_key, backup_key, original_key in (
-        ("bundle", "bundle_backup", "bundle_original_sha256"),
-        ("catalog", "catalog_backup", "catalog_original_sha256"),
-    ):
-        with _stage(progress, f"恢复 {target_key}"):
-            target = Path(record[target_key])
-            backup = Path(record[backup_key])
-            if not backup.is_file():
-                raise RuntimeError(f"Backup is missing: {backup}")
-            if sha256_file(backup) != record[original_key]:
-                raise RuntimeError(f"Backup hash mismatch: {backup}")
-            atomic_copy_file(backup, target)
-            restored.append(str(target))
-    INSTALL_MANIFEST.unlink(missing_ok=True)
-    LOGGER.info("restore_complete restored=%s", restored)
-    return restored
+    game_dir = Path((record.get("game") or {}).get("game_dir") or "")
+    from bazaar_skin_manager import explicit_install
+
+    game = explicit_install(game_dir)
+    with tempfile.TemporaryDirectory(prefix="bazaar-spine-restore-") as temp:
+        root = Path(temp)
+        with _stage(progress, "保留当前皮肤资产包"):
+            packs = _staged_existing_packs(record, root)
+            runtime = _staged_runtime(record, root)
+        if packs:
+            with _stage(progress, "移除 Spine 替换并重新部署皮肤资产"):
+                install_many(runtime, packs, game, spine_requests=[])
+        else:
+            with _stage(progress, "恢复皮肤管理器托管的原始文件"):
+                uninstall()
+    LOGGER.info("restore_complete")
+    return [str(item.get("target")) for item in record.get("native_patches") or []]

@@ -144,7 +144,7 @@ class SpineManagerApp:
         ttk.Label(outer, text="The Bazaar Spine Manager", style="Title.TLabel").pack(anchor="w")
         ttk.Label(
             outer,
-            text="导入 Spine 4.1/4.2 JSON 资源包（支持多页 Atlas），预览坐标后安全部署；每次部署都从原始备份重新生成。",
+            text="导入 Spine 4.1/4.2 JSON 资源包（支持多页 Atlas）；部署、备份和恢复统一交给皮肤管理器事务处理。",
         ).pack(anchor="w", pady=(3, 14))
 
         actions = ttk.Frame(outer)
@@ -538,22 +538,26 @@ class SpineManagerApp:
             return
         if not messagebox.askyesno(
             "确认部署",
-            "请先关闭游戏。工具将备份原始 bundle 和 catalog.bin，然后写入 Spine 替换。是否继续？",
+            "请先关闭游戏。将保留当前皮肤资产包，并通过皮肤管理器统一事务写入 Spine 替换。是否继续？",
             parent=self.root,
         ):
             return
         self._run_background(
             lambda progress: deploy(game, self.package, target, placement, progress),
-            "部署完成。原始文件备份已保留，可一键恢复。",
+            "部署完成。当前皮肤资产与 Spine 替换已由皮肤管理器统一托管。",
             "部署",
         )
 
     def _restore(self) -> None:
         if self.busy:
             return
-        if not messagebox.askyesno("恢复原始文件", "请先关闭游戏。确认恢复备份？", parent=self.root):
+        if not messagebox.askyesno(
+            "移除 Spine 替换",
+            "请先关闭游戏。确认移除全部 Spine 替换并保留当前皮肤资产包？",
+            parent=self.root,
+        ):
             return
-        self._run_background(restore, "原始 bundle 和 catalog.bin 已恢复。", "恢复")
+        self._run_background(restore, "Spine 替换已移除；其他皮肤资产保持部署。", "恢复")
 
     def _run_background(self, action, success: str, operation: str) -> None:
         self.busy = True
@@ -622,7 +626,8 @@ class SpineManagerApp:
         if record:
             placement = record.get("placement") or {}
             self.status_var.set(
-                f"已部署 {record['target']['hero']}，Y={placement.get('root_y_offset')}，"
+                f"已托管 {record.get('count', 1)} 个 Spine 替换；当前："
+                f"{record['target']['hero']}，Y={placement.get('root_y_offset')}，"
                 f"缩放={placement.get('scale_multiplier')}"
             )
         else:

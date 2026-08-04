@@ -9,7 +9,7 @@ on:
       version:
         description: "Version without v prefix"
         required: true
-        default: "1.1.1"
+        default: "1.1.2"
 
 permissions:
   contents: write
@@ -47,7 +47,7 @@ jobs:
       - name: Validate release surface
         shell: pwsh
         run: |
-          python -m py_compile tools/bazaar_skin_manager.py tools/mod_studio_core.py tools/bazaar_skin_manager_ui.py tools/adapter_registry.py tools/skin_pack_builder.py tools/asset_generator_core.py tools/asset_generator_ui.py tools/badge_pipeline.py
+          python -m py_compile tools/bazaar_skin_manager.py tools/mod_studio_core.py tools/bazaar_skin_manager_ui.py tools/adapter_registry.py tools/skin_pack_builder.py tools/asset_generator_core.py tools/asset_generator_ui.py tools/badge_pipeline.py tools/spine_manager_core.py tools/spine_static_preview.py tools/bazaar_spine_manager_ui.py
           New-Item -ItemType Directory -Force dist/runtime | Out-Null
           Copy-Item manager/runtime/BazaarSkinManager.Runtime.dll dist/runtime/BazaarSkinManager.Runtime.dll
           Copy-Item manager/runtime/runtime-build.json dist/runtime/runtime-build.json
@@ -73,6 +73,10 @@ jobs:
             Write-Host "::error title=Asset generator build failed::$annotation"
             exit $exitCode
           }
+
+      - name: Build Spine manager component
+        shell: pwsh
+        run: .\build-spine-manager.ps1 -Version "${{ steps.version.outputs.value }}"
 
       - name: Sign software executables
         if: env.SIGNING_CERT_BASE64 != ''
@@ -101,6 +105,15 @@ jobs:
           $generatorMetadata.sha256 = (Get-FileHash .\dist\asset-generator\TheBazaarAssetGenerator.exe -Algorithm SHA256).Hash.ToLowerInvariant()
           $generatorMetadata.bytes = (Get-Item .\dist\asset-generator\TheBazaarAssetGenerator.exe).Length
           $generatorMetadata | ConvertTo-Json -Depth 3 | Set-Content $generatorMetadataPath -Encoding utf8
+          .\sign-windows-binary.ps1 `
+            -Path .\dist\spine-manager\TheBazaarSpineManager.exe `
+            -CertificatePath $certificate `
+            -CertificatePassword $env:SIGNING_CERT_PASSWORD
+          $spineMetadataPath = ".\dist\spine-manager\spine-manager-build.json"
+          $spineMetadata = Get-Content $spineMetadataPath -Raw | ConvertFrom-Json
+          $spineMetadata.sha256 = (Get-FileHash .\dist\spine-manager\TheBazaarSpineManager.exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          $spineMetadata.bytes = (Get-Item .\dist\spine-manager\TheBazaarSpineManager.exe).Length
+          $spineMetadata | ConvertTo-Json -Depth 3 | Set-Content $spineMetadataPath -Encoding utf8
 
       - name: Install Inno Setup
         run: choco install innosetup --yes --no-progress

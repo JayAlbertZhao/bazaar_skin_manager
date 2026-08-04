@@ -4,6 +4,7 @@ import argparse
 import hashlib
 import importlib.util
 import json
+import shutil
 import sys
 import tempfile
 import unittest
@@ -121,7 +122,7 @@ class ManagerTests(unittest.TestCase):
                     [mak_pack, dooley_pack],
                     manager.explicit_install(game),
                 )
-                self.assertEqual(record["schema_version"], 3)
+                self.assertEqual(record["schema_version"], 4)
                 self.assertEqual(
                     {item["id"] for item in record["packs"]},
                     {"example.mak.default", "example.dooley.default"},
@@ -163,6 +164,90 @@ class ManagerTests(unittest.TestCase):
                         [first, second],
                         manager.explicit_install(game),
                     )
+
+    def test_install_many_records_spine_requests_in_same_transaction(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            pack = write_pack(root)
+            game = write_game(root)
+            runtime = root / "BazaarSkinManager.Runtime.dll"
+            runtime.write_bytes(b"runtime")
+            request = {"schema_version": 1, "adapter_id": "mak-default"}
+            normalized = {
+                **request,
+                "deployed_bundles": [{"target": "skin_mak_01_assets_all.bundle"}],
+            }
+            spine = mock.Mock()
+            spine.spine_patch_plan_issues.return_value = []
+            spine.prepare_spine_native_patches.side_effect = (
+                lambda requests, _game, _staging, prepared: (
+                    prepared,
+                    [normalized],
+                )
+            )
+            with (
+                mock.patch.dict(
+                    "os.environ",
+                    {"LOCALAPPDATA": str(root / "local")},
+                ),
+                mock.patch.object(manager, "native_patch_specs", return_value=[]),
+                mock.patch.object(manager, "_spine_module", return_value=spine),
+            ):
+                record = manager.install_many(
+                    runtime,
+                    [pack],
+                    manager.explicit_install(game),
+                    spine_requests=[request],
+                )
+            self.assertEqual(record["schema_version"], 4)
+            self.assertEqual(record["spine_replacements"], [normalized])
+            spine.prepare_spine_native_patches.assert_called_once()
+
+    def test_redeploying_skin_packs_preserves_existing_spine_requests(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            pack = write_pack(root)
+            game = write_game(root)
+            runtime = root / "BazaarSkinManager.Runtime.dll"
+            runtime.write_bytes(b"runtime")
+            request = {"schema_version": 1, "adapter_id": "mak-default"}
+            normalized = {
+                **request,
+                "deployed_bundles": [{"target": "skin_mak_01_assets_all.bundle"}],
+            }
+            spine = mock.Mock()
+            spine.spine_patch_plan_issues.return_value = []
+            spine.prepare_spine_native_patches.side_effect = (
+                lambda requests, _game, _staging, prepared: (
+                    prepared,
+                    [normalized],
+                )
+            )
+            with (
+                mock.patch.dict(
+                    "os.environ",
+                    {"LOCALAPPDATA": str(root / "local")},
+                ),
+                mock.patch.object(manager, "native_patch_specs", return_value=[]),
+                mock.patch.object(manager, "_spine_module", return_value=spine),
+            ):
+                first = manager.install_many(
+                    runtime,
+                    [pack],
+                    manager.explicit_install(game),
+                    spine_requests=[request],
+                )
+                deployed_pack = Path(first["packs"][0]["path"])
+                redeploy_pack = root / "redeploy-pack"
+                shutil.copytree(deployed_pack, redeploy_pack)
+                second = manager.install_many(
+                    runtime,
+                    [redeploy_pack],
+                    manager.explicit_install(game),
+                )
+
+            self.assertEqual(second["spine_replacements"], [normalized])
+            self.assertEqual(spine.prepare_spine_native_patches.call_count, 2)
 
     def test_missing_target_adapter_reports_one_actionable_error(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
@@ -406,7 +491,7 @@ class ManagerTests(unittest.TestCase):
                     pack,
                     manager.explicit_install(game),
                 )
-                self.assertEqual(record["schema_version"], 3)
+                self.assertEqual(record["schema_version"], 4)
                 self.assertEqual(len(record["packs"]), 1)
                 self.assertEqual(
                     record["manager"]["version"],

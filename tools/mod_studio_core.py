@@ -1098,9 +1098,6 @@ class StudioWorkspace:
                     f"Adapter {adapter.adapter_id} is not verified for Steam "
                     f"build {game.build_id or 'unknown'}."
                 )
-        previous = manager_root() / "install-manifest.json"
-        if previous.is_file():
-            uninstall()
         # Deploy the same exact payload surface as export_zip. Authoring inputs
         # must never be copied into the managed mods directory.
         with tempfile.TemporaryDirectory() as temp:

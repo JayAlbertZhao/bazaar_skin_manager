@@ -7,6 +7,7 @@ import tempfile
 import unittest
 import zipfile
 from pathlib import Path
+from unittest import mock
 
 from PIL import Image
 
@@ -22,13 +23,17 @@ os.environ.setdefault(
 )
 
 from spine_manager_core import (  # noqa: E402
+    SpinePackage,
     SpinePlacement,
+    SpineTarget,
     _stage,
     _prepared_json,
     _rewrite_atlas,
     import_spine_package,
+    prepare_spine_native_patches,
     targets,
 )
+from bazaar_skin_manager import GameInstall  # noqa: E402
 from bazaar_spine_manager_ui import APP_VERSION, LOG_PATH, configure_logging  # noqa: E402
 from spine_static_preview import render_setup_pose  # noqa: E402
 
@@ -156,16 +161,120 @@ class SpineManagerTests(unittest.TestCase):
         self.assertEqual(rewritten.splitlines()[0], "Skin_MAK_01a.png")
         self.assertIn("pma:true", rewritten.splitlines()[:8])
 
+    def test_spine_patch_composes_after_existing_native_texture_patch(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            game_root = root / "game"
+            relative = "TheBazaar_Data/StreamingAssets/aa/skin_test.bundle"
+            target_path = game_root / relative
+            target_path.parent.mkdir(parents=True)
+            target_path.write_bytes(b"original")
+            staged_texture = root / "texture-patched.bundle"
+            staged_texture.write_bytes(b"texture-patched")
+            package = SpinePackage(
+                root=root,
+                json_path=root / "hero.json",
+                atlas_path=root / "hero.atlas",
+                texture_path=root / "hero.png",
+                version="4.2.43",
+                animations=("idle",),
+                skins=("default",),
+                atlas_scale=1.0,
+                width=32,
+                height=32,
+            )
+            target = SpineTarget(
+                adapter_id="test-default",
+                hero="Test",
+                skin="Skin_TEST_01/A",
+                prefix="Skin_TEST_01a",
+                bundle_relative=relative,
+                unity_version="6000.3.11f1",
+                supported_original_sha256=(),
+                supported_builds=(),
+            )
+            placement = SpinePlacement(animation="idle")
+            prepared = [
+                {
+                    "slot": "store_image",
+                    "slots": ["store_image"],
+                    "target": str(target_path.resolve()),
+                    "backup": str(root / "backup.bundle"),
+                    "original_sha256": "a" * 64,
+                    "patched_sha256": "b" * 64,
+                    "original_crc32": "11111111",
+                    "patched_crc32": "22222222",
+                    "staged": str(staged_texture),
+                    "asset_names": ["StoreImage"],
+                    "mode": "preload_unity_texture2d",
+                }
+            ]
+
+            def fake_patch(source, output, *_args, **_kwargs):
+                self.assertEqual(source, staged_texture)
+                output.parent.mkdir(parents=True, exist_ok=True)
+                output.write_bytes(b"texture-and-spine")
+                return {
+                    "source_crc32": 0x22222222,
+                    "output_crc32": 0x33333333,
+                    "automatic_scale": 1.0,
+                    "final_scale": 1.0,
+                    "output_sha256": "c" * 64,
+                }
+
+            game = GameInstall(
+                game_dir=game_root,
+                manifest=None,
+                build_id=None,
+                complete=True,
+            )
+            with (
+                mock.patch(
+                    "spine_manager_core._load_spine_request",
+                    return_value=(package, target, placement),
+                ),
+                mock.patch(
+                    "spine_manager_core.serialize_spine_request",
+                    return_value={"schema_version": 1, "adapter_id": "test-default"},
+                ),
+                mock.patch(
+                    "spine_manager_core._resolve_contract_prefix",
+                    return_value=target.prefix,
+                ),
+                mock.patch("spine_manager_core.patch_bundle", side_effect=fake_patch),
+            ):
+                combined, normalized = prepare_spine_native_patches(
+                    [{"schema_version": 1}],
+                    game,
+                    root / "staging",
+                    prepared,
+                )
+            self.assertEqual(len(combined), 1)
+            self.assertEqual(combined[0]["original_crc32"], "11111111")
+            self.assertEqual(combined[0]["patched_crc32"], "33333333")
+            self.assertEqual(combined[0]["mode"], "composed_native_bundle")
+            self.assertEqual(normalized[0]["deployed_bundles"][0]["prefix"], target.prefix)
+
     def test_verified_default_targets_are_available(self) -> None:
         available = targets()
-        self.assertEqual({item.hero for item in available}, {"Mak", "Vanessa", "Pygmalien", "Dooley", "Jules"})
+        self.assertEqual(
+            {item.hero for item in available},
+            {"Mak", "Vanessa", "Pygmalien", "Dooley", "Jules", "Stelle", "Karnok"},
+        )
         mak = next(item for item in available if item.hero == "Mak")
         self.assertEqual(mak.prefix, "Skin_MAK_01a")
         self.assertTrue(mak.bundle_relative.endswith("skin_mak_01_assets_all.bundle"))
+        karnok = next(item for item in available if item.hero == "Karnok")
+        self.assertEqual(len(karnok.additional_bundles), 1)
+        self.assertTrue(
+            karnok.additional_bundles[0].bundle_relative.endswith(
+                "skin_kar_01_creature_assets_all.bundle"
+            )
+        )
 
     def test_build_script_creates_requested_executable_name(self) -> None:
         build = (ROOT / "build-spine-manager.ps1").read_text(encoding="utf-8")
-        self.assertIn('"--name", "bazaar_spine_manager"', build)
+        self.assertIn('"--name", "TheBazaarSpineManager"', build)
         self.assertIn('"--self-test"', build)
         self.assertIn("spine-manager-build.json", build)
         self.assertIn('"--hidden-import", "spine_static_preview"', build)

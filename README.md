@@ -22,7 +22,7 @@ Fidelity-critical extraction rules are recorded in
 
 ## Components
 
-This repository publishes three independent Windows desktop components:
+This repository publishes one manager suite with three Windows desktop components:
 
 - **Skin Manager** — imports, validates, deploys, updates, and removes external
   skin packs. Its desktop entry point is `tools/bazaar_skin_manager_ui.py`.
@@ -33,9 +33,10 @@ This repository publishes three independent Windows desktop components:
   placement offline, and reversibly replaces verified hero-skin bundles. Its
   desktop entry point is `tools/bazaar_spine_manager_ui.py`.
 
-The components share the adapter registry and pack contract so generated packs
-are validated against the same hero and skin targets used during deployment.
-They are built separately and published as separate downloadable artifacts.
+The Skin Manager is the control center. The Asset Generator and Spine Manager
+open from its component pages, share the verified adapter registry, and hand
+all deployment, backup, catalog patching, rollback, and diagnostics back to the
+same Manager transaction.
 
 ## Features
 
@@ -56,7 +57,7 @@ They are built separately and published as separate downloadable artifacts.
 - Starts the game through Steam.
 
 The current adapters have verified deployment support for the default skins
-of Mak, Vanessa, Pygmalien, Dooley, and Jules on Steam build `24001960`.
+of Mak, Vanessa, Pygmalien, Dooley, Jules, Stelle, and Karnok on Steam build `24001960`.
 Additional skins remain visible in the catalog but are disabled until their
 adapters have been verified.
 
@@ -68,7 +69,9 @@ Download the software artifacts from
 - `TheBazaarModManager-Setup-<version>.exe`
 - `TheBazaarModManager-Portable-<version>.zip`
 - `TheBazaarAssetGenerator-Portable-<version>.zip`
-- `bazaar_spine_manager-windows-x64.zip`
+
+The installer and Manager portable ZIP include both companion component
+executables; they do not need to be downloaded separately.
 
 The installer is per-user and does not require administrator rights. If a
 release is unsigned, Windows may display a reputation warning; verify the
@@ -172,12 +175,13 @@ Build the runtime and manager:
 
 ```powershell
 .\build.ps1 -Configuration Release
-.\build.ps1 -Version 1.1.1
-.\build-manager.ps1 -Version 1.1.1
-.\build-asset-generator.ps1 -Version 1.1.1
-.\build-installer.ps1 -Version 1.1.1
-.\package-manager-portable.ps1 -Version 1.1.1
-.\package-asset-generator-portable.ps1 -Version 1.1.1
+.\build.ps1 -Version 1.1.2
+.\build-manager.ps1 -Version 1.1.2
+.\build-asset-generator.ps1 -Version 1.1.2
+.\build-spine-manager.ps1 -Version 1.1.2
+.\build-installer.ps1 -Version 1.1.2
+.\package-manager-portable.ps1 -Version 1.1.2
+.\package-asset-generator-portable.ps1 -Version 1.1.2
 ```
 
 Useful source commands:

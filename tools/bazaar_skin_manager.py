@@ -20,7 +20,7 @@ from typing import Iterable
 
 
 APP_ID = "1617400"
-MANAGER_VERSION = "1.1.1"
+MANAGER_VERSION = "1.1.2"
 PROJECT_ROOT = Path(
     getattr(sys, "_MEIPASS", Path(__file__).resolve().parents[1])
 )
@@ -801,6 +801,19 @@ def existing_install_record() -> dict | None:
         return None
 
 
+def _spine_module():
+    """Load the optional Spine compiler only when a deployment needs it."""
+    import spine_manager_core
+
+    return spine_manager_core
+
+
+def spine_patch_plan_issues(requests: list[dict], game: GameInstall) -> list[str]:
+    if not requests:
+        return []
+    return _spine_module().spine_patch_plan_issues(requests, game)
+
+
 def native_patch_plan_issues(pack: Path, game: GameInstall) -> list[str]:
     issues: list[str] = []
     current_record = existing_install_record() or {}
@@ -1127,7 +1140,12 @@ def _pack_identity(pack: Path) -> tuple[dict, tuple[str, str]]:
     return manifest, identity
 
 
-def install_many(runtime: Path, packs: list[Path], game: GameInstall) -> dict:
+def install_many(
+    runtime: Path,
+    packs: list[Path],
+    game: GameInstall,
+    spine_requests: list[dict] | None = None,
+) -> dict:
     if not game.complete:
         raise RuntimeError(f"incomplete game installation: {game.game_dir}")
     if not runtime.is_file():
@@ -1136,8 +1154,13 @@ def install_many(runtime: Path, packs: list[Path], game: GameInstall) -> dict:
         raise RuntimeError(
             "BepInEx is missing; install or repair BazaarPlusPlus before this skin runtime"
         )
-    if not packs:
-        raise RuntimeError("at least one skin pack is required")
+    previous_record = existing_install_record() or {}
+    if spine_requests is None:
+        spine_requests = list(previous_record.get("spine_replacements") or [])
+    else:
+        spine_requests = list(spine_requests)
+    if not packs and not spine_requests:
+        raise RuntimeError("at least one skin pack or Spine replacement is required")
     resolved_packs = [Path(pack).resolve() for pack in packs]
     manifests: list[dict] = []
     pack_ids: set[str] = set()
@@ -1165,6 +1188,7 @@ def install_many(runtime: Path, packs: list[Path], game: GameInstall) -> dict:
     native_issues: list[str] = []
     for pack in resolved_packs:
         native_issues.extend(native_patch_plan_issues(pack, game))
+    native_issues.extend(spine_patch_plan_issues(spine_requests, game))
     if native_issues:
         raise RuntimeError(
             "native deployment is not ready: " + "; ".join(native_issues)
@@ -1216,6 +1240,16 @@ def install_many(runtime: Path, packs: list[Path], game: GameInstall) -> dict:
                 game,
                 Path(temp),
             )
+            normalized_spine_requests: list[dict] = []
+            if spine_requests:
+                prepared, normalized_spine_requests = (
+                    _spine_module().prepare_spine_native_patches(
+                        spine_requests,
+                        game,
+                        Path(temp),
+                        prepared,
+                    )
+                )
             prepared_catalog = prepare_native_catalog_patch(
                 prepared,
                 game,
@@ -1233,7 +1267,7 @@ def install_many(runtime: Path, packs: list[Path], game: GameInstall) -> dict:
         ).hexdigest()
         runtime_release = runtime_release_info(runtime)
         record = {
-            "schema_version": 3,
+            "schema_version": 4,
             "manager": {
                 "version": MANAGER_VERSION,
             },
@@ -1252,7 +1286,8 @@ def install_many(runtime: Path, packs: list[Path], game: GameInstall) -> dict:
             "packs": pack_records,
             # Compatibility alias for 1.0.x integrations. Multi-pack aware
             # callers must use ``packs``.
-            "pack": pack_records[0],
+            "pack": pack_records[0] if pack_records else None,
+            "spine_replacements": normalized_spine_requests,
             "runtime_compatibility": {
                 "path": str(compatibility_path),
                 "sha256": compatibility_sha256,
@@ -1486,6 +1521,8 @@ def installation_diagnostics() -> dict:
             == catalog_patch.get("original_sha256")
         )
     )
+    spine_replacements = record.get("spine_replacements") or []
+    managed_payload_present = bool(pack_entries or spine_replacements)
     checks = {
         "game_complete": game.complete,
         "bepinex_present": (
@@ -1493,8 +1530,10 @@ def installation_diagnostics() -> dict:
         ).is_file(),
         "plugin_present": plugin.is_file(),
         "plugin_hash_matches": plugin_hash_matches,
-        "packs_present": bool(packs) and all(pack.is_dir() for pack in packs),
-        "packs_valid": bool(packs) and all(
+        "packs_present": managed_payload_present and all(
+            pack.is_dir() for pack in packs
+        ),
+        "packs_valid": managed_payload_present and all(
             pack.is_dir() and not validate_pack(pack) for pack in packs
         ),
         "runtime_compatibility_present": compatibility.is_file(),
@@ -1538,6 +1577,7 @@ def installation_diagnostics() -> dict:
                 }
                 for entry in pack_entries
             ],
+            "spine_replacements": spine_replacements,
             "pack": {
                 "id": pack_entries[0].get("id") if pack_entries else None,
                 "version": (

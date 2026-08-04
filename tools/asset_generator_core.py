@@ -38,7 +38,7 @@ from skin_pack_builder import (
 PROFILE_SCHEMA = 1
 AUTHORING_RECIPE_ID = "deterministic-raster-v1"
 AUTHORING_RECIPE_VERSION = 2
-ASSET_GENERATOR_VERSION = "1.1.1"
+ASSET_GENERATOR_VERSION = "1.1.2"
 ProgressCallback = Callable[[str, str], None]
 
 
@@ -114,7 +114,7 @@ def require_installed_manager_adapter(
     if not isinstance(capabilities, list):
         raise RuntimeError(
             f"已安装 Skin Manager {manager_version} 未公布英雄适配能力；"
-            "请升级到 1.1.1 或更高版本。"
+            "请升级到 1.1.2 或更高版本。"
         )
     installed = next(
         (

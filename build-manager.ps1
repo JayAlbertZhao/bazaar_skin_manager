@@ -1,5 +1,5 @@
 param(
-    [string]$Version = "1.1.1"
+    [string]$Version = "1.1.2"
 )
 
 $ErrorActionPreference = "Stop"
@@ -79,6 +79,7 @@ New-Item -ItemType Directory -Force -Path $output, $work, $spec | Out-Null
     --collect-all UnityPy `
     --collect-all archspec `
     --hidden-import unity_bundle_texture_patch `
+    --hidden-import spine_manager_core `
     --add-binary "$fmodDll;fmod_toolkit\libfmod\Windows\x64" `
     --add-data "$root\manager\hero-catalog.json;manager" `
     --add-data "$root\manager\adapters;manager\adapters" `

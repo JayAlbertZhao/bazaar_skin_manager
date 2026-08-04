@@ -29,15 +29,18 @@ replacement Spine/atlas dimensions, and applies user X/Y/scale adjustments.
 
 ## Backup and restore
 
-Original bundle and `catalog.bin` files are stored below:
+Original bundle and `catalog.bin` files use the Skin Manager's verified native
+backup store below:
 
 ```text
-%LOCALAPPDATA%\BazaarSkinManager\TheBazaar\spine-manager\backups
+%LOCALAPPDATA%\BazaarSkinManager\TheBazaar\native-backups
 ```
 
 Every later deployment is regenerated from those verified originals rather
-than from a previously modified bundle. **Restore original files** verifies
-the backup hashes before copying them back.
+than from a previously modified bundle. Spine changes and raster Texture2D
+changes targeting the same bundle are composed before the Manager atomically
+updates that bundle and the single Addressables catalog. Removing Spine
+replacements preserves other enabled skin packs.
 
 ## Preview
 

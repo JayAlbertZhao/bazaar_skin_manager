@@ -25,6 +25,14 @@ $output = if ($OutputDirectory) {
 }
 $work = Join-Path $root ".codex-work\pyinstaller-spine-manager"
 $spec = Join-Path $root ".codex-work\pyinstaller-spec"
+$runtimeDirectory = if (
+    (Test-Path -LiteralPath (Join-Path $root "dist\runtime\BazaarSkinManager.Runtime.dll")) -and
+    (Test-Path -LiteralPath (Join-Path $root "dist\runtime\runtime-build.json"))
+) {
+    Join-Path $root "dist\runtime"
+} else {
+    Join-Path $root "manager\runtime"
+}
 
 $sitePackages = & $python -c "import sysconfig; print(sysconfig.get_paths()['purelib'])"
 $fmodDll = Join-Path $sitePackages.Trim() "fmod_toolkit\libfmod\Windows\x64\fmod.dll"
@@ -39,7 +47,7 @@ $arguments = @(
     "--clean",
     "--onefile",
     "--windowed",
-    "--name", "bazaar_spine_manager",
+    "--name", "TheBazaarSpineManager",
     "--distpath", $output,
     "--workpath", $work,
     "--specpath", $spec,
@@ -53,6 +61,7 @@ $arguments = @(
     "--add-data", "$root\manager\hero-catalog.json;manager",
     "--add-data", "$root\manager\adapters;manager\adapters",
     "--add-data", "$root\manager\spine-preview;manager\spine-preview",
+    "--add-data", "$runtimeDirectory;dist\runtime",
     $entry
 )
 & $python @arguments
@@ -60,7 +69,7 @@ if ($LASTEXITCODE -ne 0) {
     throw "Spine Manager PyInstaller build failed with exit code $LASTEXITCODE"
 }
 
-$exe = Join-Path $output "bazaar_spine_manager.exe"
+$exe = Join-Path $output "TheBazaarSpineManager.exe"
 $smoke = Start-Process -FilePath $exe -ArgumentList "--self-test" -Wait -PassThru -WindowStyle Hidden
 if ($smoke.ExitCode -ne 0) {
     throw "Frozen Spine Manager self-test failed with exit code $($smoke.ExitCode)"

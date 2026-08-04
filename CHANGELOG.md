@@ -1,6 +1,10 @@
 # Changelog
 
-## Spine Manager 1.1.2
+## 1.1.2
+
+- 将 Spine 动画管理器收进皮肤管理器组件页，安装版与管理器便携包均携带该组件。
+- Spine Bundle、普通皮肤原生纹理与 `catalog.bin` 改由同一个多皮肤事务合成、备份、回滚和诊断；移除 Spine 替换不会移除其他已部署皮肤。
+- Spine 目标跟随验证适配器覆盖 Mak、Vanessa、Pygmalien、Dooley、Jules、Stelle 与 Karnok；Karnok 的本体和 Creature Bundle 会作为同一目标共同处理。
 
 - Accept Spine 4.1 and 4.2 JSON packages and normalize 4.1 version metadata for
   the game's Spine 4.2 runtime during deployment.

@@ -53,18 +53,19 @@ class ReleaseSurfaceTests(unittest.TestCase):
         workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text(
             encoding="utf-8"
         )
-        self.assertIn('default: "1.1.1"', workflow)
+        self.assertIn('default: "1.1.2"', workflow)
         self.assertIn('if ($tag.EndsWith("-experimental"))', workflow)
         self.assertNotIn("v1.0.0-experimental", workflow)
         self.assertNotIn("1.0.0 (experimental)", workflow)
 
-    def test_release_workflow_builds_both_software_components(self) -> None:
+    def test_release_workflow_builds_all_software_components(self) -> None:
         workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text(
             encoding="utf-8"
         )
         self.assertIn("build-asset-generator.ps1", workflow)
         self.assertIn("package-asset-generator-portable.ps1", workflow)
         self.assertIn("TheBazaarAssetGenerator-Portable-", workflow)
+        self.assertIn("build-spine-manager.ps1", workflow)
         self.assertNotIn("DooleyChameleon", workflow)
         self.assertNotIn("KotoneAlchemist", workflow)
 
@@ -168,6 +169,22 @@ class ReleaseSurfaceTests(unittest.TestCase):
         self.assertIn('executable_dir.parent', ui)
         self.assertIn("TheBazaarAssetGenerator.exe", installer)
         self.assertIn("TheBazaarAssetGenerator.exe", portable)
+
+    def test_manager_integrates_spine_manager_component(self) -> None:
+        ui = (ROOT / "tools" / "bazaar_skin_manager_ui.py").read_text(
+            encoding="utf-8"
+        )
+        installer = (
+            ROOT / "installer" / "TheBazaarModManager.iss"
+        ).read_text(encoding="utf-8")
+        portable = (ROOT / "package-manager-portable.ps1").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn('text="Spine 动画管理器"', ui)
+        self.assertIn("def _launch_spine_manager(self)", ui)
+        self.assertIn('"<Control-Key-p>"', ui)
+        self.assertIn("TheBazaarSpineManager.exe", installer)
+        self.assertIn("TheBazaarSpineManager.exe", portable)
 
     def test_manager_pages_group_actions_and_keep_hub_scrollable(self) -> None:
         ui = (ROOT / "tools" / "bazaar_skin_manager_ui.py").read_text(
