@@ -20,7 +20,7 @@ from typing import Iterable
 
 
 APP_ID = "1617400"
-MANAGER_VERSION = "1.0.0"
+MANAGER_VERSION = "1.1.1"
 PROJECT_ROOT = Path(
     getattr(sys, "_MEIPASS", Path(__file__).resolve().parents[1])
 )
@@ -423,6 +423,7 @@ def validate_pack(pack_dir: Path) -> list[str]:
                 "match_names",
                 "pixels_per_unit",
                 "scale_multiplier",
+                "additional_deployments",
             ):
                 if replacement.get(field) != verified.get(field):
                     errors.append(
@@ -443,75 +444,95 @@ def validate_pack(pack_dir: Path) -> list[str]:
             errors.append(f"missing asset: {relative}")
         if not replacement.get("match_names") and not replacement.get("direct_only"):
             errors.append(f"missing match_names for {replacement.get('slot')}")
-        deployment = replacement.get("deployment")
-        if not deployment:
-            continue
-        if deployment.get("mode") != PRELOAD_TEXTURE_MODE:
-            errors.append(f"unsupported deployment mode for {slot}")
-            continue
-        deployment_target = str(deployment.get("target") or "").replace(
-            "\\", "/"
-        )
-        target_parts = Path(deployment_target).parts
-        if (
-            not deployment_target
-            or Path(deployment_target).is_absolute()
-            or ".." in target_parts
-            or ":" in deployment_target
-        ):
-            errors.append(
-                f"unsafe native patch target for {slot}: {deployment_target}"
-            )
-        target_key = deployment_target.casefold()
-        if not deployment.get("asset_name"):
-            errors.append(f"native patch asset_name is required for {slot}")
-        if not deployment.get("unity_version"):
-            errors.append(f"native patch unity_version is required for {slot}")
-        size = deployment.get("target_size")
-        if (
-            not isinstance(size, list)
-            or len(size) != 2
-            or any(not isinstance(value, int) or value <= 0 for value in size)
-        ):
-            errors.append(f"native patch target_size is invalid for {slot}")
-        supported = deployment.get("supported_original_sha256")
-        if (
-            not isinstance(supported, list)
-            or not supported
-            or any(
-                not isinstance(value, str)
-                or not re.fullmatch(r"[0-9a-fA-F]{64}", value)
-                for value in supported
-            )
-        ):
-            errors.append(
-                f"native patch supported_original_sha256 is invalid for {slot}"
-            )
-        elif deployment_target:
-            signature = (
-                str(deployment.get("unity_version")),
-                tuple(sorted(value.casefold() for value in supported)),
-            )
-            previous_signature = native_targets.get(target_key)
-            if previous_signature is not None and previous_signature != signature:
-                errors.append(
-                    "inconsistent native patch target contract: "
-                    f"{deployment_target}"
-                )
-            native_targets[target_key] = signature
+        deployments: list[dict] = []
+        primary_deployment = replacement.get("deployment")
+        if primary_deployment:
+            deployments.append(primary_deployment)
+        additional = replacement.get("additional_deployments")
+        if additional is not None and not isinstance(additional, list):
+            errors.append(f"additional_deployments must be a list for {slot}")
+        elif additional:
+            deployments.extend(additional)
 
-            asset_key = (
-                target_key,
-                str(deployment.get("asset_name")).casefold(),
+        for deployment_index, deployment in enumerate(deployments):
+            label = (
+                slot
+                if deployment_index == 0
+                else f"{slot} additional deployment {deployment_index}"
             )
-            asset_hash = sha256_file(asset) if asset.is_file() else ""
-            previous_hash = native_assets.get(asset_key)
-            if previous_hash is not None and previous_hash != asset_hash:
+            if not isinstance(deployment, dict):
+                errors.append(f"native patch deployment is invalid for {label}")
+                continue
+            if deployment.get("mode") != PRELOAD_TEXTURE_MODE:
+                errors.append(f"unsupported deployment mode for {label}")
+                continue
+            deployment_target = str(deployment.get("target") or "").replace(
+                "\\", "/"
+            )
+            target_parts = Path(deployment_target).parts
+            if (
+                not deployment_target
+                or Path(deployment_target).is_absolute()
+                or ".." in target_parts
+                or ":" in deployment_target
+            ):
                 errors.append(
-                    f"conflicting native patch images for "
-                    f"{deployment.get('asset_name')}"
+                    f"unsafe native patch target for {label}: {deployment_target}"
                 )
-            native_assets[asset_key] = asset_hash
+            target_key = deployment_target.casefold()
+            if not deployment.get("asset_name"):
+                errors.append(f"native patch asset_name is required for {label}")
+            if not deployment.get("unity_version"):
+                errors.append(f"native patch unity_version is required for {label}")
+            size = deployment.get("target_size")
+            if (
+                not isinstance(size, list)
+                or len(size) != 2
+                or any(not isinstance(value, int) or value <= 0 for value in size)
+            ):
+                errors.append(f"native patch target_size is invalid for {label}")
+            supported = deployment.get("supported_original_sha256")
+            if (
+                not isinstance(supported, list)
+                or not supported
+                or any(
+                    not isinstance(value, str)
+                    or not re.fullmatch(r"[0-9a-fA-F]{64}", value)
+                    for value in supported
+                )
+            ):
+                errors.append(
+                    "native patch supported_original_sha256 is invalid for "
+                    f"{label}"
+                )
+            elif deployment_target:
+                signature = (
+                    str(deployment.get("unity_version")),
+                    tuple(sorted(value.casefold() for value in supported)),
+                )
+                previous_signature = native_targets.get(target_key)
+                if (
+                    previous_signature is not None
+                    and previous_signature != signature
+                ):
+                    errors.append(
+                        "inconsistent native patch target contract: "
+                        f"{deployment_target}"
+                    )
+                native_targets[target_key] = signature
+
+                asset_key = (
+                    target_key,
+                    str(deployment.get("asset_name")).casefold(),
+                )
+                asset_hash = sha256_file(asset) if asset.is_file() else ""
+                previous_hash = native_assets.get(asset_key)
+                if previous_hash is not None and previous_hash != asset_hash:
+                    errors.append(
+                        f"conflicting native patch images for "
+                        f"{deployment.get('asset_name')}"
+                    )
+                native_assets[asset_key] = asset_hash
 
     audio_manifest_relative = manifest.get("audio_manifest")
     if audio_manifest_relative:
@@ -731,12 +752,20 @@ def atomic_copy_file(source: Path, destination: Path) -> None:
 
 def native_patch_specs(pack: Path) -> list[dict]:
     manifest = json.loads((pack / "mod.json").read_text(encoding="utf-8"))
-    return [
-        replacement
-        for replacement in manifest.get("visual_replacements") or []
-        if (replacement.get("deployment") or {}).get("mode")
-        == PRELOAD_TEXTURE_MODE
-    ]
+    specs: list[dict] = []
+    for replacement in manifest.get("visual_replacements") or []:
+        deployments = []
+        if replacement.get("deployment"):
+            deployments.append(replacement["deployment"])
+        deployments.extend(replacement.get("additional_deployments") or [])
+        for deployment in deployments:
+            if deployment.get("mode") != PRELOAD_TEXTURE_MODE:
+                continue
+            spec = dict(replacement)
+            spec["deployment"] = deployment
+            spec.pop("additional_deployments", None)
+            specs.append(spec)
+    return specs
 
 
 def native_patch_target(game: GameInstall, deployment: dict) -> Path:
@@ -823,22 +852,36 @@ def native_patch_plan_issues(pack: Path, game: GameInstall) -> list[str]:
     return issues
 
 
-def prepare_native_patches(
-    pack: Path,
+def prepare_native_patches_many(
+    packs: list[Path],
     game: GameInstall,
     staging: Path,
 ) -> list[dict]:
     patch_texture_bundle_many = _load_bundle_patcher()
     prepared: list[dict] = []
     grouped: dict[str, list[dict]] = {}
-    for replacement in native_patch_specs(pack):
-        target = native_patch_target(game, replacement["deployment"])
-        grouped.setdefault(str(target).casefold(), []).append(replacement)
+    for pack in packs:
+        for replacement in native_patch_specs(pack):
+            target = native_patch_target(game, replacement["deployment"])
+            item = dict(replacement)
+            item["_pack"] = pack
+            grouped.setdefault(str(target).casefold(), []).append(item)
 
     for replacements in grouped.values():
         replacement = replacements[0]
         slots = [item["slot"] for item in replacements]
         deployment = replacement["deployment"]
+        for item in replacements[1:]:
+            other = item["deployment"]
+            if (
+                other.get("unity_version") != deployment.get("unity_version")
+                or other.get("supported_original_sha256")
+                != deployment.get("supported_original_sha256")
+            ):
+                raise RuntimeError(
+                    "Conflicting native deployment contracts for "
+                    f"{Path(deployment['target']).name}."
+                )
         target = native_patch_target(game, deployment)
         if not target.is_file():
             raise RuntimeError(
@@ -863,7 +906,9 @@ def prepare_native_patches(
             item_deployment = item["deployment"]
             texture_replacements.append(
                 {
-                    "replacement_image": (pack / item["file"]).resolve(),
+                    "replacement_image": (
+                        Path(item["_pack"]) / item["file"]
+                    ).resolve(),
                     "asset_name": item_deployment["asset_name"],
                     "target_size": tuple(
                         int(value)
@@ -914,6 +959,14 @@ def prepare_native_patches(
             }
         )
     return prepared
+
+
+def prepare_native_patches(
+    pack: Path,
+    game: GameInstall,
+    staging: Path,
+) -> list[dict]:
+    return prepare_native_patches_many([pack], game, staging)
 
 
 def prepare_native_catalog_patch(
@@ -1064,7 +1117,17 @@ def apply_native_catalog_patch(prepared: dict | None) -> dict | None:
     }
 
 
-def install(runtime: Path, pack: Path, game: GameInstall) -> dict:
+def _pack_identity(pack: Path) -> tuple[dict, tuple[str, str]]:
+    manifest = json.loads((pack / "mod.json").read_text(encoding="utf-8"))
+    target = manifest.get("target") or {}
+    identity = (
+        str(target.get("hero") or "").casefold(),
+        str(target.get("skin_name_contains") or "").casefold(),
+    )
+    return manifest, identity
+
+
+def install_many(runtime: Path, packs: list[Path], game: GameInstall) -> dict:
     if not game.complete:
         raise RuntimeError(f"incomplete game installation: {game.game_dir}")
     if not runtime.is_file():
@@ -1073,9 +1136,39 @@ def install(runtime: Path, pack: Path, game: GameInstall) -> dict:
         raise RuntimeError(
             "BepInEx is missing; install or repair BazaarPlusPlus before this skin runtime"
         )
-    errors = validate_pack(pack)
-    if errors:
-        raise RuntimeError("invalid pack: " + "; ".join(errors))
+    if not packs:
+        raise RuntimeError("at least one skin pack is required")
+    resolved_packs = [Path(pack).resolve() for pack in packs]
+    manifests: list[dict] = []
+    pack_ids: set[str] = set()
+    targets: set[tuple[str, str]] = set()
+    for pack in resolved_packs:
+        errors = validate_pack(pack)
+        if errors:
+            raise RuntimeError(
+                f"invalid pack {pack}: " + "; ".join(errors)
+            )
+        manifest, identity = _pack_identity(pack)
+        pack_id = str(manifest["id"]).casefold()
+        if pack_id in pack_ids:
+            raise RuntimeError(f"duplicate skin pack id: {manifest['id']}")
+        if identity in targets:
+            raise RuntimeError(
+                "duplicate enabled skin target: "
+                f"{manifest['target']['hero']} / "
+                f"{manifest['target']['skin_name_contains']}"
+            )
+        pack_ids.add(pack_id)
+        targets.add(identity)
+        manifests.append(manifest)
+
+    native_issues: list[str] = []
+    for pack in resolved_packs:
+        native_issues.extend(native_patch_plan_issues(pack, game))
+    if native_issues:
+        raise RuntimeError(
+            "native deployment is not ready: " + "; ".join(native_issues)
+        )
 
     if (manager_root() / "install-manifest.json").is_file():
         uninstall()
@@ -1089,16 +1182,40 @@ def install(runtime: Path, pack: Path, game: GameInstall) -> dict:
     plugin_dest = plugin_dir / runtime.name
     shutil.copy2(runtime, plugin_dest)
 
-    manifest = json.loads((pack / "mod.json").read_text(encoding="utf-8"))
-    pack_dest = mods_root() / manifest["id"]
-    atomic_copy_tree(pack, pack_dest)
-    runtime_config = configure_runtime_mods_root(game)
+    pack_records: list[dict] = []
+    pack_destinations: list[Path] = []
+    try:
+        for pack, manifest in zip(resolved_packs, manifests):
+            pack_dest = mods_root() / manifest["id"]
+            atomic_copy_tree(pack, pack_dest)
+            pack_destinations.append(pack_dest)
+            pack_records.append(
+                {
+                    "path": str(pack_dest),
+                    "id": manifest["id"],
+                    "version": manifest["version"],
+                    "target": manifest.get("target"),
+                    "manifest_sha256": sha256_file(pack / "mod.json"),
+                }
+            )
+        runtime_config = configure_runtime_mods_root(game)
+    except Exception:
+        if plugin_dest.is_file():
+            plugin_dest.unlink()
+        for pack_dest in pack_destinations:
+            if pack_dest.is_dir():
+                shutil.rmtree(pack_dest)
+        raise
 
     applied_native_patches: list[dict] = []
     applied_catalog_patch: dict | None = None
     try:
         with tempfile.TemporaryDirectory() as temp:
-            prepared = prepare_native_patches(pack, game, Path(temp))
+            prepared = prepare_native_patches_many(
+                resolved_packs,
+                game,
+                Path(temp),
+            )
             prepared_catalog = prepare_native_catalog_patch(
                 prepared,
                 game,
@@ -1116,7 +1233,7 @@ def install(runtime: Path, pack: Path, game: GameInstall) -> dict:
         ).hexdigest()
         runtime_release = runtime_release_info(runtime)
         record = {
-            "schema_version": 2,
+            "schema_version": 3,
             "manager": {
                 "version": MANAGER_VERSION,
             },
@@ -1132,12 +1249,10 @@ def install(runtime: Path, pack: Path, game: GameInstall) -> dict:
                 "source_path": runtime_release["source_path"],
                 "sha256": runtime_release["sha256"],
             },
-            "pack": {
-                "path": str(pack_dest),
-                "id": manifest["id"],
-                "version": manifest["version"],
-                "manifest_sha256": sha256_file(pack / "mod.json"),
-            },
+            "packs": pack_records,
+            # Compatibility alias for 1.0.x integrations. Multi-pack aware
+            # callers must use ``packs``.
+            "pack": pack_records[0],
             "runtime_compatibility": {
                 "path": str(compatibility_path),
                 "sha256": compatibility_sha256,
@@ -1162,8 +1277,9 @@ def install(runtime: Path, pack: Path, game: GameInstall) -> dict:
                 atomic_copy_file(backup, target)
         if plugin_dest.is_file():
             plugin_dest.unlink()
-        if pack_dest.is_dir():
-            shutil.rmtree(pack_dest)
+        for pack_dest in pack_destinations:
+            if pack_dest.is_dir():
+                shutil.rmtree(pack_dest)
         raise
 
     record["game"]["game_dir"] = str(record["game"]["game_dir"])
@@ -1177,6 +1293,11 @@ def install(runtime: Path, pack: Path, game: GameInstall) -> dict:
     )
     atomic_write_text(compatibility_path, compatibility_text)
     return record
+
+
+def install(runtime: Path, pack: Path, game: GameInstall) -> dict:
+    """Backward-compatible single-pack entry point."""
+    return install_many(runtime, [pack], game)
 
 
 def plan_install(runtime: Path, pack: Path, game: GameInstall) -> dict:
@@ -1258,15 +1379,20 @@ def plan_uninstall() -> dict:
             "targets": [str(compatibility)] if compatibility.is_file() else [],
         }
     record = json.loads(record_path.read_text(encoding="utf-8"))
+    pack_entries = record.get("packs") or (
+        [record["pack"]] if record.get("pack") else []
+    )
     targets = [
         entry["path"]
         for entry in (
             record.get("plugin"),
-            record.get("pack"),
             record.get("runtime_compatibility"),
         )
         if entry and entry.get("path")
     ]
+    targets.extend(
+        entry["path"] for entry in pack_entries if entry.get("path")
+    )
     targets.extend(
         item["target"]
         for item in record.get("native_patches") or []
@@ -1294,7 +1420,10 @@ def installation_diagnostics() -> dict:
     current = fingerprint(game)
     previous = record.get("game_fingerprint") or {}
     plugin = Path(record["plugin"]["path"])
-    pack = Path(record["pack"]["path"])
+    pack_entries = record.get("packs") or (
+        [record["pack"]] if record.get("pack") else []
+    )
+    packs = [Path(entry["path"]) for entry in pack_entries]
     plugin_hash_matches = (
         plugin.is_file() and sha256_file(plugin) == record["plugin"].get("sha256")
     )
@@ -1364,8 +1493,10 @@ def installation_diagnostics() -> dict:
         ).is_file(),
         "plugin_present": plugin.is_file(),
         "plugin_hash_matches": plugin_hash_matches,
-        "pack_present": pack.is_dir(),
-        "pack_valid": pack.is_dir() and not validate_pack(pack),
+        "packs_present": bool(packs) and all(pack.is_dir() for pack in packs),
+        "packs_valid": bool(packs) and all(
+            pack.is_dir() and not validate_pack(pack) for pack in packs
+        ),
         "runtime_compatibility_present": compatibility.is_file(),
         "runtime_compatibility_hash_matches": compatibility_hash_matches,
         "runtime_compatibility_matches_current": not compatibility_errors,
@@ -1375,6 +1506,9 @@ def installation_diagnostics() -> dict:
         "addressables_catalog_backup_valid": catalog_backup_valid,
         "game_update_detected": update_detected,
     }
+    # Keep the original single-pack diagnostic keys for callers from 1.0.x.
+    checks["pack_present"] = checks["packs_present"]
+    checks["pack_valid"] = checks["packs_valid"]
     positive_checks = {
         key: value
         for key, value in checks.items()
@@ -1395,11 +1529,24 @@ def installation_diagnostics() -> dict:
                 "path": record["plugin"].get("path"),
                 "sha256": record["plugin"].get("sha256"),
             },
+            "packs": [
+                {
+                    "id": entry.get("id"),
+                    "version": entry.get("version"),
+                    "target": entry.get("target"),
+                    "manifest_sha256": entry.get("manifest_sha256"),
+                }
+                for entry in pack_entries
+            ],
             "pack": {
-                "id": record["pack"].get("id"),
-                "version": record["pack"].get("version"),
-                "manifest_sha256": record["pack"].get(
-                    "manifest_sha256"
+                "id": pack_entries[0].get("id") if pack_entries else None,
+                "version": (
+                    pack_entries[0].get("version") if pack_entries else None
+                ),
+                "manifest_sha256": (
+                    pack_entries[0].get("manifest_sha256")
+                    if pack_entries
+                    else None
                 ),
             },
         },
@@ -1479,10 +1626,12 @@ def uninstall() -> list[str]:
         if backup.is_file():
             backup.unlink()
             removed.append(str(backup))
+    pack_entries = record.get("packs") or (
+        [record["pack"]] if record.get("pack") else []
+    )
     for entry in (
-        record.get("plugin"),
-        record.get("pack"),
-        record.get("runtime_compatibility"),
+        [record.get("plugin"), record.get("runtime_compatibility")]
+        + pack_entries
     ):
         if not entry or not entry.get("path"):
             continue

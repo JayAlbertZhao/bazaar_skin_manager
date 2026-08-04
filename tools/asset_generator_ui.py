@@ -100,8 +100,16 @@ class AssetGeneratorUI:
         self.root.title(
             f"The Bazaar 素材包制作器 v{ASSET_GENERATOR_VERSION}"
         )
-        self.root.geometry("1380x900")
-        self.root.minsize(1120, 720)
+        screen_width = self.root.winfo_screenwidth()
+        screen_height = self.root.winfo_screenheight()
+        window_width = min(1380, max(1024, screen_width - 80))
+        window_height = min(900, max(640, screen_height - 140))
+        window_x = max(0, (screen_width - window_width) // 2)
+        window_y = max(0, (screen_height - window_height - 40) // 2)
+        self.root.geometry(
+            f"{window_width}x{window_height}+{window_x}+{window_y}"
+        )
+        self.root.minsize(1024, 640)
         self.root.configure(bg=COLORS["window"])
         try:
             self.root.tk.call("tk", "scaling", 1.25)
@@ -141,6 +149,14 @@ class AssetGeneratorUI:
         self._build_ui()
         self.root.bind("<Control-v>", self._global_paste)
         self.root.bind("<Control-V>", self._global_paste)
+        self.root.bind_all(
+            "<Control-Key-1>",
+            lambda _event: self.authoring_pages.select(0),
+        )
+        self.root.bind_all(
+            "<Control-Key-2>",
+            lambda _event: self.authoring_pages.select(1),
+        )
         self.root.bind_all("<MouseWheel>", self._scroll_form_under_pointer, add="+")
         if USER_PROFILE.is_file():
             self._load_profile(USER_PROFILE, fallback_to_new=True)
@@ -330,10 +346,13 @@ class AssetGeneratorUI:
             button.pack(fill="x", pady=4)
             self.action_buttons.append(button)
 
-        notebook = ttk.Notebook(parent)
-        notebook.pack(side="top", fill="both", expand=True)
-        materials = self._scrollable_notebook_page(notebook, "素材")
-        advanced = self._scrollable_notebook_page(notebook, "高级设置")
+        self.authoring_pages = ttk.Notebook(parent)
+        self.authoring_pages.pack(side="top", fill="both", expand=True)
+        materials = self._scrollable_notebook_page(self.authoring_pages, "素材")
+        advanced = self._scrollable_notebook_page(
+            self.authoring_pages,
+            "高级设置",
+        )
 
         ttk.Label(
             materials,

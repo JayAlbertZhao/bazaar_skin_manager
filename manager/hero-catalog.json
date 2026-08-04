@@ -72,6 +72,34 @@
           "name_contains": "JUL_01a"
         }
       ]
+    },
+    {
+      "id": "Stelle",
+      "asset_code": "STE",
+      "display_name": "Stelle",
+      "runtime_supported": true,
+      "audio_supported": false,
+      "skins": [
+        {
+          "id": "Skin_STE_01/A",
+          "display_name": "默认",
+          "name_contains": "STE_01a"
+        }
+      ]
+    },
+    {
+      "id": "Karnok",
+      "asset_code": "KAR",
+      "display_name": "Karnok",
+      "runtime_supported": true,
+      "audio_supported": false,
+      "skins": [
+        {
+          "id": "Skin_KAR_01/A",
+          "display_name": "默认",
+          "name_contains": "KAR_01a"
+        }
+      ]
     }
   ],
   "visual_slots": [

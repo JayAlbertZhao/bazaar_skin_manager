@@ -22,7 +22,12 @@ namespace BazaarSkinManager.TheBazaar
 
         public static bool ShouldReplace(object instance)
         {
-            return Plugin.ActivePack != null && Plugin.ActivePack.IsTargetSkin(instance);
+            return PackFor(instance) != null;
+        }
+
+        public static RuntimePack PackFor(object instance)
+        {
+            return Plugin.PackForSkin(instance);
         }
     }
 
@@ -78,19 +83,20 @@ namespace BazaarSkinManager.TheBazaar
 
         private static void Postfix(object __instance, ref Task<Sprite> __result)
         {
-            if (!SkinPatchTargets.ShouldReplace(__instance) ||
+            RuntimePack pack = SkinPatchTargets.PackFor(__instance);
+            if (pack == null ||
                 !VisualOwnership.IsLocalHeroPortraitLoad())
             {
                 return;
             }
 
-            if (Plugin.ActivePack.UsesPreloadedDeployment(
+            if (pack.UsesPreloadedDeployment(
                 "portrait_gameplay"))
             {
                 return;
             }
 
-            Sprite sprite = Plugin.ActivePack.Sprite("portrait_gameplay");
+            Sprite sprite = pack.Sprite("portrait_gameplay");
             if (sprite != null)
             {
                 __result = RuntimeAssetProbe.GameplayPortraitRequested
@@ -139,7 +145,8 @@ namespace BazaarSkinManager.TheBazaar
             object[] __args,
             ref Task<Texture2D> __result)
         {
-            if (!SkinPatchTargets.ShouldReplace(__instance))
+            RuntimePack pack = SkinPatchTargets.PackFor(__instance);
+            if (pack == null)
             {
                 return;
             }
@@ -177,11 +184,11 @@ namespace BazaarSkinManager.TheBazaar
             // Texture2D is shared by collection/daily surfaces, so the two
             // dedicated portrait slots must remain runtime overrides.
             if (__originalMethod.Name != "LoadPortrait" &&
-                Plugin.ActivePack.UsesPreloadedDeployment(slot))
+                pack.UsesPreloadedDeployment(slot))
             {
                 return;
             }
-            Texture2D texture = Plugin.ActivePack.Texture(slot);
+            Texture2D texture = pack.Texture(slot);
             if (texture != null)
             {
                 __result = Task.FromResult(texture);
@@ -222,7 +229,8 @@ namespace BazaarSkinManager.TheBazaar
             MethodBase __originalMethod,
             ref Task<UnityEngine.Object> __result)
         {
-            if (!SkinPatchTargets.ShouldReplace(__instance))
+            RuntimePack pack = SkinPatchTargets.PackFor(__instance);
+            if (pack == null)
             {
                 return;
             }
@@ -242,11 +250,11 @@ namespace BazaarSkinManager.TheBazaar
                 default:
                     return;
             }
-            if (Plugin.ActivePack.UsesPreloadedDeployment(slot))
+            if (pack.UsesPreloadedDeployment(slot))
             {
                 return;
             }
-            Texture2D texture = Plugin.ActivePack.Texture(slot);
+            Texture2D texture = pack.Texture(slot);
             if (texture != null)
             {
                 __result = Task.FromResult<UnityEngine.Object>(texture);
@@ -275,27 +283,30 @@ namespace BazaarSkinManager.TheBazaar
             object __instance,
             ref Task<UnityEngine.Object> __result)
         {
-            if (!SkinPatchTargets.ShouldReplace(__instance) || __result == null)
+            RuntimePack pack = SkinPatchTargets.PackFor(__instance);
+            if (pack == null || __result == null)
             {
                 return;
             }
 
-            __result = AddOverlay(__result);
+            __result = AddOverlay(__result, pack);
         }
 
         private static async Task<UnityEngine.Object> AddOverlay(
-            Task<UnityEngine.Object> original)
+            Task<UnityEngine.Object> original,
+            RuntimePack pack)
         {
             UnityEngine.Object result = await original;
             GameObject root = result as GameObject;
-            Sprite sprite = Plugin.ActivePack.Sprite("collection_details");
+            Sprite sprite = pack.Sprite("collection_details");
             if (root != null && sprite != null)
             {
                 StandingOverlay.AttachToWorld(
                     root,
                     sprite,
                     "collection_details",
-                    "LoadCollectionDetailsAssetAsync");
+                    "LoadCollectionDetailsAssetAsync",
+                    pack);
             }
             return result;
         }
@@ -322,7 +333,8 @@ namespace BazaarSkinManager.TheBazaar
             object[] __args,
             ref Task<UnityEngine.Object> __result)
         {
-            if (!SkinPatchTargets.ShouldReplace(__instance) ||
+            RuntimePack pack = SkinPatchTargets.PackFor(__instance);
+            if (pack == null ||
                 __result == null)
             {
                 return;
@@ -332,12 +344,13 @@ namespace BazaarSkinManager.TheBazaar
                 __args != null && __args.Length > 0 && __args[0] != null
                     ? __args[0].ToString()
                     : string.Empty;
-            __result = PrepareBeforeDisplay(__result, placementName);
+            __result = PrepareBeforeDisplay(__result, placementName, pack);
         }
 
         private static async Task<UnityEngine.Object> PrepareBeforeDisplay(
             Task<UnityEngine.Object> original,
-            string placementName)
+            string placementName,
+            RuntimePack pack)
         {
             UnityEngine.Object result = await original;
             GameObject root = result as GameObject;
@@ -378,7 +391,8 @@ namespace BazaarSkinManager.TheBazaar
                 }
                 attacher.Configure(
                     placementName,
-                    Plugin.ActivePack.Sprite("standing_overlay"));
+                    pack.Sprite("standing_overlay"),
+                    pack);
                 Plugin.Log.LogInfo(
                     "Resolved exact SkinEdit placement " + placementName +
                     " before parenting: renderer=" + renderer.name +
@@ -436,7 +450,8 @@ namespace BazaarSkinManager.TheBazaar
         private static void Postfix(object __instance)
         {
             object loadedAsset = _loadedAssetField.GetValue(__instance);
-            if (!SkinPatchTargets.ShouldReplace(loadedAsset))
+            RuntimePack pack = SkinPatchTargets.PackFor(loadedAsset);
+            if (pack == null)
             {
                 return;
             }
@@ -444,7 +459,7 @@ namespace BazaarSkinManager.TheBazaar
             GameObject root =
                 _skinEditActiveSkinField.GetValue(__instance) as GameObject;
             object placement = _placementField.GetValue(__instance);
-            Sprite sprite = Plugin.ActivePack.Sprite("standing_overlay");
+            Sprite sprite = pack.Sprite("standing_overlay");
             if (root == null || placement == null || sprite == null)
             {
                 return;
@@ -486,7 +501,8 @@ namespace BazaarSkinManager.TheBazaar
                     sprite,
                     "standing_overlay",
                     "HeroSelectDisplay.AnimateMaterialsIn exact visible " +
-                    placementName);
+                    placementName,
+                    pack);
             }
 
             WorldStandingOverlayMarker marker =

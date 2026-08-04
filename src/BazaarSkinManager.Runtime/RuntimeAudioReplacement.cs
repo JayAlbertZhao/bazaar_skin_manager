@@ -65,8 +65,7 @@ namespace BazaarSkinManager.TheBazaar
         {
             if (_installed ||
                 harmony == null ||
-                Plugin.ActivePack == null ||
-                Plugin.ActivePack.Audio == null)
+                !HasAnyAudioPack())
             {
                 return;
             }
@@ -226,13 +225,10 @@ namespace BazaarSkinManager.TheBazaar
                 {
                     return true;
                 }
-                string expectedAudio = isHero
-                    ? "MakAudioSO"
-                    : "MakMerchantAudioSO";
-                if (!string.Equals(
-                    unityCardAudio.name,
-                    expectedAudio,
-                    StringComparison.Ordinal))
+                RuntimePack pack = isHero
+                    ? PackForAudioObject(unityCardAudio.name)
+                    : SelectedHeroPack();
+                if (pack == null || pack.Audio == null)
                 {
                     return true;
                 }
@@ -253,7 +249,7 @@ namespace BazaarSkinManager.TheBazaar
 
                 List<AudioSelector> selectors = ReadSelectors(__args[2]);
                 LoadedAudioRoute route;
-                if (!Plugin.ActivePack.Audio.TryRoute(
+                if (!pack.Audio.TryRoute(
                     CanonicalGuid(guid),
                     selectors,
                     out route))
@@ -319,7 +315,7 @@ namespace BazaarSkinManager.TheBazaar
                     }
                 }
 
-                if (!Play(route, __instance, true))
+                if (!Play(pack, route, __instance, true))
                 {
                     return true;
                 }
@@ -609,11 +605,12 @@ namespace BazaarSkinManager.TheBazaar
                     return true;
                 }
                 LoadedAudioRoute route;
-                if (!Plugin.ActivePack.Audio.TryRoute(
-                    CanonicalGuid(guid),
-                    new List<AudioSelector>(),
-                    out route) ||
-                    route.Category != "menu_voice")
+                RuntimePack pack = SelectedHeroPack();
+                if (pack == null || pack.Audio == null ||
+                    !pack.Audio.TryRoute(
+                        CanonicalGuid(guid),
+                        new List<AudioSelector>(),
+                        out route) || route.Category != "menu_voice")
                 {
                     return true;
                 }
@@ -622,7 +619,7 @@ namespace BazaarSkinManager.TheBazaar
                         route.LogicalSlot == "Menu.CharacterSelect") ||
                     (_equipMusicContext > 0 &&
                         route.LogicalSlot == "Menu.EquipMusic");
-                if (!contextMatches || !Play(route, null, false))
+                if (!contextMatches || !Play(pack, route, null, false))
                 {
                     return true;
                 }
@@ -640,19 +637,18 @@ namespace BazaarSkinManager.TheBazaar
         }
 
         private static bool Play(
+            RuntimePack pack,
             LoadedAudioRoute route,
             object voiceOwner,
             bool voicePlayback)
         {
             if (_source == null ||
-                route == null ||
-                Plugin.ActivePack == null ||
-                Plugin.ActivePack.Audio == null)
+                route == null || pack == null || pack.Audio == null)
             {
                 return false;
             }
             LoadedAudioVariant variant =
-                Plugin.ActivePack.Audio.Choose(route);
+                pack.Audio.Choose(route);
             if (variant == null || variant.Clip == null)
             {
                 return false;
@@ -660,7 +656,7 @@ namespace BazaarSkinManager.TheBazaar
 
             _source.Stop();
             _source.clip = variant.Clip;
-            _source.volume = Plugin.ActivePack.Audio.Gain;
+            _source.volume = pack.Audio.Gain;
             _source.Play();
             if (!_source.isPlaying)
             {
@@ -980,12 +976,47 @@ namespace BazaarSkinManager.TheBazaar
 
         private static bool IsTargetHeroSelected()
         {
+            return SelectedHeroPack() != null;
+        }
+
+        private static bool HasAnyAudioPack()
+        {
+            foreach (RuntimePack pack in Plugin.ActivePacks)
+            {
+                if (pack.Audio != null)
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        private static RuntimePack SelectedHeroPack()
+        {
             UnityEngine.Object heroAudio =
                 ResolveSelectedCardAudio(true, 10) as UnityEngine.Object;
-            return heroAudio != null && string.Equals(
-                heroAudio.name,
-                "MakAudioSO",
-                StringComparison.Ordinal);
+            return heroAudio == null
+                ? null
+                : PackForAudioObject(heroAudio.name);
+        }
+
+        private static RuntimePack PackForAudioObject(string audioName)
+        {
+            if (string.IsNullOrEmpty(audioName))
+            {
+                return null;
+            }
+            const string suffix = "AudioSO";
+            string hero = audioName.EndsWith(
+                suffix,
+                StringComparison.OrdinalIgnoreCase)
+                ? audioName.Substring(0, audioName.Length - suffix.Length)
+                : audioName;
+            if (hero.EndsWith("Merchant", StringComparison.OrdinalIgnoreCase))
+            {
+                hero = hero.Substring(0, hero.Length - "Merchant".Length);
+            }
+            return Plugin.PackForHero(hero);
         }
 
         private static object ReadMember(object value, string name)

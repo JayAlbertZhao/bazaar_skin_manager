@@ -11,7 +11,7 @@ namespace BazaarSkinManager.TheBazaar
 
         private void Update()
         {
-            if (Time.unscaledTime < _nextScan || Plugin.ActivePack == null)
+            if (Time.unscaledTime < _nextScan || Plugin.ActivePacks.Count == 0)
             {
                 return;
             }
@@ -36,14 +36,19 @@ namespace BazaarSkinManager.TheBazaar
                     continue;
                 }
 
-                VisualReplacement replacement = Plugin.ActivePack.Match(image.sprite.name);
+                VisualReplacement replacement;
+                RuntimePack pack = Plugin.PackMatchingAsset(
+                    image.sprite.name,
+                    out replacement);
                 if (replacement == null && image.sprite.texture != null)
                 {
-                    replacement = Plugin.ActivePack.Match(image.sprite.texture.name);
+                    pack = Plugin.PackMatchingAsset(
+                        image.sprite.texture.name,
+                        out replacement);
                 }
                 if (replacement != null)
                 {
-                    Sprite sprite = Plugin.ActivePack.Sprite(replacement.Slot);
+                    Sprite sprite = pack.Sprite(replacement.Slot);
                     if (sprite != null)
                     {
                         RuntimeDiagnostics.ReportReplacement(
@@ -78,10 +83,13 @@ namespace BazaarSkinManager.TheBazaar
                     continue;
                 }
 
-                VisualReplacement replacement = Plugin.ActivePack.Match(image.texture.name);
+                VisualReplacement replacement;
+                RuntimePack pack = Plugin.PackMatchingAsset(
+                    image.texture.name,
+                    out replacement);
                 if (replacement != null)
                 {
-                    Texture2D texture = Plugin.ActivePack.Texture(replacement.Slot);
+                    Texture2D texture = pack.Texture(replacement.Slot);
                     if (texture != null)
                     {
                         RuntimeDiagnostics.ReportReplacement(
@@ -115,15 +123,19 @@ namespace BazaarSkinManager.TheBazaar
                     continue;
                 }
 
-                VisualReplacement replacement = Plugin.ActivePack.Match(renderer.sprite.name);
+                VisualReplacement replacement;
+                RuntimePack pack = Plugin.PackMatchingAsset(
+                    renderer.sprite.name,
+                    out replacement);
                 if (replacement == null && renderer.sprite.texture != null)
                 {
-                    replacement =
-                        Plugin.ActivePack.Match(renderer.sprite.texture.name);
+                    pack = Plugin.PackMatchingAsset(
+                        renderer.sprite.texture.name,
+                        out replacement);
                 }
                 if (replacement != null)
                 {
-                    Sprite sprite = Plugin.ActivePack.Sprite(replacement.Slot);
+                    Sprite sprite = pack.Sprite(replacement.Slot);
                     if (sprite != null)
                     {
                         RuntimeDiagnostics.ReportReplacement(

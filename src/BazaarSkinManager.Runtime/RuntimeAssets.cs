@@ -41,13 +41,14 @@ namespace BazaarSkinManager.TheBazaar
                 "mods");
         }
 
-        public static RuntimePack LoadFirstEnabled(string modsRoot, ManualLogSource log)
+        public static List<RuntimePack> LoadAllEnabled(string modsRoot, ManualLogSource log)
         {
+            var loaded = new List<RuntimePack>();
             log.LogInfo("Scanning external skin packs at: " + modsRoot);
             if (!Directory.Exists(modsRoot))
             {
                 log.LogWarning("Mods root does not exist: " + modsRoot);
-                return null;
+                return loaded;
             }
 
             string[] manifests = Directory.GetFiles(modsRoot, "mod.json", SearchOption.AllDirectories);
@@ -83,7 +84,27 @@ namespace BazaarSkinManager.TheBazaar
                                 "Audio UGC was disabled; all original FMOD " +
                                 "events remain active: " + exception.Message);
                         }
-                        return pack;
+                        bool duplicate = false;
+                        foreach (RuntimePack existing in loaded)
+                        {
+                            if (existing.IsTargetHero(pack.Manifest.Target.Hero) &&
+                                string.Equals(
+                                    existing.Manifest.Target.SkinNameContains,
+                                    pack.Manifest.Target.SkinNameContains,
+                                    StringComparison.OrdinalIgnoreCase))
+                            {
+                                duplicate = true;
+                                log.LogError(
+                                    "Ignoring duplicate enabled skin target from " +
+                                    manifestPath + ".");
+                                pack.DisposeAudio();
+                                break;
+                            }
+                        }
+                        if (!duplicate)
+                        {
+                            loaded.Add(pack);
+                        }
                     }
                 }
                 catch (Exception exception)
@@ -92,7 +113,13 @@ namespace BazaarSkinManager.TheBazaar
                 }
             }
 
-            return null;
+            return loaded;
+        }
+
+        public static RuntimePack LoadFirstEnabled(string modsRoot, ManualLogSource log)
+        {
+            List<RuntimePack> packs = LoadAllEnabled(modsRoot, log);
+            return packs.Count == 0 ? null : packs[0];
         }
 
         private static RuntimePack Load(string manifestPath)

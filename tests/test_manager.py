@@ -88,6 +88,82 @@ def write_game(root: Path) -> Path:
 
 
 class ManagerTests(unittest.TestCase):
+    def test_install_many_keeps_two_professions_active_and_reversible(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            mak_pack = write_pack(root / "mak")
+            dooley_pack = write_pack(root / "dooley")
+            dooley_manifest_path = dooley_pack / "mod.json"
+            dooley_manifest = json.loads(
+                dooley_manifest_path.read_text(encoding="utf-8")
+            )
+            dooley_manifest["id"] = "example.dooley.default"
+            dooley_manifest["target"].update(
+                hero="Dooley",
+                skin="Skin_DOO_01/A",
+                skin_name_contains="DOO_01a",
+            )
+            dooley_manifest["visual_replacements"] = []
+            dooley_manifest_path.write_text(
+                json.dumps(dooley_manifest, indent=2) + "\n",
+                encoding="utf-8",
+            )
+            game = write_game(root)
+            runtime = root / "BazaarSkinManager.Runtime.dll"
+            runtime.write_bytes(b"runtime")
+            local = root / "local"
+            with (
+                mock.patch.dict("os.environ", {"LOCALAPPDATA": str(local)}),
+                mock.patch.object(manager, "native_patch_specs", return_value=[]),
+            ):
+                record = manager.install_many(
+                    runtime,
+                    [mak_pack, dooley_pack],
+                    manager.explicit_install(game),
+                )
+                self.assertEqual(record["schema_version"], 3)
+                self.assertEqual(
+                    {item["id"] for item in record["packs"]},
+                    {"example.mak.default", "example.dooley.default"},
+                )
+                self.assertTrue(manager.installation_diagnostics()["healthy"])
+                deployed = [Path(item["path"]) for item in record["packs"]]
+                removed = manager.uninstall()
+                self.assertTrue(all(str(path) in removed for path in deployed))
+                self.assertTrue(all(not path.exists() for path in deployed))
+
+    def test_install_many_rejects_duplicate_profession_skin_targets(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            first = write_pack(root / "first")
+            second = write_pack(root / "second")
+            manifest_path = second / "mod.json"
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            manifest["id"] = "example.mak.alternate"
+            manifest_path.write_text(
+                json.dumps(manifest, indent=2) + "\n",
+                encoding="utf-8",
+            )
+            game = write_game(root)
+            runtime = root / "BazaarSkinManager.Runtime.dll"
+            runtime.write_bytes(b"runtime")
+            with (
+                mock.patch.dict(
+                    "os.environ",
+                    {"LOCALAPPDATA": str(root / "local")},
+                ),
+                mock.patch.object(manager, "native_patch_specs", return_value=[]),
+            ):
+                with self.assertRaisesRegex(
+                    RuntimeError,
+                    "duplicate enabled skin target",
+                ):
+                    manager.install_many(
+                        runtime,
+                        [first, second],
+                        manager.explicit_install(game),
+                    )
+
     def test_missing_target_adapter_reports_one_actionable_error(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             pack = write_pack(Path(temp))
@@ -123,6 +199,51 @@ class ManagerTests(unittest.TestCase):
             errors = manager.validate_pack(pack)
             self.assertTrue(
                 any("deployment does not match verified adapter" in item for item in errors)
+            )
+
+    def test_native_patch_specs_expand_additional_deployments(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            pack = write_pack(Path(temp))
+            manifest_path = pack / "mod.json"
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            replacement = next(
+                item
+                for item in manifest["visual_replacements"]
+                if item["slot"] == "hero_icon_small"
+            )
+            replacement["deployment"] = {
+                "mode": manager.PRELOAD_TEXTURE_MODE,
+                "target": "TheBazaar_Data/first-icon.bundle",
+                "asset_name": "Icon_FlatRough_MAK_TUI",
+                "unity_version": "6000.3.11f1",
+                "target_size": [256, 256],
+                "supported_original_sha256": ["0" * 64],
+            }
+            replacement["additional_deployments"] = [
+                {
+                    **replacement["deployment"],
+                    "target": "TheBazaar_Data/second-icon.bundle",
+                    "asset_name": "SecondIcon",
+                }
+            ]
+            manifest_path.write_text(
+                json.dumps(manifest, indent=2) + "\n",
+                encoding="utf-8",
+            )
+
+            specs = [
+                item
+                for item in manager.native_patch_specs(pack)
+                if item["slot"] == "hero_icon_small"
+            ]
+
+            self.assertEqual(len(specs), 2)
+            self.assertEqual(
+                {item["deployment"]["asset_name"] for item in specs},
+                {"Icon_FlatRough_MAK_TUI", "SecondIcon"},
+            )
+            self.assertTrue(
+                all("additional_deployments" not in item for item in specs)
             )
 
     def _native_patch_fixture(self, root: Path) -> tuple[Path, Path, Path]:
@@ -285,7 +406,8 @@ class ManagerTests(unittest.TestCase):
                     pack,
                     manager.explicit_install(game),
                 )
-                self.assertEqual(record["schema_version"], 2)
+                self.assertEqual(record["schema_version"], 3)
+                self.assertEqual(len(record["packs"]), 1)
                 self.assertEqual(
                     record["manager"]["version"],
                     manager.MANAGER_VERSION,

@@ -16,7 +16,7 @@ namespace BazaarSkinManager.TheBazaar
 
         private void Update()
         {
-            if (Time.unscaledTime < _nextScan || Plugin.ActivePack == null)
+            if (Time.unscaledTime < _nextScan || Plugin.ActivePacks.Count == 0)
             {
                 return;
             }
@@ -28,14 +28,7 @@ namespace BazaarSkinManager.TheBazaar
         public static void Reconcile(object candidate)
         {
             if (!EnsureBindings() || candidate == null ||
-                Plugin.ActivePack == null)
-            {
-                return;
-            }
-
-            Sprite replacement = Plugin.ActivePack.Sprite("hero_select");
-            if (replacement == null ||
-                Plugin.ActivePack.UsesPreloadedDeployment("hero_select"))
+                Plugin.ActivePacks.Count == 0)
             {
                 return;
             }
@@ -56,8 +49,16 @@ namespace BazaarSkinManager.TheBazaar
             object heroId = _heroIdField == null
                 ? null
                 : _heroIdField.GetValue(heroSo);
-            if (heroId == null ||
-                !Plugin.ActivePack.IsTargetHero(heroId.ToString()))
+            RuntimePack pack = heroId == null
+                ? null
+                : Plugin.PackForHero(heroId.ToString());
+            if (pack == null)
+            {
+                return;
+            }
+            Sprite replacement = pack.Sprite("hero_select");
+            if (replacement == null ||
+                pack.UsesPreloadedDeployment("hero_select"))
             {
                 return;
             }

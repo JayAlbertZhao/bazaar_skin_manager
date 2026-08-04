@@ -1,5 +1,5 @@
 #ifndef MyAppVersion
-  #define MyAppVersion "1.0.0"
+  #define MyAppVersion "1.1.1"
 #endif
 #ifndef SourceRoot
   #define SourceRoot ".."
@@ -45,6 +45,8 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 [Files]
 Source: "{#SourceRoot}\dist\manager\TheBazaarModManager.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#SourceRoot}\dist\manager\manager-build.json"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#SourceRoot}\dist\asset-generator\TheBazaarAssetGenerator.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#SourceRoot}\dist\asset-generator\asset-generator-build.json"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#SourceRoot}\docs\portable-quick-start.txt"; DestDir: "{app}"; DestName: "README.txt"; Flags: ignoreversion
 
 [Icons]

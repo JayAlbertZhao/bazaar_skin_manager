@@ -56,12 +56,17 @@ namespace BazaarSkinManager.TheBazaar
     {
         private string _placementName;
         private Sprite _sprite;
+        private RuntimePack _pack;
         private int _remainingFrames;
 
-        public void Configure(string placementName, Sprite sprite)
+        public void Configure(
+            string placementName,
+            Sprite sprite,
+            RuntimePack pack = null)
         {
             _placementName = placementName;
             _sprite = sprite;
+            _pack = pack;
             _remainingFrames = 120;
             enabled = true;
         }
@@ -100,7 +105,8 @@ namespace BazaarSkinManager.TheBazaar
                     renderer.gameObject,
                     _sprite,
                     "standing_overlay",
-                    "SkinEdit visible-frame exact " + _placementName);
+                    "SkinEdit visible-frame exact " + _placementName,
+                    _pack);
                 Plugin.Log.LogInfo(
                     "Attached visible-frame SkinEdit placement " +
                     _placementName + ": rendererBounds=" +
@@ -129,7 +135,8 @@ namespace BazaarSkinManager.TheBazaar
         public static void AttachToGraphic(
             Graphic graphic,
             Sprite sprite,
-            string source)
+            string source,
+            RuntimePack pack = null)
         {
             if (graphic == null || sprite == null)
             {
@@ -240,7 +247,8 @@ namespace BazaarSkinManager.TheBazaar
             GameObject root,
             Sprite sprite,
             string slot,
-            string source)
+            string source,
+            RuntimePack pack = null)
         {
             if (root == null || sprite == null ||
                 root.transform.Find(WorldObjectName) != null)
@@ -278,9 +286,10 @@ namespace BazaarSkinManager.TheBazaar
 
             SpriteRenderer spriteRenderer = overlay.GetComponent<SpriteRenderer>();
             spriteRenderer.sprite = sprite;
-            float scaleMultiplier = Plugin.ActivePack == null
+            RuntimePack resolvedPack = pack ?? Plugin.ActivePack;
+            float scaleMultiplier = resolvedPack == null
                 ? 1f
-                : Plugin.ActivePack.ScaleMultiplier(slot);
+                : resolvedPack.ScaleMultiplier(slot);
             if (visibleRenderers.Length > 0)
             {
                 Renderer top = visibleRenderers

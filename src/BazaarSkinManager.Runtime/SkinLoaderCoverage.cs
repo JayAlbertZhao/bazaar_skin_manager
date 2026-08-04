@@ -391,7 +391,8 @@ namespace BazaarSkinManager.TheBazaar
             string loader = __originalMethod == null
                 ? "<unknown>"
                 : __originalMethod.Name;
-            if (!SkinPatchTargets.ShouldReplace(__instance))
+            RuntimePack pack = SkinPatchTargets.PackFor(__instance);
+            if (pack == null)
             {
                 if (RuntimeSkinAudit.Enabled)
                 {
@@ -431,13 +432,14 @@ namespace BazaarSkinManager.TheBazaar
                 return;
             }
 
-            __result = Process(loader, __args, __result);
+            __result = Process(loader, __args, __result, pack);
         }
 
         private static async Task<T> Process<T>(
             string loader,
             object[] arguments,
-            Task<T> original)
+            Task<T> original,
+            RuntimePack pack)
         {
             T result;
             try
@@ -463,6 +465,7 @@ namespace BazaarSkinManager.TheBazaar
                 loader,
                 arguments,
                 boxed,
+                pack,
                 out status,
                 out detail);
             RuntimeSkinAudit.RecordLoader(
@@ -477,6 +480,7 @@ namespace BazaarSkinManager.TheBazaar
             string loader,
             object[] arguments,
             object result,
+            RuntimePack pack,
             out string status,
             out string detail)
         {
@@ -528,24 +532,26 @@ namespace BazaarSkinManager.TheBazaar
             switch (loader)
             {
                 case "LoadChestRewardAsync":
-                    ApplyChestReward(result, out status, out detail);
+                    ApplyChestReward(result, pack, out status, out detail);
                     return;
                 case "LoadAnimatedPortraitAsync":
                     ApplyGameObjectOverlay(
                         result,
                         "standing_overlay",
                         loader,
+                        pack,
                         out status,
                         out detail);
                     return;
                 case "LoadCollectibleInspectionAssetAsync":
                     ApplyCollectibleInspection(
                         result,
+                        pack,
                         out status,
                         out detail);
                     return;
                 case "GenerateEncounterData":
-                    ApplyEncounterData(result, out status, out detail);
+                    ApplyEncounterData(result, pack, out status, out detail);
                     return;
                 case "LoadCollectionDetailsAssetAsync":
                     GameObject details = result as GameObject;
@@ -564,12 +570,13 @@ namespace BazaarSkinManager.TheBazaar
                     else
                     {
                         Sprite detailsSprite =
-                            Plugin.ActivePack.Sprite("collection_details");
+                            pack.Sprite("collection_details");
                         StandingOverlay.AttachToWorld(
                             details,
                             detailsSprite,
                             "collection_details",
-                            loader);
+                            loader,
+                            pack);
                         status = StandingOverlay.HasWorldOverlay(details)
                             ? "applied"
                             : "not loaded";
@@ -599,7 +606,7 @@ namespace BazaarSkinManager.TheBazaar
             }
 
             string expectedName = "BazaarSkinManager/" + expectedSlot;
-            if (Plugin.ActivePack.UsesPreloadedDeployment(expectedSlot))
+            if (pack.UsesPreloadedDeployment(expectedSlot))
             {
                 status = "applied";
                 detail = expectedSlot +
@@ -654,10 +661,11 @@ namespace BazaarSkinManager.TheBazaar
 
         private static void ApplyChestReward(
             object result,
+            RuntimePack pack,
             out string status,
             out string detail)
         {
-            if (Plugin.ActivePack.UsesPreloadedDeployment("collection_list"))
+            if (pack.UsesPreloadedDeployment("collection_list"))
             {
                 status = "applied";
                 detail =
@@ -679,7 +687,7 @@ namespace BazaarSkinManager.TheBazaar
                     "UpdateMaterial",
                     new[] { typeof(Texture2D) });
             Texture2D texture =
-                Plugin.ActivePack.Texture("collection_list");
+                pack.Texture("collection_list");
             if (root == null || controller == null ||
                 updateMaterial == null || texture == null)
             {
@@ -801,11 +809,12 @@ namespace BazaarSkinManager.TheBazaar
             object result,
             string slot,
             string loader,
+            RuntimePack pack,
             out string status,
             out string detail)
         {
             GameObject root = result as GameObject;
-            Sprite sprite = Plugin.ActivePack.Sprite(slot);
+            Sprite sprite = pack.Sprite(slot);
             if (root == null || sprite == null)
             {
                 status = "unsupported type";
@@ -821,7 +830,7 @@ namespace BazaarSkinManager.TheBazaar
                 return;
             }
 
-            StandingOverlay.AttachToWorld(root, sprite, slot, loader);
+            StandingOverlay.AttachToWorld(root, sprite, slot, loader, pack);
             status = StandingOverlay.HasWorldOverlay(root)
                 ? "applied"
                 : "not loaded";
@@ -832,6 +841,7 @@ namespace BazaarSkinManager.TheBazaar
 
         private static void ApplyCollectibleInspection(
             object result,
+            RuntimePack pack,
             out string status,
             out string detail)
         {
@@ -845,10 +855,10 @@ namespace BazaarSkinManager.TheBazaar
                 ? null
                 : instanceField.GetValue(result) as GameObject;
             bool preloadedBackground =
-                Plugin.ActivePack.UsesPreloadedDeployment("store_image");
+                pack.UsesPreloadedDeployment("store_image");
             Texture2D background = preloadedBackground
                 ? null
-                : Plugin.ActivePack.Texture("store_image");
+                : pack.Texture("store_image");
             if (root == null || backgroundField == null ||
                 (!preloadedBackground && background == null))
             {
@@ -878,9 +888,10 @@ namespace BazaarSkinManager.TheBazaar
             {
                 StandingOverlay.AttachToWorld(
                     root,
-                    Plugin.ActivePack.Sprite("collection_details"),
+                    pack.Sprite("collection_details"),
                     "collection_details",
-                    "LoadCollectibleInspectionAssetAsync");
+                    "LoadCollectibleInspectionAssetAsync",
+                    pack);
             }
             if (!preloadedBackground)
             {
@@ -895,6 +906,7 @@ namespace BazaarSkinManager.TheBazaar
 
         private static void ApplyEncounterData(
             object result,
+            RuntimePack pack,
             out string status,
             out string detail)
         {
@@ -905,17 +917,17 @@ namespace BazaarSkinManager.TheBazaar
                 result.GetType(),
                 "backgroundTextureReference");
             bool preloadedPortrait =
-                Plugin.ActivePack.UsesPreloadedDeployment(
+                pack.UsesPreloadedDeployment(
                     "portrait_gameplay");
             bool preloadedBackground =
-                Plugin.ActivePack.UsesPreloadedDeployment(
+                pack.UsesPreloadedDeployment(
                     "portrait_background");
             Sprite portrait = preloadedPortrait
                 ? null
-                : Plugin.ActivePack.Sprite("portrait_gameplay");
+                : pack.Sprite("portrait_gameplay");
             Texture2D background = preloadedBackground
                 ? null
-                : Plugin.ActivePack.Texture("portrait_background");
+                : pack.Texture("portrait_background");
             if (portraitField == null || backgroundField == null ||
                 (!preloadedPortrait && portrait == null) ||
                 (!preloadedBackground && background == null))

@@ -13,7 +13,6 @@ namespace BazaarSkinManager.TheBazaar
         private const string DisplayTypeName = "HeroSelectDisplay";
 
         private static Type _displayType;
-        private static FieldInfo _targetGraphicField;
         private static FieldInfo _loadedAssetField;
         private static FieldInfo _selectedHeroField;
         private static FieldInfo _skinEditActiveSkinField;
@@ -22,7 +21,7 @@ namespace BazaarSkinManager.TheBazaar
 
         private void Update()
         {
-            if (Time.unscaledTime < _nextScan || Plugin.ActivePack == null)
+            if (Time.unscaledTime < _nextScan || Plugin.ActivePacks.Count == 0)
             {
                 return;
             }
@@ -44,10 +43,19 @@ namespace BazaarSkinManager.TheBazaar
             }
 
             Component component = display as Component;
-            Graphic targetGraphic =
-                _targetGraphicField.GetValue(display) as Graphic;
             object loadedAsset = _loadedAssetField.GetValue(display);
             object selectedHero = _selectedHeroField.GetValue(display);
+            string selectedName = selectedHero == null
+                ? "<null>"
+                : selectedHero.ToString();
+            RuntimePack pack = Plugin.PackForHero(selectedName) ??
+                Plugin.PackForSkin(loadedAsset);
+            FieldInfo targetGraphicField = pack == null
+                ? null
+                : AccessTools.Field(_displayType, pack.TargetHeroCode());
+            Graphic targetGraphic = targetGraphicField == null
+                ? null
+                : targetGraphicField.GetValue(display) as Graphic;
             GameObject skinEditActiveSkin =
                 _skinEditActiveSkinField.GetValue(display) as GameObject;
             bool displayActive = component != null &&
@@ -58,16 +66,13 @@ namespace BazaarSkinManager.TheBazaar
                 targetGraphic.gameObject.activeInHierarchy;
             bool skinEditActive = skinEditActiveSkin != null &&
                 skinEditActiveSkin.activeInHierarchy;
-            string selectedName = selectedHero == null
-                ? "<null>"
-                : selectedHero.ToString();
-            bool selectedTarget = Plugin.ActivePack.IsTargetHero(selectedName);
+            bool selectedTarget = pack != null && pack.IsTargetHero(selectedName);
             bool selectedCommon = string.Equals(
                 selectedName,
                 "Common",
                 StringComparison.OrdinalIgnoreCase);
             bool selectedAllowsTarget = selectedTarget || selectedCommon;
-            bool isTargetDefault = SkinPatchTargets.ShouldReplace(loadedAsset);
+            bool isTargetDefault = pack != null && pack.IsTargetSkin(loadedAsset);
             bool shouldAttachGraphic = displayActive &&
                 supportedCentralDisplay &&
                 targetGraphicActive &&
@@ -81,6 +86,8 @@ namespace BazaarSkinManager.TheBazaar
             bool shouldAttach = shouldAttachGraphic ||
                 shouldAttachSkinEdit;
             UnityEngine.Object loadedUnity = loadedAsset as UnityEngine.Object;
+
+            RemoveOtherGraphicOverlays(display, targetGraphic);
 
             RuntimeDiagnostics.ReportCentralState(
                 displayActive,
@@ -100,7 +107,7 @@ namespace BazaarSkinManager.TheBazaar
             if (!supportedCentralDisplay)
             {
                 RuntimeSkinAudit.RecordLoader(
-                    TargetLoaderName(),
+                    TargetLoaderName(pack),
                     "unsupported type",
                     "Non-central HeroSelectDisplay is owned by its exact " +
                         "SkinEdit placement patch; no overlay state changed.",
@@ -122,7 +129,7 @@ namespace BazaarSkinManager.TheBazaar
                         ? "wrong hero/skin"
                         : "unsupported type";
                 RuntimeSkinAudit.RecordLoader(
-                    TargetLoaderName(),
+                    TargetLoaderName(pack),
                     state,
                     "displayActive=" + displayActive +
                     " supportedCentralDisplay=" +
@@ -139,7 +146,7 @@ namespace BazaarSkinManager.TheBazaar
 
             bool alreadyApplied;
             UnityEngine.Object auditTarget;
-            Sprite overlay = Plugin.ActivePack.Sprite("standing_overlay");
+            Sprite overlay = pack.Sprite("standing_overlay");
             if (shouldAttachSkinEdit)
             {
                 GameObject visualRoot =
@@ -154,7 +161,8 @@ namespace BazaarSkinManager.TheBazaar
                         "standing_overlay",
                         "HeroSelectDisplay active SkinEdit placement " +
                         skinEditActiveSkin.name + "/_loadedAsset=" +
-                        loadedUnity.name);
+                        loadedUnity.name,
+                        pack);
                 }
                 auditTarget = visualRoot == null
                     ? (UnityEngine.Object)skinEditActiveSkin
@@ -168,11 +176,12 @@ namespace BazaarSkinManager.TheBazaar
                     targetGraphic,
                     overlay,
                     "HeroSelectDisplay active target/_selectedHero=" +
-                    selectedName + "/_loadedAsset=" + loadedUnity.name);
+                    selectedName + "/_loadedAsset=" + loadedUnity.name,
+                    pack);
                 auditTarget = targetGraphic;
             }
             RuntimeSkinAudit.RecordLoader(
-                TargetLoaderName(),
+                TargetLoaderName(pack),
                 alreadyApplied ? "already applied" : "applied",
                 "Active target visual with target default asset, selected=" +
                 selectedName + ", mode=" +
@@ -196,7 +205,7 @@ namespace BazaarSkinManager.TheBazaar
             {
                 Component component = candidate as Component;
                 Graphic graphic =
-                    _targetGraphicField.GetValue(candidate) as Graphic;
+                    ResolveDiagnosticGraphic(candidate) as Graphic;
                 if (component == null || graphic == null)
                 {
                     continue;
@@ -297,7 +306,7 @@ namespace BazaarSkinManager.TheBazaar
                 }
             }
 
-            detail = "No reachable " + TargetLoaderName() +
+            detail = "No reachable HeroSelectDisplay target" +
                 " graphic pair exists.";
             return false;
         }
@@ -323,7 +332,7 @@ namespace BazaarSkinManager.TheBazaar
             if (!EnsureBindings())
             {
                 RuntimeDiagnostics.ReportLoaderState(
-                    TargetLoaderName(),
+                    "HeroSelectDisplay",
                     "unsupported type",
                     "Target graphic/_loadedAsset/_selectedHero binding is unavailable.");
                 return;
@@ -346,9 +355,7 @@ namespace BazaarSkinManager.TheBazaar
             foreach (UnityEngine.Object display in
                 Resources.FindObjectsOfTypeAll(_displayType))
             {
-                Graphic graphic =
-                    _targetGraphicField.GetValue(display) as Graphic;
-                StandingOverlay.RemoveFromGraphic(graphic);
+                RemoveOtherGraphicOverlays(display, null);
                 GameObject skinEditActiveSkin =
                     _skinEditActiveSkinField.GetValue(display) as GameObject;
                 StandingOverlay.RemoveFromWorld(skinEditActiveSkin);
@@ -402,8 +409,7 @@ namespace BazaarSkinManager.TheBazaar
         {
             if (_displayType != null)
             {
-                return _targetGraphicField != null &&
-                    _loadedAssetField != null &&
+                return _loadedAssetField != null &&
                     _selectedHeroField != null &&
                     _skinEditActiveSkinField != null;
             }
@@ -414,27 +420,58 @@ namespace BazaarSkinManager.TheBazaar
                 return false;
             }
 
-            _targetGraphicField = AccessTools.Field(
-                _displayType,
-                Plugin.ActivePack == null
-                    ? string.Empty
-                    : Plugin.ActivePack.TargetHeroCode());
             _loadedAssetField = AccessTools.Field(_displayType, "_loadedAsset");
             _selectedHeroField =
                 AccessTools.Field(_displayType, "_selectedHero");
             _skinEditActiveSkinField =
                 AccessTools.Field(_displayType, "_skinEditActiveSkin");
-            return _targetGraphicField != null &&
-                _loadedAssetField != null &&
+            return _loadedAssetField != null &&
                 _selectedHeroField != null &&
                 _skinEditActiveSkinField != null;
         }
 
-        private static string TargetLoaderName()
+        private static UnityEngine.Object ResolveDiagnosticGraphic(object display)
         {
-            string code = Plugin.ActivePack == null
+            foreach (RuntimePack pack in Plugin.ActivePacks)
+            {
+                FieldInfo field = AccessTools.Field(
+                    _displayType,
+                    pack.TargetHeroCode());
+                UnityEngine.Object value = field == null
+                    ? null
+                    : field.GetValue(display) as UnityEngine.Object;
+                if (value != null)
+                {
+                    return value;
+                }
+            }
+            return null;
+        }
+
+        private static void RemoveOtherGraphicOverlays(
+            object display,
+            Graphic retained)
+        {
+            foreach (RuntimePack pack in Plugin.ActivePacks)
+            {
+                FieldInfo field = AccessTools.Field(
+                    _displayType,
+                    pack.TargetHeroCode());
+                Graphic graphic = field == null
+                    ? null
+                    : field.GetValue(display) as Graphic;
+                if (graphic != null && graphic != retained)
+                {
+                    StandingOverlay.RemoveFromGraphic(graphic);
+                }
+            }
+        }
+
+        private static string TargetLoaderName(RuntimePack pack)
+        {
+            string code = pack == null
                 ? string.Empty
-                : Plugin.ActivePack.TargetHeroCode();
+                : pack.TargetHeroCode();
             return "HeroSelectDisplay." + code;
         }
     }

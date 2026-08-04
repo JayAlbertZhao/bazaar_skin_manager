@@ -1,5 +1,5 @@
 param(
-    [string]$Version = "1.0.0"
+    [string]$Version = "1.1.1"
 )
 
 $ErrorActionPreference = "Stop"
@@ -17,6 +17,9 @@ if (-not $compiler) {
 }
 if (-not (Test-Path -LiteralPath (Join-Path $root "dist\manager\TheBazaarModManager.exe"))) {
     & (Join-Path $root "build-manager.ps1") -Version $Version
+}
+if (-not (Test-Path -LiteralPath (Join-Path $root "dist\asset-generator\TheBazaarAssetGenerator.exe"))) {
+    & (Join-Path $root "build-asset-generator.ps1") -Version $Version
 }
 
 New-Item -ItemType Directory -Force -Path $output | Out-Null

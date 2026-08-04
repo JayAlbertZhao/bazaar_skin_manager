@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 import sys
 import tempfile
 import threading
@@ -13,7 +14,7 @@ from pathlib import Path
 import tkinter as tk
 from tkinter import colorchooser, filedialog, messagebox, ttk
 
-from PIL import Image, ImageGrab, ImageTk
+from PIL import Image, ImageDraw, ImageGrab, ImageTk
 
 from bazaar_skin_manager import MANAGER_VERSION
 
@@ -66,19 +67,32 @@ class ModManagerStudio:
     def __init__(self) -> None:
         self.root = RootClass()
         self.root.title(f"The Bazaar 皮肤管理器 v{MANAGER_VERSION}")
-        self.root.geometry("1440x900")
-        self.root.minsize(1180, 720)
+        screen_width = self.root.winfo_screenwidth()
+        screen_height = self.root.winfo_screenheight()
+        window_width = min(1440, max(1024, screen_width - 80))
+        window_height = min(900, max(640, screen_height - 140))
+        window_x = max(0, (screen_width - window_width) // 2)
+        window_y = max(0, (screen_height - window_height - 40) // 2)
+        self.root.geometry(
+            f"{window_width}x{window_height}+{window_x}+{window_y}"
+        )
+        self.root.minsize(1024, 640)
         self.root.configure(bg=COLORS["window"])
         self.catalog = catalog()
         self.first_run = False
         self.game_dir_override: Path | None = None
+        self.settings_payload: dict = {}
+        self.managed_workspaces: dict[str, bool] = {}
+        self.hub_selections: dict[str, str] = {}
         self.workspace = self._open_last_or_default()
+        self._load_managed_workspaces()
         self.catalog = discovered_catalog(self.game_dir_override)
         self.preview_images: dict[str, ImageTk.PhotoImage] = {}
         self.slot_widgets: dict[str, dict[str, tk.Widget]] = {}
         self.busy = False
         self._configure_style()
         self._build_ui()
+        self._configure_shortcuts()
         self._load_workspace_into_ui()
         self._refresh_all()
         if self.first_run:
@@ -198,6 +212,36 @@ class ModManagerStudio:
             background=[("selected", COLORS["accent_dark"])],
         )
 
+    def _configure_shortcuts(self) -> None:
+        self.root.bind_all(
+            "<Control-Key-1>",
+            lambda _event: self._select_hub_page(),
+        )
+        self.root.bind_all(
+            "<Control-Key-2>",
+            lambda _event: self.main_pages.select(1),
+        )
+        self.root.bind_all(
+            "<Control-Key-3>",
+            lambda _event: self.main_pages.select(2),
+        )
+        self.root.bind_all(
+            "<F5>",
+            lambda _event: self._refresh_deployment_status(),
+        )
+        self.root.bind_all(
+            "<Control-Key-g>",
+            lambda _event: self._launch_asset_generator(),
+        )
+
+    def _select_hub_page(self) -> None:
+        self.main_pages.select(0)
+        children = self.hub_tree.get_children()
+        if children and not self.hub_tree.selection():
+            self.hub_tree.selection_set(children[0])
+            self.hub_tree.focus(children[0])
+        self.hub_tree.focus_set()
+
     def _settings_path(self) -> Path:
         return WORKSPACES_ROOT.parent / "studio-settings.json"
 
@@ -207,6 +251,7 @@ class ModManagerStudio:
         if settings.is_file():
             try:
                 payload = json.loads(settings.read_text(encoding="utf-8"))
+                self.settings_payload = payload
                 path = Path(payload["workspace"])
                 if payload.get("game_dir"):
                     self.game_dir_override = Path(payload["game_dir"])
@@ -215,6 +260,31 @@ class ModManagerStudio:
             except (OSError, ValueError, KeyError, json.JSONDecodeError):
                 pass
         return StudioWorkspace.create("local.custom.skin")
+
+    def _load_managed_workspaces(self) -> None:
+        self.hub_selections = {
+            str(key): str(value)
+            for key, value in (
+                self.settings_payload.get("target_selections") or {}
+            ).items()
+            if isinstance(key, str) and isinstance(value, str)
+        }
+        records = self.settings_payload.get("managed_workspaces") or []
+        for record in records:
+            try:
+                path = str(Path(record["path"]).resolve())
+                if Path(path).is_dir():
+                    self.managed_workspaces[path] = bool(
+                        record.get("enabled", True)
+                    )
+            except (KeyError, OSError, TypeError):
+                continue
+        current = str(self.workspace.directory.resolve())
+        self.managed_workspaces.setdefault(current, True)
+        if WORKSPACES_ROOT.is_dir():
+            for state_file in WORKSPACES_ROOT.glob("*/studio.json"):
+                path = str(state_file.parent.resolve())
+                self.managed_workspaces.setdefault(path, False)
 
     def _remember_workspace(self) -> None:
         path = self._settings_path()
@@ -228,6 +298,14 @@ class ModManagerStudio:
                         if self.game_dir_override
                         else None
                     ),
+                    "managed_workspaces": [
+                        {"path": path, "enabled": enabled}
+                        for path, enabled in sorted(
+                            self.managed_workspaces.items()
+                        )
+                        if Path(path).is_dir()
+                    ],
+                    "target_selections": self.hub_selections,
                 },
                 indent=2,
             ),
@@ -251,22 +329,6 @@ class ModManagerStudio:
             style="Muted.TLabel",
         )
         self.install_status.pack(side="right", padx=(12, 0))
-        ttk.Button(
-            header,
-            text="刷新状态",
-            command=self._refresh_deployment_status,
-        ).pack(side="right")
-        ttk.Button(
-            header,
-            text="恢复原版",
-            style="Danger.TButton",
-            command=self._undeploy,
-        ).pack(side="right", padx=(8, 4))
-        ttk.Button(
-            header,
-            text="清空已加载皮肤",
-            command=self._clear_loaded_skin,
-        ).pack(side="right", padx=(4, 0))
         self.play_button = ttk.Button(
             header,
             text="启动游戏",
@@ -274,15 +336,20 @@ class ModManagerStudio:
             command=self._launch_game,
         )
         self.play_button.pack(side="right", padx=(8, 4))
-        self.header_deploy_button = ttk.Button(
-            header,
-            text="部署",
-            style="Accent.TButton",
-            command=self._deploy,
-        )
-        self.header_deploy_button.pack(side="right")
 
-        body = ttk.Panedwindow(outer, orient="horizontal")
+        self.main_pages = ttk.Notebook(outer)
+        self.main_pages.pack(fill="both", expand=True)
+        hub = ttk.Frame(self.main_pages, padding=18)
+        editor = ttk.Frame(self.main_pages, style="Window.TFrame")
+        generator = ttk.Frame(self.main_pages, padding=24)
+        self.main_pages.add(hub, text="皮肤控制中台")
+        self.main_pages.add(editor, text="资产导入管理器")
+        self.main_pages.add(generator, text="素材包制作器")
+        self.editor_page = editor
+        self._build_control_hub(hub)
+        self._build_asset_generator_component(generator)
+
+        body = ttk.Panedwindow(editor, orient="horizontal")
         body.pack(fill="both", expand=True)
         sidebar = ttk.Frame(body, padding=16)
         workspace_panel = ttk.Frame(body, style="Alt.TFrame", padding=0)
@@ -291,39 +358,224 @@ class ModManagerStudio:
         self._build_sidebar(sidebar)
         self._build_workspace(workspace_panel)
 
+    def _build_asset_generator_component(self, parent: ttk.Frame) -> None:
+        heading = ttk.Frame(parent)
+        heading.pack(fill="x", pady=(0, 18))
+        ttk.Label(
+            heading,
+            text="素材包制作器",
+            font=("Microsoft YaHei UI", 18, "bold"),
+        ).pack(anchor="w")
+        ttk.Label(
+            heading,
+            text="皮肤管理器内置组件 · 从原始图片生成标准资产包，再回到控制中台部署。",
+            style="Muted.TLabel",
+        ).pack(anchor="w", pady=(4, 0))
+
+        workflow = ttk.LabelFrame(parent, text="制作流程", padding=18)
+        workflow.pack(fill="x", pady=(0, 16))
+        for index, text in enumerate(
+            (
+                "导入人物、背景和图标素材",
+                "调整各槽位构图并实时预览",
+                "生成完整资产包并导入皮肤管理器",
+            ),
+            start=1,
+        ):
+            ttk.Label(
+                workflow,
+                text=f"{index}. {text}",
+                font=("Microsoft YaHei UI", 11),
+            ).pack(anchor="w", pady=4)
+
+        actions = ttk.LabelFrame(parent, text="组件操作", padding=18)
+        actions.pack(fill="x")
+        self.generator_status = ttk.Label(
+            actions,
+            text="正在检查素材包制作器…",
+            style="Muted.TLabel",
+        )
+        self.generator_status.pack(anchor="w", pady=(0, 12))
+        row = ttk.Frame(actions)
+        row.pack(fill="x")
+        self.generator_launch_button = ttk.Button(
+            row,
+            text="打开素材包制作器（Ctrl+G）",
+            style="Accent.TButton",
+            command=self._launch_asset_generator,
+        )
+        self.generator_launch_button.pack(side="left")
+        ttk.Button(
+            row,
+            text="返回皮肤控制中台",
+            command=lambda: self.main_pages.select(0),
+        ).pack(side="left", padx=(10, 0))
+        self._refresh_generator_component()
+
+    def _build_control_hub(self, parent: ttk.Frame) -> None:
+        parent.columnconfigure(0, weight=1)
+        parent.rowconfigure(1, weight=1)
+        title = ttk.Frame(parent)
+        title.grid(row=0, column=0, sticky="ew", pady=(0, 14))
+        ttk.Label(
+            title,
+            text="多职业皮肤控制中台",
+            font=("Microsoft YaHei UI", 16, "bold"),
+        ).pack(side="left")
+        ttk.Label(
+            title,
+            text="点击勾叉启停；点击资产包单元格切换。键盘可用空格启停、F4 选择资产包。",
+            style="Muted.TLabel",
+        ).pack(side="left", padx=(18, 0))
+
+        columns = ("hero", "skin", "pack", "version", "path")
+        table_group = ttk.LabelFrame(parent, text="已管理的职业皮肤", padding=10)
+        table_group.grid(row=1, column=0, sticky="nsew")
+        self.hub_tree = ttk.Treeview(
+            table_group,
+            columns=columns,
+            show="tree headings",
+            selectmode="browse",
+        )
+        headings = {
+            "hero": "职业",
+            "skin": "被替换皮肤",
+            "pack": "资产包（点击选择）",
+            "version": "版本",
+            "path": "来源工作区",
+        }
+        widths = {
+            "hero": 120,
+            "skin": 260,
+            "pack": 280,
+            "version": 80,
+            "path": 460,
+        }
+        self.hub_tree.heading("#0", text="启用")
+        self.hub_tree.column("#0", width=82, minwidth=82, stretch=False, anchor="center")
+        for column in columns:
+            self.hub_tree.heading(column, text=headings[column])
+            self.hub_tree.column(
+                column,
+                width=widths[column],
+                stretch=column == "path",
+            )
+        hub_vertical = ttk.Scrollbar(
+            table_group,
+            orient="vertical",
+            command=self.hub_tree.yview,
+        )
+        hub_horizontal = ttk.Scrollbar(
+            table_group,
+            orient="horizontal",
+            command=self.hub_tree.xview,
+        )
+        self.hub_tree.configure(
+            yscrollcommand=hub_vertical.set,
+            xscrollcommand=hub_horizontal.set,
+        )
+        self.hub_tree.grid(row=0, column=0, sticky="nsew")
+        hub_vertical.grid(row=0, column=1, sticky="ns")
+        hub_horizontal.grid(row=1, column=0, sticky="ew")
+        table_group.rowconfigure(0, weight=1)
+        table_group.columnconfigure(0, weight=1)
+        self.hub_tree.bind("<Double-1>", self._hub_double_clicked)
+        self.hub_tree.bind("<Button-1>", self._hub_clicked, add="+")
+        self.hub_tree.bind(
+            "<space>",
+            lambda _event: (self._hub_toggle(), "break")[1],
+        )
+        self.hub_tree.bind(
+            "<Return>",
+            lambda _event: (self._hub_open(), "break")[1],
+        )
+        self.hub_tree.bind(
+            "<F4>",
+            lambda _event: (self._hub_open_selected_pack(), "break")[1],
+        )
+        self._build_hub_status_icons()
+
+        actions = ttk.Frame(parent)
+        actions.grid(row=2, column=0, sticky="ew", pady=(14, 0))
+        workspace_actions = ttk.LabelFrame(
+            actions,
+            text="资产管理",
+            padding=10,
+        )
+        workspace_actions.pack(side="left", fill="x", expand=True)
+        deployment_actions = ttk.LabelFrame(
+            actions,
+            text="部署",
+            padding=10,
+        )
+        deployment_actions.pack(side="right", fill="x", padx=(12, 0))
+        ttk.Button(
+            workspace_actions,
+            text="打开资产导入管理器",
+            command=self._hub_open,
+        ).pack(side="left")
+        ttk.Button(
+            workspace_actions,
+            text="添加现有工作区…",
+            command=self._hub_add,
+        ).pack(side="left", padx=(8, 0))
+        ttk.Button(
+            deployment_actions,
+            text="部署",
+            style="Accent.TButton",
+            command=self._deploy_all,
+        ).pack(side="left")
+        ttk.Button(
+            deployment_actions,
+            text="取消部署",
+            style="Danger.TButton",
+            command=self._undeploy,
+        ).pack(side="left", padx=(8, 0))
+        ttk.Button(
+            deployment_actions,
+            text="刷新状态",
+            command=self._refresh_deployment_status,
+        ).pack(side="left", padx=(8, 0))
+
     def _build_sidebar(self, parent: ttk.Frame) -> None:
-        parent.configure(width=310)
+        parent.configure(width=330)
         actions = ttk.Frame(parent)
         actions.pack(fill="x", side="bottom", pady=(18, 0))
         self.deploy_button = ttk.Button(
             actions,
-            text="部署",
+            text="保存并加入控制中台",
             style="Accent.TButton",
-            command=self._deploy,
+            command=self._import_current_to_hub,
         )
         self.deploy_button.pack(fill="x", pady=(0, 8))
         ttk.Button(
             actions,
-            text="取消部署 / 恢复原版",
-            style="Danger.TButton",
-            command=self._undeploy,
+            text="返回皮肤控制中台",
+            command=lambda: self.main_pages.select(0),
         ).pack(fill="x")
 
+        sections = ttk.Notebook(parent)
+        sections.pack(fill="both", expand=True)
+        target_panel = ttk.Frame(sections, padding=12)
+        pack_panel = ttk.Frame(sections, padding=12)
+        sections.add(target_panel, text="目标与游戏")
+        sections.add(pack_panel, text="资产包")
+
         ttk.Label(
-            parent,
-            text="目标",
+            target_panel,
+            text="资产导入目标",
             font=("Microsoft YaHei UI", 13, "bold"),
         ).pack(anchor="w")
         ttk.Label(
-            parent,
-            text="选择英雄和对应皮肤。",
+            target_panel,
+            text="选择要将当前这套资产导入到的职业和被替换皮肤。",
             style="Muted.TLabel",
             wraplength=275,
         ).pack(anchor="w", pady=(3, 12))
 
         self.hero_var = tk.StringVar()
         self.hero_combo = ttk.Combobox(
-            parent,
+            target_panel,
             textvariable=self.hero_var,
             state="readonly",
             values=[hero["display_name"] for hero in self.catalog["heroes"]],
@@ -333,14 +585,14 @@ class ModManagerStudio:
 
         self.skin_var = tk.StringVar()
         self.skin_combo = ttk.Combobox(
-            parent,
+            target_panel,
             textvariable=self.skin_var,
             state="readonly",
         )
         self.skin_combo.pack(fill="x")
         self.skin_combo.bind("<<ComboboxSelected>>", self._skin_changed)
         self.hero_support = ttk.Label(
-            parent,
+            target_panel,
             text="",
             style="Muted.TLabel",
             wraplength=275,
@@ -348,27 +600,27 @@ class ModManagerStudio:
         self.hero_support.pack(anchor="w", pady=(8, 18))
 
         self.game_status = ttk.Label(
-            parent,
+            target_panel,
             text="正在查找 The Bazaar…",
             style="Muted.TLabel",
             wraplength=275,
         )
         self.game_status.pack(anchor="w", pady=(0, 8))
         ttk.Button(
-            parent,
+            target_panel,
             text="重新扫描游戏位置",
             command=self._refresh_deployment_status,
         ).pack(anchor="w")
         ttk.Button(
-            parent,
+            target_panel,
             text="手动选择游戏目录…",
             command=self._locate_game,
         ).pack(anchor="w", pady=(4, 14))
 
-        ttk.Separator(parent).pack(fill="x", pady=(0, 16))
+        ttk.Separator(target_panel).pack(fill="x", pady=(0, 16))
         ttk.Label(
-            parent,
-            text="资产包",
+            pack_panel,
+            text="待导入资产包",
             font=("Microsoft YaHei UI", 13, "bold"),
         ).pack(anchor="w")
 
@@ -380,16 +632,16 @@ class ModManagerStudio:
             ("显示名称", self.pack_name_var),
             ("版本", self.pack_version_var),
         ):
-            ttk.Label(parent, text=label, style="Muted.TLabel").pack(
+            ttk.Label(pack_panel, text=label, style="Muted.TLabel").pack(
                 anchor="w", pady=(10, 3)
             )
-            entry = ttk.Entry(parent, textvariable=variable)
+            entry = ttk.Entry(pack_panel, textvariable=variable)
             entry.pack(fill="x")
             entry.bind("<FocusOut>", lambda _event: self._metadata_changed())
 
-        ttk.Separator(parent).pack(fill="x", pady=16)
+        ttk.Separator(pack_panel).pack(fill="x", pady=16)
         self.drop_zone = tk.Label(
-            parent,
+            pack_panel,
             text=(
                 "将完整资产包或 ZIP 拖到这里\n"
                 "也可点击选择文件"
@@ -408,7 +660,7 @@ class ModManagerStudio:
         self._register_drop(self.drop_zone, self._drop_package)
         if not DND_AVAILABLE:
             ttk.Label(
-                parent,
+                pack_panel,
                 text="当前源码运行模式仅支持点击选择；发布版支持原生拖放。",
                 style="Muted.TLabel",
                 wraplength=275,
@@ -724,7 +976,11 @@ class ModManagerStudio:
         ).pack(anchor="w", pady=(8, 0))
 
     def _build_package_tab(self) -> None:
-        actions = ttk.Frame(self.package_tab, style="Alt.TFrame")
+        actions = ttk.LabelFrame(
+            self.package_tab,
+            text="工作区",
+            padding=10,
+        )
         actions.pack(fill="x")
         ttk.Button(
             actions,
@@ -738,14 +994,26 @@ class ModManagerStudio:
         ).pack(side="left", padx=5)
         ttk.Button(
             actions,
+            text="打开工作区文件夹",
+            command=self._open_workspace_folder,
+        ).pack(side="left", padx=5)
+
+        package_actions = ttk.LabelFrame(
+            self.package_tab,
+            text="导出与清理",
+            padding=10,
+        )
+        package_actions.pack(fill="x", pady=(10, 0))
+        ttk.Button(
+            package_actions,
             text="导出完整 ZIP",
             command=self._export_zip,
         ).pack(side="left")
         ttk.Button(
-            actions,
-            text="打开工作区文件夹",
-            command=self._open_workspace_folder,
-        ).pack(side="right")
+            package_actions,
+            text="清空当前工作区资产",
+            command=self._clear_loaded_skin,
+        ).pack(side="left", padx=(8, 0))
 
         self.package_summary = ttk.Label(
             self.package_tab,
@@ -791,6 +1059,8 @@ class ModManagerStudio:
         self.hero_var.set(hero["display_name"])
         self._set_skin_options(hero, target["skin"])
         self._remember_workspace()
+        if hasattr(self, "hub_tree"):
+            self._refresh_hub()
 
     def _selected_hero(self) -> dict:
         return next(
@@ -836,7 +1106,6 @@ class ModManagerStudio:
                 foreground=COLORS["accent"],
             )
             self.deploy_button.configure(state="normal")
-            self.header_deploy_button.configure(state="normal")
         else:
             status = selected.get("deployment_status")
             message = (
@@ -849,7 +1118,6 @@ class ModManagerStudio:
                 foreground=COLORS["warning"],
             )
             self.deploy_button.configure(state="disabled")
-            self.header_deploy_button.configure(state="disabled")
 
     def _hero_changed(self, _event=None) -> None:
         self._set_skin_options(self._selected_hero())
@@ -892,16 +1160,337 @@ class ModManagerStudio:
                 skin=skin["id"],
                 skin_name_contains=skin["name_contains"],
             )
+            self.managed_workspaces.setdefault(
+                str(self.workspace.directory.resolve()),
+                True,
+            )
+            self._remember_workspace()
             self._refresh_summary()
+            self._refresh_hub()
         except ValueError as error:
             self._write_log(f"元数据未保存：{error}")
 
     def _refresh_all(self) -> None:
+        self._refresh_hub()
         self._refresh_visuals()
         self._refresh_audio()
         self._refresh_animation()
         self._refresh_summary()
         self._refresh_deployment_status()
+
+    def _refresh_hub(self) -> None:
+        if not hasattr(self, "hub_tree"):
+            return
+        selected = self.hub_tree.selection()
+        selected_target_key = None
+        if selected and hasattr(self, "hub_rows"):
+            selected_target_key = (
+                self.hub_rows.get(selected[0]) or {}
+            ).get("target_key")
+        selected_path = (
+            self.hub_tree.set(selected[0], "path") if selected else None
+        )
+        self._close_hub_pack_editor()
+        for item in self.hub_tree.get_children():
+            self.hub_tree.delete(item)
+        self.hub_paths: dict[str, str] = {}
+        self.hub_rows: dict[str, dict] = {}
+        self.hub_pack_choices: dict[str, dict[str, str]] = {}
+        grouped: dict[str, list[dict]] = {}
+        for path_text, enabled in sorted(self.managed_workspaces.items()):
+            path = Path(path_text)
+            try:
+                workspace = StudioWorkspace.load(path)
+            except Exception:
+                continue
+            state = workspace.state
+            target = state.get("target") or {}
+            pack = state.get("pack") or {}
+            hero = str(target.get("hero") or "")
+            skin = str(target.get("skin") or "")
+            target_key = self._hub_target_key(hero, skin)
+            grouped.setdefault(target_key, []).append(
+                {
+                    "path": path_text,
+                    "enabled": enabled,
+                    "hero": hero,
+                    "skin": skin,
+                    "pack": pack,
+                }
+            )
+
+        current_path = str(self.workspace.directory.resolve())
+        for index, (target_key, records) in enumerate(sorted(grouped.items())):
+            paths = {record["path"] for record in records}
+            enabled_records = [record for record in records if record["enabled"]]
+            selected_pack_path = self.hub_selections.get(target_key)
+            if enabled_records:
+                selected_pack_path = enabled_records[0]["path"]
+            elif selected_pack_path not in paths:
+                selected_pack_path = (
+                    current_path if current_path in paths else records[0]["path"]
+                )
+            self.hub_selections[target_key] = selected_pack_path
+            selected_record = next(
+                record
+                for record in records
+                if record["path"] == selected_pack_path
+            )
+            pack = selected_record["pack"]
+            pack_name = str(pack.get("name") or pack.get("id") or "未命名资产包")
+            version = str(pack.get("version") or "")
+            pack_display = pack_name
+            iid = f"target-{index}"
+            self.hub_paths[iid] = selected_pack_path
+            choices: dict[str, str] = {}
+            for record in records:
+                candidate_pack = record["pack"]
+                candidate_name = str(
+                    candidate_pack.get("name")
+                    or candidate_pack.get("id")
+                    or "未命名资产包"
+                )
+                candidate_version = str(candidate_pack.get("version") or "")
+                label = (
+                    f"{candidate_name} · {candidate_version}"
+                    if candidate_version
+                    else candidate_name
+                )
+                if label in choices:
+                    label = f"{label} · {Path(record['path']).name}"
+                choices[label] = record["path"]
+            self.hub_pack_choices[iid] = choices
+            selected_choice_label = next(
+                label
+                for label, path in choices.items()
+                if path == selected_pack_path
+            )
+            enabled = bool(self.managed_workspaces.get(selected_pack_path, False))
+            self.hub_rows[iid] = {
+                "target_key": target_key,
+                "paths": sorted(paths),
+                "selected_path": selected_pack_path,
+                "pack_display": selected_choice_label,
+            }
+            self.hub_tree.insert(
+                "",
+                "end",
+                iid=iid,
+                text="",
+                image=(
+                    self.hub_enabled_icon
+                    if enabled
+                    else self.hub_disabled_icon
+                ),
+                values=(
+                    selected_record["hero"],
+                    self._hub_skin_label(
+                        selected_record["hero"],
+                        selected_record["skin"],
+                    ),
+                    f"▼  {pack_name}",
+                    version,
+                    selected_pack_path,
+                ),
+            )
+            if (
+                selected_target_key == target_key
+                or selected_path == selected_pack_path
+            ):
+                self.hub_tree.selection_set(iid)
+
+    @staticmethod
+    def _hub_target_key(hero: str, skin: str) -> str:
+        return f"{hero}|{skin}"
+
+    def _hub_skin_label(self, hero: str, skin: str) -> str:
+        for hero_record in self.catalog["heroes"]:
+            if hero_record["id"] != hero:
+                continue
+            skins = hero_record.get("skins") or []
+            for index, skin_record in enumerate(skins):
+                if skin_record["id"] == skin:
+                    suffix = "（默认皮肤）" if index == 0 else ""
+                    return f"{skin}{suffix}"
+        return skin
+
+    def _build_hub_status_icons(self) -> None:
+        def build(enabled: bool) -> ImageTk.PhotoImage:
+            image = Image.new("RGBA", (24, 24), (0, 0, 0, 0))
+            draw = ImageDraw.Draw(image)
+            fill = COLORS["accent"] if enabled else COLORS["danger"]
+            draw.ellipse((2, 2, 21, 21), fill=fill)
+            if enabled:
+                draw.line((7, 12, 10, 16, 17, 8), fill="white", width=3)
+            else:
+                draw.line((8, 8, 16, 16), fill="white", width=3)
+                draw.line((16, 8, 8, 16), fill="white", width=3)
+            return ImageTk.PhotoImage(image)
+
+        self.hub_enabled_icon = build(True)
+        self.hub_disabled_icon = build(False)
+
+    def _hub_clicked(self, event: tk.Event) -> str | None:
+        iid = self.hub_tree.identify_row(event.y)
+        column = self.hub_tree.identify_column(event.x)
+        if column != "#3":
+            self._close_hub_pack_editor()
+        if not iid:
+            return None
+        self.hub_tree.selection_set(iid)
+        self.hub_tree.focus(iid)
+        if column == "#0":
+            self.root.after_idle(self._hub_toggle)
+            return "break"
+        if column == "#3":
+            self.root.after_idle(lambda: self._open_hub_pack_editor(iid))
+            return "break"
+        return None
+
+    def _hub_double_clicked(self, event: tk.Event) -> str | None:
+        column = self.hub_tree.identify_column(event.x)
+        if column in {"#0", "#3"}:
+            return "break"
+        self._hub_open()
+        return "break"
+
+    def _open_hub_pack_editor(self, iid: str) -> None:
+        choices = self.hub_pack_choices.get(iid) or {}
+        if not choices:
+            return
+        self._close_hub_pack_editor()
+        bbox = self.hub_tree.bbox(iid, "pack")
+        if not bbox:
+            return
+        x, y, width, height = bbox
+        row = self.hub_rows[iid]
+        variable = tk.StringVar(value=row["pack_display"])
+        editor = ttk.Combobox(
+            self.hub_tree,
+            textvariable=variable,
+            values=list(choices),
+            state="readonly",
+        )
+        editor.place(x=x, y=y, width=width, height=height)
+        editor.bind(
+            "<<ComboboxSelected>>",
+            lambda _event: self._hub_pack_selected(iid, variable.get()),
+        )
+        editor.bind(
+            "<Escape>",
+            lambda _event: self._close_hub_pack_editor(restore_focus=True),
+        )
+        self.hub_pack_editor = editor
+        editor.focus_set()
+        editor.event_generate(
+            "<Button-1>",
+            x=max(1, width - 8),
+            y=max(1, height // 2),
+        )
+
+    def _hub_open_selected_pack(self) -> None:
+        selected = self.hub_tree.selection()
+        if selected:
+            self._open_hub_pack_editor(selected[0])
+
+    def _close_hub_pack_editor(self, restore_focus: bool = False) -> None:
+        editor = getattr(self, "hub_pack_editor", None)
+        if editor is not None:
+            try:
+                editor.destroy()
+            except tk.TclError:
+                pass
+        self.hub_pack_editor = None
+        if restore_focus:
+            try:
+                self.hub_tree.focus_set()
+            except tk.TclError:
+                pass
+
+    def _hub_pack_selected(self, iid: str, label: str) -> None:
+        selected_path = (self.hub_pack_choices.get(iid) or {}).get(label)
+        row = self.hub_rows.get(iid)
+        if not selected_path or not row:
+            self._close_hub_pack_editor()
+            return
+        was_enabled = any(
+            self.managed_workspaces.get(path, False)
+            for path in row["paths"]
+        )
+        for path in row["paths"]:
+            self.managed_workspaces[path] = False
+        self.managed_workspaces[selected_path] = was_enabled
+        self.hub_selections[row["target_key"]] = selected_path
+        self._remember_workspace()
+        self._refresh_hub()
+
+    def _hub_selected_path(self) -> Path | None:
+        selected = self.hub_tree.selection()
+        if not selected:
+            return None
+        value = self.hub_paths.get(selected[0])
+        return Path(value) if value else None
+
+    def _hub_toggle(self) -> None:
+        path = self._hub_selected_path()
+        if path is None:
+            return
+        key = str(path.resolve())
+        selected = self.hub_tree.selection()
+        row = self.hub_rows.get(selected[0]) if selected else None
+        enable = not self.managed_workspaces.get(key, False)
+        if row:
+            for candidate in row["paths"]:
+                self.managed_workspaces[candidate] = False
+            self.hub_selections[row["target_key"]] = key
+        self.managed_workspaces[key] = enable
+        self._remember_workspace()
+        self._refresh_hub()
+
+    def _hub_open(self) -> None:
+        path = self._hub_selected_path()
+        if path is None:
+            return
+        try:
+            self.workspace = StudioWorkspace.load(path)
+            self._load_workspace_into_ui()
+            self._refresh_all()
+            self.main_pages.select(self.editor_page)
+            self._write_log(f"已从控制中台打开：{path}")
+        except Exception as error:
+            self._show_error("无法打开工作区", error)
+
+    def _hub_add(self) -> None:
+        path = filedialog.askdirectory(
+            parent=self.root,
+            title="添加皮肤管理器工作区",
+            initialdir=WORKSPACES_ROOT,
+        )
+        if not path:
+            return
+        try:
+            workspace = StudioWorkspace.load(Path(path))
+            key = str(workspace.directory.resolve())
+            self.managed_workspaces[key] = True
+            self._remember_workspace()
+            self._refresh_hub()
+        except Exception as error:
+            self._show_error("无法添加工作区", error)
+
+    def _import_current_to_hub(self) -> None:
+        self._metadata_changed()
+        path = str(self.workspace.directory.resolve())
+        target = self.workspace.state.get("target") or {}
+        target_key = self._hub_target_key(
+            str(target.get("hero") or ""),
+            str(target.get("skin") or ""),
+        )
+        self.managed_workspaces.setdefault(path, False)
+        self.hub_selections[target_key] = path
+        self._remember_workspace()
+        self._refresh_hub()
+        self.main_pages.select(0)
+        self._write_log(f"资产包已加入控制中台：{path}")
 
     def _refresh_visuals(self) -> None:
         for slot in self.catalog["visual_slots"]:
@@ -1411,6 +2000,9 @@ class ModManagerStudio:
             return
         try:
             self.workspace = StudioWorkspace.create(pack_id)
+            self.managed_workspaces[
+                str(self.workspace.directory.resolve())
+            ] = True
             self._load_workspace_into_ui()
             self._refresh_all()
             self._write_log(f"已创建工作区：{self.workspace.directory}")
@@ -1427,6 +2019,9 @@ class ModManagerStudio:
             return
         try:
             self.workspace = StudioWorkspace.load(Path(path))
+            self.managed_workspaces[
+                str(self.workspace.directory.resolve())
+            ] = True
             self._load_workspace_into_ui()
             self._refresh_all()
             self._write_log(f"已打开工作区：{self.workspace.directory}")
@@ -1474,9 +2069,63 @@ class ModManagerStudio:
                 lambda: self.workspace.deploy(self.game_dir_override),
                 lambda result: self._operation_complete(
                     "部署完成",
-                    f"已安装 {result['pack']['id']} {result['pack']['version']}。",
+                    "已安装 " + ", ".join(
+                        f"{item['id']} {item['version']}"
+                        for item in result["packs"]
+                    ) + "。",
                 ),
             )
+
+    def _deploy_all(self) -> None:
+        if self.busy:
+            return
+        self._metadata_changed()
+        workspaces: list[StudioWorkspace] = []
+        invalid: list[str] = []
+        for path_text, enabled in self.managed_workspaces.items():
+            if not enabled:
+                continue
+            try:
+                workspaces.append(StudioWorkspace.load(Path(path_text)))
+            except Exception as error:
+                invalid.append(f"{path_text}: {error}")
+        if invalid:
+            messagebox.showerror(
+                "工作区不可用",
+                "\n".join(invalid),
+                parent=self.root,
+            )
+            return
+        if not workspaces:
+            messagebox.showinfo(
+                "没有启用的皮肤",
+                "请先在控制中台启用至少一个职业皮肤。",
+                parent=self.root,
+            )
+            return
+        if not messagebox.askyesno(
+            "部署多职业皮肤",
+            (
+                f"将同时部署 {len(workspaces)} 个已启用皮肤。\n\n"
+                "继续前请关闭 The Bazaar。相同英雄/皮肤只能启用一个工作区。"
+            ),
+            parent=self.root,
+        ):
+            return
+        self._run_background(
+            "正在部署全部已启用皮肤…",
+            lambda: StudioWorkspace.deploy_many(
+                workspaces,
+                self.game_dir_override,
+            ),
+            lambda result: self._operation_complete(
+                "多职业皮肤部署完成",
+                "已安装 " + ", ".join(
+                    f"{item['id']} {item['version']}"
+                    for item in result["packs"]
+                ) + "。",
+            ),
+        )
 
     def _undeploy(self) -> None:
         if self.busy:
@@ -1504,6 +2153,74 @@ class ModManagerStudio:
             self._launch_complete,
         )
 
+    def _asset_generator_command(self) -> list[str] | None:
+        candidates: list[Path] = []
+        if getattr(sys, "frozen", False):
+            executable_dir = Path(sys.executable).resolve().parent
+            candidates.extend(
+                [
+                    executable_dir / "TheBazaarAssetGenerator.exe",
+                    executable_dir.parent
+                    / "asset-generator"
+                    / "TheBazaarAssetGenerator.exe",
+                ]
+            )
+        candidates.extend(
+            [
+                PROJECT_ROOT
+                / "dist"
+                / "asset-generator"
+                / "TheBazaarAssetGenerator.exe",
+                Path.home()
+                / "AppData"
+                / "Local"
+                / "Programs"
+                / "TheBazaarModManager"
+                / "TheBazaarAssetGenerator.exe",
+            ]
+        )
+        for candidate in candidates:
+            if candidate.is_file():
+                return [str(candidate)]
+        source = PROJECT_ROOT / "tools" / "asset_generator_ui.py"
+        if source.is_file() and not getattr(sys, "frozen", False):
+            return [sys.executable, str(source)]
+        return None
+
+    def _refresh_generator_component(self) -> None:
+        command = self._asset_generator_command()
+        if command:
+            self.generator_status.configure(
+                text=f"组件可用：{command[-1]}",
+                foreground=COLORS["accent"],
+            )
+            self.generator_launch_button.configure(state="normal")
+        else:
+            self.generator_status.configure(
+                text="未找到素材包制作器组件，请使用完整安装包修复安装。",
+                foreground=COLORS["warning"],
+            )
+            self.generator_launch_button.configure(state="disabled")
+
+    def _launch_asset_generator(self) -> None:
+        command = self._asset_generator_command()
+        if not command:
+            self._refresh_generator_component()
+            messagebox.showerror(
+                "组件不可用",
+                "未找到素材包制作器，请使用完整安装包修复安装。",
+                parent=self.root,
+            )
+            return
+        try:
+            subprocess.Popen(
+                command,
+                cwd=str(Path(command[-1]).resolve().parent),
+            )
+            self._write_log("已打开素材包制作器组件。")
+        except OSError as error:
+            self._show_error("无法打开素材包制作器", error)
+
     def _launch_complete(self, result: dict) -> None:
         self.busy = False
         self._set_skin_options(self._selected_hero(), self._selected_skin()["id"])
@@ -1516,7 +2233,6 @@ class ModManagerStudio:
     def _run_background(self, status: str, operation, on_success) -> None:
         self.busy = True
         self.deploy_button.configure(state="disabled")
-        self.header_deploy_button.configure(state="disabled")
         self.play_button.configure(state="disabled")
         self.install_status.configure(text=status, foreground=COLORS["warning"])
 

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using BepInEx;
 using BepInEx.Configuration;
 using HarmonyLib;
@@ -11,9 +12,10 @@ namespace BazaarSkinManager.TheBazaar
     {
         public const string PluginGuid = "bazaar-skin-manager.the-bazaar.runtime";
         public const string PluginName = "The Bazaar Skin Manager Runtime";
-        public const string PluginVersion = "1.0.0";
+        public const string PluginVersion = "1.1.1";
 
         internal static RuntimePack ActivePack;
+        internal static List<RuntimePack> ActivePacks = new List<RuntimePack>();
         internal static BepInEx.Logging.ManualLogSource Log;
 
         private Harmony _harmony;
@@ -59,8 +61,9 @@ namespace BazaarSkinManager.TheBazaar
                 ? RuntimePack.DefaultModsRoot()
                 : Environment.ExpandEnvironmentVariables(modsRoot.Value);
 
-            ActivePack = RuntimePack.LoadFirstEnabled(root, Logger);
-            if (ActivePack == null)
+            ActivePacks = RuntimePack.LoadAllEnabled(root, Logger);
+            ActivePack = ActivePacks.Count == 0 ? null : ActivePacks[0];
+            if (ActivePacks.Count == 0)
             {
                 Logger.LogWarning("No compatible enabled external skin pack was found.");
                 return;
@@ -83,22 +86,68 @@ namespace BazaarSkinManager.TheBazaar
             DontDestroyOnLoad(gameObject);
 
             Logger.LogInfo(
-                "Loaded pack " + ActivePack.Manifest.Id + " " + ActivePack.Manifest.Version);
+                "Loaded " + ActivePacks.Count + " enabled skin pack(s)." );
         }
 
         private void OnDestroy()
         {
             RuntimeAudioReplacement.Remove();
-            if (ActivePack != null)
+            foreach (RuntimePack pack in ActivePacks)
             {
-                ActivePack.DisposeAudio();
+                pack.DisposeAudio();
             }
+            ActivePacks.Clear();
+            ActivePack = null;
             SkinLoaderCoverage.RemoveAll();
             StandingOverlay.RemoveAll();
             if (_harmony != null)
             {
                 _harmony.UnpatchSelf();
             }
+        }
+
+        internal static RuntimePack PackForSkin(object instance)
+        {
+            foreach (RuntimePack pack in ActivePacks)
+            {
+                if (pack.IsTargetSkin(instance))
+                {
+                    return pack;
+                }
+            }
+            return null;
+        }
+
+        internal static RuntimePack PackForHero(string heroName)
+        {
+            foreach (RuntimePack pack in ActivePacks)
+            {
+                if (pack.IsTargetHero(heroName) ||
+                    string.Equals(
+                        pack.TargetHeroCode(),
+                        heroName,
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    return pack;
+                }
+            }
+            return null;
+        }
+
+        internal static RuntimePack PackMatchingAsset(
+            string assetName,
+            out VisualReplacement replacement)
+        {
+            foreach (RuntimePack pack in ActivePacks)
+            {
+                replacement = pack.Match(assetName);
+                if (replacement != null)
+                {
+                    return pack;
+                }
+            }
+            replacement = null;
+            return null;
         }
     }
 }

@@ -73,7 +73,7 @@ class RuntimeStructureTests(unittest.TestCase):
             "Resources.FindObjectsOfTypeAll(_heroItemType)",
             ICON_RECONCILER,
         )
-        self.assertIn("Plugin.ActivePack.IsTargetHero", ICON_RECONCILER)
+        self.assertIn("Plugin.PackForHero", ICON_RECONCILER)
         self.assertIn('"Content/Icon"', ICON_RECONCILER)
         self.assertNotIn("MatchHierarchy", ICON_RECONCILER)
         self.assertNotIn("SelectedHeroItemImage", ICON_RECONCILER)
@@ -91,6 +91,15 @@ class RuntimeStructureTests(unittest.TestCase):
             'string.Equals(pack.Manifest.Target.Hero, "Mak"',
             RUNTIME_ASSETS,
         )
+
+    def test_runtime_loads_and_routes_all_enabled_profession_packs(self) -> None:
+        self.assertIn("LoadAllEnabled", RUNTIME_ASSETS)
+        self.assertIn("loaded.Add(pack);", RUNTIME_ASSETS)
+        self.assertIn("List<RuntimePack> ActivePacks", PLUGIN)
+        self.assertIn("PackForSkin", PLUGIN)
+        self.assertIn("PackForHero", PLUGIN)
+        self.assertIn("PackMatchingAsset", PLUGIN)
+        self.assertIn("foreach (RuntimePack pack in ActivePacks)", PLUGIN)
 
     def test_generic_scanner_does_not_match_parent_hierarchies(self) -> None:
         self.assertNotIn("MatchHierarchy", SCANNER)
@@ -121,7 +130,7 @@ class RuntimeStructureTests(unittest.TestCase):
         self.assertIn("replacement.Deployment.Mode", RUNTIME_ASSETS)
         self.assertIn("UsesPreloadedDeployment", RUNTIME_ASSETS)
         self.assertIn(
-            "Plugin.ActivePack.UsesPreloadedDeployment(slot)",
+            "pack.UsesPreloadedDeployment(slot)",
             PATCHES,
         )
         self.assertIn(
@@ -138,7 +147,7 @@ class RuntimeStructureTests(unittest.TestCase):
         )
         self.assertIn("breaks its occlusion", PATCHES)
         self.assertIn(
-            'Plugin.ActivePack.UsesPreloadedDeployment("hero_select")',
+            'pack.UsesPreloadedDeployment("hero_select")',
             ICON_RECONCILER,
         )
         portrait = next(
@@ -181,8 +190,8 @@ class RuntimeStructureTests(unittest.TestCase):
             '"_skinEditActiveSkin"',
         ):
             self.assertIn(field_name, STANDING_STATE)
-        self.assertIn("_targetGraphicField", STANDING_STATE)
-        self.assertIn("SkinPatchTargets.ShouldReplace(loadedAsset)", STANDING_STATE)
+        self.assertIn("targetGraphicField", STANDING_STATE)
+        self.assertIn("Plugin.PackForSkin(loadedAsset)", STANDING_STATE)
         self.assertIn("IsSupportedCentralDisplay(component)", STANDING_STATE)
         self.assertIn('"Hero_Placeholder"', STANDING_STATE)
         self.assertIn('"HeroSelect"', STANDING_STATE)
@@ -190,7 +199,7 @@ class RuntimeStructureTests(unittest.TestCase):
         self.assertIn("targetGraphic.gameObject.activeInHierarchy", STANDING_STATE)
         self.assertIn('"Common"', STANDING_STATE)
         self.assertIn("selectedTarget || selectedCommon", STANDING_STATE)
-        self.assertIn("Plugin.ActivePack.TargetHeroCode()", STANDING_STATE)
+        self.assertIn("pack.TargetHeroCode()", STANDING_STATE)
         self.assertIn("StandingOverlay.AttachToGraphic", STANDING_STATE)
         self.assertIn("StandingOverlay.AttachToWorld", STANDING_STATE)
         self.assertIn("StandingOverlay.RemoveFromGraphic", STANDING_STATE)
@@ -207,7 +216,7 @@ class RuntimeStructureTests(unittest.TestCase):
             STANDING_STATE,
         )
 
-    def test_runtime_version_is_1_0_0(self) -> None:
+    def test_runtime_version_is_1_1_1(self) -> None:
         plugin = (
             ROOT / "src" / "BazaarSkinManager.Runtime" / "Plugin.cs"
         ).read_text(encoding="utf-8")
@@ -215,8 +224,8 @@ class RuntimeStructureTests(unittest.TestCase):
             ROOT / "src" / "BazaarSkinManager.Runtime" / "AssemblyInfo.cs"
         ).read_text(encoding="utf-8")
 
-        self.assertIn('PluginVersion = "1.0.0"', plugin)
-        self.assertIn('AssemblyVersion("1.0.0.0")', assembly)
+        self.assertIn('PluginVersion = "1.1.1"', plugin)
+        self.assertIn('AssemblyVersion("1.1.1.0")', assembly)
 
     def test_audio_replacement_is_exact_predecoded_and_fail_open(self) -> None:
         root = ROOT / "src" / "BazaarSkinManager.Runtime"
@@ -227,11 +236,11 @@ class RuntimeStructureTests(unittest.TestCase):
         decoder = (root / "PcmWaveDecoder.cs").read_text(encoding="utf-8")
 
         self.assertIn("RuntimeAudioReplacement.Install(_harmony);", PLUGIN)
-        self.assertIn('"MakAudioSO"', replacement)
-        self.assertIn('"MakMerchantAudioSO"', replacement)
+        self.assertIn("PackForAudioObject", replacement)
+        self.assertIn("SelectedHeroPack", replacement)
         self.assertIn("CanonicalGuid(guid)", replacement)
         self.assertIn("ReadSelectors(__args[2])", replacement)
-        self.assertIn("if (!Play(route, __instance, true))", replacement)
+        self.assertIn("if (!Play(pack, route, __instance, true))", replacement)
         self.assertIn("return true;", replacement)
         self.assertIn(
             'RequireType("TheBazaar.SoundEventListener")',
@@ -284,7 +293,7 @@ class RuntimeStructureTests(unittest.TestCase):
         self.assertIn("class SkinEditVisiblePresentationPatch", PATCHES)
         self.assertIn('"LoadSkinEditSkinAsync"', PATCHES)
         self.assertIn(
-            "PrepareBeforeDisplay(__result, placementName)",
+            "PrepareBeforeDisplay(__result, placementName, pack)",
             PATCHES,
         )
         self.assertIn(
@@ -397,7 +406,7 @@ class RuntimeStructureTests(unittest.TestCase):
         self.assertTrue(background["direct_only"])
         self.assertEqual(background["match_names"], [])
         self.assertIn(
-            'Plugin.ActivePack.Texture("portrait_background")',
+            'pack.Texture("portrait_background")',
             LOADER_COVERAGE,
         )
         self.assertIn(
@@ -409,7 +418,7 @@ class RuntimeStructureTests(unittest.TestCase):
         self,
     ) -> None:
         gate = PLUGIN.index("RuntimeCompatibility.ValidateCurrent(")
-        pack_load = PLUGIN.index("RuntimePack.LoadFirstEnabled(")
+        pack_load = PLUGIN.index("RuntimePack.LoadAllEnabled(")
         hook_calls = (
             "_harmony = new Harmony(PluginGuid);",
             "_harmony.PatchAll();",

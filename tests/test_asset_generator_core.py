@@ -46,7 +46,7 @@ class AssetGeneratorCoreTests(unittest.TestCase):
             adapter_id="dooley-default",
             pack_id="test.generated.pack",
             name="Generated Pack",
-            version="1.0.0",
+            version="1.1.1",
             character=inputs / "character.png",
             background=inputs / "background.png",
             small_icon=inputs / "small_icon.png",
@@ -87,8 +87,10 @@ class AssetGeneratorCoreTests(unittest.TestCase):
             {
                 "dooley-default",
                 "jules-default",
+                "karnok-default",
                 "mak-default",
                 "pygmalien-default",
+                "stelle-default",
                 "vanessa-default",
             },
         )
@@ -100,7 +102,7 @@ class AssetGeneratorCoreTests(unittest.TestCase):
                 json.dumps(
                     {
                         "schema_version": 1,
-                        "version": "1.0.0",
+                        "version": "1.1.1",
                         "adapters": [
                             {
                                 "id": "dooley-default",
@@ -116,7 +118,7 @@ class AssetGeneratorCoreTests(unittest.TestCase):
             capability = generator.require_installed_manager_adapter(
                 "dooley-default", install_root=root
             )
-            self.assertEqual(capability["manager_version"], "1.0.0")
+            self.assertEqual(capability["manager_version"], "1.1.1")
             self.assertEqual(capability["adapter"]["adapter_version"], 13)
 
     def test_installed_manager_capability_rejects_legacy_sidecar(self) -> None:
@@ -126,7 +128,7 @@ class AssetGeneratorCoreTests(unittest.TestCase):
                 json.dumps({"schema_version": 1, "version": "0.9.63"}),
                 encoding="utf-8",
             )
-            with self.assertRaisesRegex(RuntimeError, "1.0.0"):
+            with self.assertRaisesRegex(RuntimeError, "1.1.1"):
                 generator.require_installed_manager_adapter(
                     "dooley-default", install_root=root
                 )
@@ -138,7 +140,7 @@ class AssetGeneratorCoreTests(unittest.TestCase):
                 json.dumps(
                     {
                         "schema_version": 1,
-                        "version": "1.0.0",
+                        "version": "1.1.1",
                         "adapters": [
                             {"id": "dooley-default", "adapter_version": 11}
                         ],

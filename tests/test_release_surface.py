@@ -53,7 +53,7 @@ class ReleaseSurfaceTests(unittest.TestCase):
         workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text(
             encoding="utf-8"
         )
-        self.assertIn('default: "1.0.0"', workflow)
+        self.assertIn('default: "1.1.1"', workflow)
         self.assertIn('if ($tag.EndsWith("-experimental"))', workflow)
         self.assertNotIn("v1.0.0-experimental", workflow)
         self.assertNotIn("1.0.0 (experimental)", workflow)
@@ -75,7 +75,7 @@ class ReleaseSurfaceTests(unittest.TestCase):
                 encoding="utf-8-sig"
             )
         )
-        self.assertEqual(metadata["version"], "1.0.0")
+        self.assertEqual(metadata["version"], "1.1.1")
         self.assertEqual(metadata["bytes"], runtime.stat().st_size)
         self.assertEqual(
             metadata["sha256"], hashlib.sha256(runtime.read_bytes()).hexdigest()
@@ -144,13 +144,56 @@ class ReleaseSurfaceTests(unittest.TestCase):
             'self.root.title(f"The Bazaar 皮肤管理器 v{MANAGER_VERSION}")',
             ui,
         )
-        self.assertIn('text="清空已加载皮肤"', ui)
+        self.assertIn('text="清空当前工作区资产"', ui)
         self.assertIn("def _clear_loaded_skin(self)", ui)
         self.assertIn("--self-test-release-runtime", ui)
         self.assertIn("root = RootClass()", ui)
         self.assertIn("root.update_idletasks()", ui)
         self.assertIn("--smoke-import", ui)
         self.assertIn("--smoke-deploy", ui)
+
+    def test_manager_integrates_asset_generator_component(self) -> None:
+        ui = (ROOT / "tools" / "bazaar_skin_manager_ui.py").read_text(
+            encoding="utf-8"
+        )
+        installer = (
+            ROOT / "installer" / "TheBazaarModManager.iss"
+        ).read_text(encoding="utf-8")
+        portable = (ROOT / "package-manager-portable.ps1").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn('text="素材包制作器"', ui)
+        self.assertIn("def _launch_asset_generator(self)", ui)
+        self.assertIn('"<Control-Key-g>"', ui)
+        self.assertIn('executable_dir.parent', ui)
+        self.assertIn("TheBazaarAssetGenerator.exe", installer)
+        self.assertIn("TheBazaarAssetGenerator.exe", portable)
+
+    def test_manager_pages_group_actions_and_keep_hub_scrollable(self) -> None:
+        ui = (ROOT / "tools" / "bazaar_skin_manager_ui.py").read_text(
+            encoding="utf-8"
+        )
+        for group in (
+            'text="工作区"',
+            'text="部署"',
+            'text="目标与游戏"',
+            'text="资产包"',
+            'text="导出与清理"',
+            'text="组件操作"',
+        ):
+            self.assertIn(group, ui)
+        self.assertIn("hub_vertical", ui)
+        self.assertIn("hub_horizontal", ui)
+        self.assertIn("parent.rowconfigure(1, weight=1)", ui)
+        self.assertIn('"<Control-Key-3>"', ui)
+        self.assertIn('show="tree headings"', ui)
+        self.assertIn('"skin": "被替换皮肤"', ui)
+        self.assertIn('"（默认皮肤）"', ui)
+        self.assertIn("def _hub_clicked(self", ui)
+        self.assertIn("def _open_hub_pack_editor(self", ui)
+        self.assertIn('text="资产导入管理器"', ui)
+        self.assertIn('text="部署"', ui)
+        self.assertIn('text="取消部署"', ui)
 
     def test_asset_generator_keeps_actions_visible_and_tabs_scrollable(self) -> None:
         ui = (ROOT / "tools" / "asset_generator_ui.py").read_text(
@@ -159,6 +202,8 @@ class ReleaseSurfaceTests(unittest.TestCase):
         self.assertIn('actions.pack(side="bottom"', ui)
         self.assertIn("_scrollable_notebook_page", ui)
         self.assertIn("both authoring tabs must provide vertical scrolling", ui)
+        self.assertIn("self.authoring_pages = ttk.Notebook(parent)", ui)
+        self.assertIn('"<Control-Key-2>"', ui)
 
     def test_public_generator_build_does_not_require_badge_game_art(self) -> None:
         build = (ROOT / "build-asset-generator.ps1").read_text(encoding="utf-8")

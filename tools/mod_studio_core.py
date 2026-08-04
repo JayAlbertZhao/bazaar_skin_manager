@@ -35,6 +35,7 @@ from bazaar_skin_manager import (
     detect_installs,
     explicit_install,
     install,
+    install_many,
     installation_diagnostics,
     launch_game,
     manager_root,
@@ -1053,12 +1054,37 @@ class StudioWorkspace:
         return destination
 
     def deploy(self, game_dir: Path | None = None) -> dict:
-        self.build_pack()
-        errors = validate_pack(self.directory)
-        if errors:
-            raise ValueError("Pack validation failed: " + "; ".join(errors))
-        target = self.state["target"]
-        adapter = _adapter_for_target(target)
+        return self.deploy_many([self], game_dir)
+
+    @staticmethod
+    def deploy_many(
+        workspaces: list["StudioWorkspace"],
+        game_dir: Path | None = None,
+    ) -> dict:
+        if not workspaces:
+            raise ValueError("Select at least one workspace to deploy.")
+        for workspace in workspaces:
+            workspace.build_pack()
+            errors = validate_pack(workspace.directory)
+            if errors:
+                raise ValueError(
+                    f"Pack validation failed for {workspace.directory}: "
+                    + "; ".join(errors)
+                )
+        targets: set[tuple[str, str]] = set()
+        for workspace in workspaces:
+            target = workspace.state["target"]
+            identity = (
+                str(target.get("hero") or "").casefold(),
+                str(target.get("skin_name_contains") or "").casefold(),
+            )
+            if identity in targets:
+                raise ValueError(
+                    "Only one enabled workspace may target each hero skin."
+                )
+            targets.add(identity)
+
+        adapters = [_adapter_for_target(item.state["target"]) for item in workspaces]
         if game_dir is not None:
             game = explicit_install(game_dir)
         else:
@@ -1066,29 +1092,36 @@ class StudioWorkspace:
             if not installs:
                 raise ValueError("No complete Steam installation was detected.")
             game = installs[0]
-        if not adapter.supports_build(game.build_id):
-            raise ValueError(
-                f"Adapter {adapter.adapter_id} is not verified for Steam "
-                f"build {game.build_id or 'unknown'}."
-            )
+        for adapter in adapters:
+            if not adapter.supports_build(game.build_id):
+                raise ValueError(
+                    f"Adapter {adapter.adapter_id} is not verified for Steam "
+                    f"build {game.build_id or 'unknown'}."
+                )
         previous = manager_root() / "install-manifest.json"
         if previous.is_file():
             uninstall()
         # Deploy the same exact payload surface as export_zip. Authoring inputs
         # must never be copied into the managed mods directory.
-        manifest = _read_json(self.directory / "mod.json")
         with tempfile.TemporaryDirectory() as temp:
-            staged = Path(temp) / "pack"
-            paths = self._declared_payload_paths(manifest)
-            paths.extend(
-                [self.directory / "mod.json", self.directory / "asset-index.json"]
-            )
-            for source in paths:
-                relative = source.relative_to(self.directory)
-                destination = staged / relative
-                destination.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(source, destination)
-            return install(DEFAULT_RUNTIME, staged, game)
+            staged_packs: list[Path] = []
+            for index, workspace in enumerate(workspaces):
+                manifest = _read_json(workspace.directory / "mod.json")
+                staged = Path(temp) / f"pack-{index:02d}"
+                paths = workspace._declared_payload_paths(manifest)
+                paths.extend(
+                    [
+                        workspace.directory / "mod.json",
+                        workspace.directory / "asset-index.json",
+                    ]
+                )
+                for source in paths:
+                    relative = source.relative_to(workspace.directory)
+                    destination = staged / relative
+                    destination.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(source, destination)
+                staged_packs.append(staged)
+            return install_many(DEFAULT_RUNTIME, staged_packs, game)
 
     def undeploy(self) -> list[str]:
         return uninstall()
