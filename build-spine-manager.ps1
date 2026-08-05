@@ -1,5 +1,5 @@
 param(
-    [string]$Version = "1.1.2",
+    [string]$Version = "1.1.4",
     [string]$OutputDirectory = ""
 )
 
@@ -33,6 +33,29 @@ $runtimeDirectory = if (
 } else {
     Join-Path $root "manager\runtime"
 }
+$converterVersion = "v3.8"
+$converterSha256 = "b2ca82e46f1f4ca463abf0ccfab32e3c01eb0dd89fc7289b6478f728ca8ed68a"
+$converterDirectory = Join-Path $root ".codex-work\spine-converter\$converterVersion"
+$converterExe = Join-Path $converterDirectory "SpineSkeletonDataConverter.exe"
+$converterUrl = "https://github.com/wang606/SpineSkeletonDataConverter/releases/download/$converterVersion/SpineSkeletonDataConverter.exe"
+$converterLicense = Join-Path $root "third_party\SpineSkeletonDataConverter-LICENSE.txt"
+
+New-Item -ItemType Directory -Force -Path $converterDirectory | Out-Null
+if (-not (Test-Path -LiteralPath $converterExe) -or
+    (Get-FileHash -Algorithm SHA256 -LiteralPath $converterExe).Hash.ToLowerInvariant() -ne $converterSha256) {
+    $download = "$converterExe.download"
+    Remove-Item -Force -ErrorAction SilentlyContinue $download
+    Invoke-WebRequest -UseBasicParsing -Uri $converterUrl -OutFile $download
+    $downloadHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $download).Hash.ToLowerInvariant()
+    if ($downloadHash -ne $converterSha256) {
+        Remove-Item -Force -ErrorAction SilentlyContinue $download
+        throw "Spine converter hash mismatch: $downloadHash"
+    }
+    Move-Item -Force $download $converterExe
+}
+if (-not (Test-Path -LiteralPath $converterLicense)) {
+    throw "Spine converter license notice is missing: $converterLicense"
+}
 
 $sitePackages = & $python -c "import sysconfig; print(sysconfig.get_paths()['purelib'])"
 $fmodDll = Join-Path $sitePackages.Trim() "fmod_toolkit\libfmod\Windows\x64\fmod.dll"
@@ -58,6 +81,8 @@ $arguments = @(
     "--hidden-import", "adapter_registry",
     "--hidden-import", "bazaar_skin_manager",
     "--add-binary", "$fmodDll;fmod_toolkit\libfmod\Windows\x64",
+    "--add-binary", "$converterExe;spine-converter",
+    "--add-data", "$converterLicense;spine-converter",
     "--add-data", "$root\manager\hero-catalog.json;manager",
     "--add-data", "$root\manager\adapters;manager\adapters",
     "--add-data", "$root\manager\spine-preview;manager\spine-preview",

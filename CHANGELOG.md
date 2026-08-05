@@ -1,5 +1,24 @@
 # Changelog
 
+## 1.1.4
+
+- Convert Spine 3.5, 3.6, 3.7, 3.8, and 4.0 JSON packages to Spine 4.2.43
+  through the same pinned converter used for verified Spine 4.1 imports.
+- Preserve Spine 4.2 packages without conversion and reject versions outside
+  the supported 3.5–4.2 input range.
+- Record verified original Spine bundles and `catalog.bin` in a user-visible
+  backup directory so a managed B replacement can be replaced directly by C.
+
+## 1.1.3
+
+- Spine 4.2 JSON packages continue directly through import without conversion.
+- Spine 4.1 JSON packages are converted to 4.2.43 during import with the pinned
+  SpineSkeletonDataConverter v3.8 binary before preview or deployment.
+- Other Spine versions fail closed with an actionable 4.1/4.2 compatibility
+  message instead of attempting a version-marker-only rewrite.
+- The Windows build downloads the converter from its official release, verifies
+  its SHA-256, bundles the license notice, and checks its presence in self-test.
+
 ## 1.1.2
 
 - 将 Spine 动画管理器收进皮肤管理器组件页，安装版与管理器便携包均携带该组件。

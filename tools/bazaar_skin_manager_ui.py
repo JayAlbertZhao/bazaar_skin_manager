@@ -434,7 +434,7 @@ class ModManagerStudio:
         ttk.Label(
             heading,
             text=(
-                "皮肤管理器内置组件 · 导入 Spine 4.1/4.2 资源、离线预览位置，"
+                "皮肤管理器内置组件 · 导入 Spine 3.5–3.8、4.0–4.2 资源、离线预览位置，"
                 "部署与恢复继续使用统一事务。"
             ),
             style="Muted.TLabel",
