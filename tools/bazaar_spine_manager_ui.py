@@ -27,9 +27,11 @@ from spine_manager_core import (
     SpinePackage,
     SpinePlacement,
     SpineTarget,
+    _spine_converter_path,
     deploy,
     import_spine_package,
     installation_manifest,
+    original_backup_directory,
     restore,
     targets,
 )
@@ -49,7 +51,7 @@ from spine_static_preview import (
 )
 
 
-APP_VERSION = "1.1.2"
+APP_VERSION = "1.1.4"
 PROJECT_ROOT = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parents[1]))
 PREVIEW_BACKGROUND_PATH = (
     PROJECT_ROOT / "manager" / "spine-preview" / "hero-select-background.jpg"
@@ -144,7 +146,7 @@ class SpineManagerApp:
         ttk.Label(outer, text="The Bazaar Spine Manager", style="Title.TLabel").pack(anchor="w")
         ttk.Label(
             outer,
-            text="导入 Spine 4.1/4.2 JSON 资源包（支持多页 Atlas）；部署、备份和恢复统一交给皮肤管理器事务处理。",
+            text="导入 Spine 3.5–3.8、4.0、4.1、4.2 JSON 资源包（旧版本自动转换为 4.2.43，支持多页 Atlas）；部署、备份和恢复统一交给皮肤管理器事务处理。",
         ).pack(anchor="w", pady=(3, 14))
 
         actions = ttk.Frame(outer)
@@ -153,6 +155,7 @@ class SpineManagerApp:
         ttk.Button(actions, text="恢复原始文件", command=self._restore).pack(side="left", padx=8)
         ttk.Button(actions, text="刷新状态", command=self._refresh_status).pack(side="left")
         ttk.Button(actions, text="打开日志目录", command=self._open_log_directory).pack(side="left", padx=8)
+        ttk.Button(actions, text="打开原始备份目录", command=self._open_backup_directory).pack(side="left")
         ttk.Label(actions, textvariable=self.status_var).pack(side="right")
 
         self.log = tk.Text(outer, height=4, wrap="word", state="disabled")
@@ -193,7 +196,7 @@ class SpineManagerApp:
         ttk.Button(page, text="导入并验证", command=self._import).grid(row=3, column=2, padx=(8, 0), pady=7)
         self.package_info = ttk.Label(
             page,
-            text="尚未导入。要求：一个 JSON、一个 atlas、Atlas 声明的 PNG 页面，Spine 4.1/4.2，包含 default skin。",
+            text="尚未导入。Spine 4.2 直接导入，3.5–3.8、4.0、4.1 自动转换；其他版本不兼容。要求包含一个 JSON、一个 atlas、Atlas 声明的 PNG 页面和 default skin。",
             wraplength=760,
             justify="left",
         )
@@ -309,9 +312,14 @@ class SpineManagerApp:
             self.animation_combo.configure(values=values)
             preferred = self.settings.get("animation")
             self.animation_var.set(preferred if preferred in values else ("a" if "a" in values else values[0]))
+            conversion = (
+                f"（由 Spine {self.package.source_version} 自动转换）"
+                if self.package.source_version
+                else ""
+            )
             self.package_info.configure(
                 text=(
-                    f"已导入：Spine {self.package.version}；纹理 {self.package.width}×{self.package.height}；"
+                    f"已导入：Spine {self.package.version}{conversion}；纹理 {self.package.width}×{self.package.height}；"
                     f"动画 {', '.join(values)}；skins {', '.join(self.package.skins)}"
                 )
             )
@@ -652,6 +660,26 @@ class SpineManagerApp:
             LOGGER.exception("open_log_directory_failed path=%s", LOG_DIRECTORY)
             messagebox.showerror("无法打开日志目录", str(error), parent=self.root)
 
+    def _open_backup_directory(self) -> None:
+        try:
+            directory = original_backup_directory()
+            notice = directory / "README.txt"
+            if not notice.is_file():
+                notice.write_text(
+                    "此目录保存 Spine Manager 校验过的游戏原始 Bundle 和 catalog.bin。\n"
+                    "每个替换目标使用独立子目录，并包含 backup-record.json。\n"
+                    "手动恢复前请关闭游戏，并同时恢复对应 Bundle 与 catalog.bin。\n",
+                    encoding="utf-8",
+                )
+            if os.name == "nt":
+                os.startfile(directory)
+            else:
+                webbrowser.open(directory.as_uri())
+            LOGGER.info("open_backup_directory path=%s", directory)
+        except Exception as error:
+            LOGGER.exception("open_backup_directory_failed")
+            messagebox.showerror("无法打开原始备份目录", str(error), parent=self.root)
+
     def _load_settings(self) -> dict:
         try:
             return json.loads(SETTINGS_PATH.read_text(encoding="utf-8-sig"))
@@ -685,7 +713,16 @@ def self_test() -> int:
     with Image.open(PREVIEW_BACKGROUND_PATH) as background:
         if background.size != (1920, 1080):
             raise RuntimeError("Bundled preview background has an unexpected size.")
-    print(json.dumps({"version": APP_VERSION, "targets": len(available)}))
+    converter = _spine_converter_path()
+    print(
+        json.dumps(
+            {
+                "version": APP_VERSION,
+                "targets": len(available),
+                "spine_converter": converter.name,
+            }
+        )
+    )
     return 0
 
 

@@ -29,7 +29,7 @@ This repository publishes one manager suite with three Windows desktop component
 - **Asset Generator** — creates deterministic skin-pack ZIP files from creator
   inputs and hands deployment back to the Skin Manager. Its desktop entry point
   is `tools/asset_generator_ui.py`.
-- **Spine Manager** — imports Spine 4.1/4.2 JSON packages, previews root
+- **Spine Manager** — imports Spine 3.5–3.8 and 4.0–4.2 JSON packages, previews root
   placement offline, and reversibly replaces verified hero-skin bundles. Its
   desktop entry point is `tools/bazaar_spine_manager_ui.py`.
 

@@ -9,18 +9,24 @@ Addressables paths, prefab references, object IDs, and bundle filename.
 The importer supports this deterministic contract:
 
 - one ZIP or extracted directory;
-- one Spine 4.1 or 4.2 JSON file;
+- one Spine 3.5, 3.6, 3.7, 3.8, 4.0, 4.1, or 4.2 JSON file;
 - one `.atlas` file;
 - one or more PNG pages declared by that atlas;
 - a `default` skin;
 - at least one animation.
 
+Spine 4.2 JSON packages continue directly through validation. Spine 3.5–3.8,
+4.0, and 4.1 JSON packages are converted to Spine 4.2.43 during import using the
+pinned SpineSkeletonDataConverter v3.8 component. Other versions are rejected
+with a supported-version message. The converter is distributed under the PolyForm
+Noncommercial License 1.0.0; its attribution and license URL are included in
+`third_party/SpineSkeletonDataConverter-LICENSE.txt`.
+
 PNG files below source folders such as `images/` are ignored unless the atlas
 declares them as pages. Multi-page atlases are merged vertically into one
 runtime texture and every region coordinate is translated to the merged page,
 because the verified Bazaar target bundle contains one Texture2D and one atlas
-material. Packages exported by Spine 4.1 have their JSON runtime version marker
-normalized to the game's Spine 4.2 runtime during deployment.
+material.
 
 The selected animation is copied to the game's expected `idle` animation.
 The tool rewrites the atlas page to the target Unity texture name, converts
@@ -69,11 +75,19 @@ files retained.
 On Windows with Python 3.12 and `manager\requirements-build.txt` installed:
 
 ```powershell
-.\build-spine-manager.ps1 -Version 1.1.2
+py -3.12 -m venv .venv-manager
+.\.venv-manager\Scripts\python.exe -m pip install -r manager\requirements-build.txt
+.\build-spine-manager.ps1 -Version 1.1.4
 ```
+
+The build script downloads the official SpineSkeletonDataConverter v3.8
+Windows release into `.codex-work`, verifies SHA-256
+`b2ca82e46f1f4ca463abf0ccfab32e3c01eb0dd89fc7289b6478f728ca8ed68a`,
+and embeds it in the one-file executable. Internet access is required only when
+that verified converter is not already cached.
 
 The executable is written to:
 
 ```text
-dist\spine-manager\bazaar_spine_manager.exe
+dist\spine-manager\TheBazaarSpineManager.exe
 ```

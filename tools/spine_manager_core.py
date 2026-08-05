@@ -10,6 +10,8 @@ import os
 import re
 import shutil
 import struct
+import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -27,6 +29,7 @@ from adapter_registry import AdapterRecord, AdapterRegistry
 from bazaar_skin_manager import (
     DEFAULT_RUNTIME,
     GameInstall,
+    atomic_copy_file,
     existing_install_record,
     install_many,
     manager_root,
@@ -42,12 +45,17 @@ STATE_ROOT = Path(
     )
 )
 WORKSPACE_ROOT = STATE_ROOT / "workspace"
+ORIGINAL_BACKUP_ROOT = STATE_ROOT / "original-backups"
+LEGACY_BACKUP_ROOT = STATE_ROOT / "backups"
+LEGACY_INSTALL_MANIFEST = STATE_ROOT / "install-manifest.json"
 MAX_ARCHIVE_BYTES = 128 * 1024 * 1024
 MAX_EXTRACTED_BYTES = 512 * 1024 * 1024
 LOGGER = logging.getLogger("bazaar_spine_manager.core")
 ProgressCallback = Callable[[str], None]
-SUPPORTED_SPINE_VERSIONS = ("4.1", "4.2")
 TARGET_SPINE_VERSION = "4.2.43"
+CONVERTIBLE_SPINE_VERSIONS = ("3.5", "3.6", "3.7", "3.8", "4.0", "4.1")
+SPINE_CONVERTER_VERSION = "v3.8"
+SPINE_CONVERTER_NAME = "SpineSkeletonDataConverter.exe"
 
 
 @contextmanager
@@ -121,6 +129,7 @@ class SpinePackage:
     atlas_scale: float
     width: int
     height: int
+    source_version: str | None = None
 
 
 @dataclass(frozen=True)
@@ -177,6 +186,83 @@ def atlas_scale(text: str) -> float:
         if line.startswith("scale:"):
             return float(line.split(":", 1)[1])
     return 1.0
+
+
+def _spine_converter_path() -> Path:
+    configured = os.environ.get("BAZAAR_SPINE_CONVERTER")
+    if configured:
+        candidate = Path(configured).expanduser().resolve()
+        if candidate.is_file():
+            return candidate
+        raise FileNotFoundError(f"Spine converter does not exist: {candidate}")
+    resource_root = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parents[1]))
+    candidates = (
+        resource_root / "spine-converter" / SPINE_CONVERTER_NAME,
+        resource_root
+        / ".codex-work"
+        / "spine-converter"
+        / SPINE_CONVERTER_VERSION
+        / SPINE_CONVERTER_NAME,
+    )
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate
+    raise RuntimeError(
+        "缺少 Spine 旧版本转换模块。请使用 build-spine-manager.ps1 构建完整 EXE，"
+        "或通过 BAZAAR_SPINE_CONVERTER 指定 SpineSkeletonDataConverter.exe。"
+    )
+
+
+def _convert_spine_json(source: Path, output: Path) -> dict:
+    converter = _spine_converter_path()
+    output.parent.mkdir(parents=True, exist_ok=True)
+    command = [str(converter), str(source), str(output), "-v", TARGET_SPINE_VERSION]
+    LOGGER.info(
+        "spine_conversion_start converter=%s source=%s output=%s target=%s",
+        converter,
+        source,
+        output,
+        TARGET_SPINE_VERSION,
+    )
+    try:
+        completed = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=180,
+            check=False,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+    except subprocess.TimeoutExpired as error:
+        raise RuntimeError("Spine 旧版本转换超时。") from error
+    output_text = "\n".join(
+        item.strip() for item in (completed.stdout, completed.stderr) if item.strip()
+    )
+    if completed.returncode != 0 or not output.is_file():
+        LOGGER.error(
+            "spine_conversion_failed returncode=%s output=%s",
+            completed.returncode,
+            output_text,
+        )
+        raise RuntimeError(
+            f"Spine 旧版本转换失败（退出码 {completed.returncode}）。"
+            + (f"\n{output_text}" if output_text else "")
+        )
+    payload = json.loads(output.read_text(encoding="utf-8-sig"))
+    converted_version = str((payload.get("skeleton") or {}).get("spine") or "")
+    if not converted_version.startswith("4.2"):
+        raise RuntimeError(
+            f"Spine 转换器输出版本异常：{converted_version or '未知'}。"
+        )
+    LOGGER.info(
+        "spine_conversion_complete target=%s output_bytes=%s details=%s",
+        converted_version,
+        output.stat().st_size,
+        output_text,
+    )
+    return payload
 
 
 @dataclass(frozen=True)
@@ -327,9 +413,23 @@ def import_spine_package(source: Path, workspace: Path = WORKSPACE_ROOT) -> Spin
     payload = json.loads(json_path.read_text(encoding="utf-8-sig"))
     skeleton = payload.get("skeleton") or {}
     version = str(skeleton.get("spine") or "")
-    if not version.startswith(SUPPORTED_SPINE_VERSIONS):
+    source_version = None
+    if version.startswith(CONVERTIBLE_SPINE_VERSIONS):
+        source_version = version
+        converted_path = staging / "normalized" / "skeleton.json"
+        payload = _convert_spine_json(json_path, converted_path)
+        json_path.unlink()
+        json_path = converted_path
+        version = str((payload.get("skeleton") or {}).get("spine") or "")
+        LOGGER.info(
+            "spine_package_converted source_version=%s target_version=%s",
+            source_version,
+            version,
+        )
+    elif not version.startswith("4.2"):
         raise ValueError(
-            f"Spine 4.1 or 4.2 JSON is required; found {version or 'unknown'}."
+            "版本不兼容，请使用 Spine 3.5–3.8、4.0、4.1 或 4.2 的资源"
+            f"（检测到：{version or '未知'}）。"
         )
     skins = tuple(
         str(item.get("name"))
@@ -360,6 +460,7 @@ def import_spine_package(source: Path, workspace: Path = WORKSPACE_ROOT) -> Spin
         atlas_scale=atlas_scale(atlas_text),
         width=width,
         height=height,
+        source_version=source_version,
     )
 
 
@@ -490,14 +591,6 @@ def _premultiply(image: Image.Image) -> Image.Image:
 
 def _prepared_json(package: SpinePackage, placement: SpinePlacement) -> tuple[str, dict]:
     payload = json.loads(package.json_path.read_text(encoding="utf-8-sig"))
-    skeleton = payload.setdefault("skeleton", {})
-    if package.version.startswith("4.1"):
-        skeleton["spine"] = TARGET_SPINE_VERSION
-        LOGGER.info(
-            "spine_json_version_normalized source=%s target=%s",
-            package.version,
-            TARGET_SPINE_VERSION,
-        )
     animations = payload.get("animations") or {}
     if placement.animation not in animations:
         raise ValueError(f"Animation does not exist: {placement.animation}")
@@ -685,6 +778,7 @@ def serialize_spine_request(
             "json_sha256": sha256_file(package.json_path),
             "atlas_sha256": sha256_file(package.atlas_path),
             "texture_sha256": sha256_file(package.texture_path),
+            "source_version": package.source_version,
         },
         "placement": asdict(placement),
     }
@@ -736,11 +830,272 @@ def _load_spine_request(record: dict) -> tuple[SpinePackage, SpineTarget, SpineP
         atlas_scale=atlas_scale(paths["atlas"].read_text(encoding="utf-8-sig")),
         width=width,
         height=height,
+        source_version=package_record.get("source_version"),
     )
     placement = SpinePlacement(**(record.get("placement") or {}))
     if placement.animation not in package.animations:
         raise ValueError(f"Animation does not exist: {placement.animation}")
     return package, target, placement
+
+
+def original_backup_directory(target: SpineTarget | None = None) -> Path:
+    directory = ORIGINAL_BACKUP_ROOT
+    if target is not None:
+        safe_id = re.sub(r"[^A-Za-z0-9_.-]+", "_", target.adapter_id)
+        directory = directory / safe_id
+    directory.mkdir(parents=True, exist_ok=True)
+    return directory
+
+
+def _backup_record_path(target: SpineTarget) -> Path:
+    return original_backup_directory(target) / "backup-record.json"
+
+
+def _read_backup_record(target: SpineTarget) -> dict | None:
+    path = _backup_record_path(target)
+    if not path.is_file():
+        return None
+    try:
+        record = json.loads(path.read_text(encoding="utf-8-sig"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as error:
+        raise RuntimeError(f"Spine 原始备份记录无法读取：{path}") from error
+    if record.get("adapter_id") != target.adapter_id:
+        raise RuntimeError(f"Spine 原始备份记录目标不匹配：{path}")
+    return record
+
+
+def _legacy_backup_record(game: GameInstall, target: SpineTarget) -> dict | None:
+    if not LEGACY_INSTALL_MANIFEST.is_file():
+        return None
+    try:
+        legacy = json.loads(LEGACY_INSTALL_MANIFEST.read_text(encoding="utf-8-sig"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as error:
+        raise RuntimeError("旧版 Spine 部署记录无法读取。") from error
+    legacy_target = legacy.get("target") or {}
+    if legacy_target.get("adapter_id") != target.adapter_id:
+        return None
+    if Path(legacy.get("game_dir") or "").resolve() != game.game_dir.resolve():
+        return None
+    return {
+        "schema_version": 1,
+        "adapter_id": target.adapter_id,
+        "game_dir": str(game.game_dir.resolve()),
+        "bundles": [
+            {
+                "target": legacy.get("bundle"),
+                "backup": legacy.get("bundle_backup"),
+                "original_sha256": legacy.get("bundle_original_sha256"),
+                "deployed_sha256": legacy.get("bundle_patched_sha256"),
+            }
+        ],
+        "catalog": {
+            "target": legacy.get("catalog"),
+            "backup": legacy.get("catalog_backup"),
+            "original_sha256": legacy.get("catalog_original_sha256"),
+            "deployed_sha256": legacy.get("catalog_patched_sha256"),
+        },
+        "legacy_manifest": str(LEGACY_INSTALL_MANIFEST),
+    }
+
+
+def _validated_redeploy_record(game: GameInstall, target: SpineTarget) -> dict | None:
+    record = _read_backup_record(target) or _legacy_backup_record(game, target)
+    if record is None:
+        return None
+    if Path(record.get("game_dir") or "").resolve() != game.game_dir.resolve():
+        raise RuntimeError("Spine 原始备份属于另一个游戏目录。")
+    expected = {
+        str(_bundle_path(game, contract).resolve()).casefold(): contract
+        for contract in _bundle_contracts(target)
+    }
+    bundles = record.get("bundles") or []
+    if not bundles:
+        raise RuntimeError("Spine 原始备份记录中没有 Bundle。")
+    normalized_bundles = []
+    for item in bundles:
+        target_path = Path(item.get("target") or "").resolve()
+        contract = expected.get(str(target_path).casefold())
+        if contract is None:
+            raise RuntimeError(f"Spine 备份目标不属于当前适配器：{target_path}")
+        backup = Path(item.get("backup") or "").resolve()
+        if not target_path.is_file() or not backup.is_file():
+            raise RuntimeError(f"Spine 原始 Bundle 或备份缺失：{target_path}")
+        original_sha256 = str(item.get("original_sha256") or "").casefold()
+        deployed_sha256 = str(item.get("deployed_sha256") or "").casefold()
+        if sha256_file(backup).casefold() != original_sha256:
+            raise RuntimeError(f"Spine 原始 Bundle 备份校验失败：{backup}")
+        supported = set(contract.supported_original_sha256)
+        if supported and original_sha256 not in supported:
+            raise RuntimeError(f"Spine 原始 Bundle 不受适配器授权：{backup}")
+        current_sha256 = sha256_file(target_path).casefold()
+        if current_sha256 == original_sha256:
+            state = "original"
+        elif deployed_sha256 and current_sha256 == deployed_sha256:
+            state = "deployed"
+        else:
+            raise RuntimeError(
+                f"当前 Spine Bundle 既不是原始文件，也不是工具上次部署的文件：{target_path.name}"
+            )
+        normalized_bundles.append(
+            {
+                **item,
+                "target": target_path,
+                "backup": backup,
+                "state": state,
+            }
+        )
+    catalog_item = record.get("catalog") or {}
+    catalog = Path(catalog_item.get("target") or "").resolve()
+    expected_catalog = (
+        game.game_dir
+        / "TheBazaar_Data"
+        / "StreamingAssets"
+        / "aa"
+        / "catalog.bin"
+    ).resolve()
+    backup_catalog = Path(catalog_item.get("backup") or "").resolve()
+    if catalog != expected_catalog or not catalog.is_file() or not backup_catalog.is_file():
+        raise RuntimeError("Spine 原始 catalog.bin 备份缺失或路径不匹配。")
+    catalog_original = str(catalog_item.get("original_sha256") or "").casefold()
+    catalog_deployed = str(catalog_item.get("deployed_sha256") or "").casefold()
+    if sha256_file(backup_catalog).casefold() != catalog_original:
+        raise RuntimeError("Spine 原始 catalog.bin 备份校验失败。")
+    catalog_current = sha256_file(catalog).casefold()
+    if catalog_current == catalog_original:
+        catalog_state = "original"
+    elif catalog_deployed and catalog_current == catalog_deployed:
+        catalog_state = "deployed"
+    else:
+        raise RuntimeError("当前 catalog.bin 既不是原始文件，也不是工具上次部署的文件。")
+    return {
+        **record,
+        "bundles": normalized_bundles,
+        "catalog": {
+            **catalog_item,
+            "target": catalog,
+            "backup": backup_catalog,
+            "state": catalog_state,
+        },
+    }
+
+
+def _unified_record_accepts_current(game: GameInstall, target: SpineTarget) -> bool:
+    installed = existing_install_record() or {}
+    recorded = {
+        str(Path(item.get("target") or "").resolve()).casefold(): item
+        for item in installed.get("native_patches") or []
+    }
+    if not recorded:
+        return False
+    for contract in _bundle_contracts(target):
+        path = _bundle_path(game, contract).resolve()
+        if not path.is_file():
+            return False
+        current_sha256 = sha256_file(path).casefold()
+        supported = set(contract.supported_original_sha256)
+        if not supported or current_sha256 in supported:
+            continue
+        item = recorded.get(str(path).casefold())
+        backup = Path(item.get("backup") or "") if item else None
+        if not (
+            item
+            and current_sha256 == str(item.get("patched_sha256") or "").casefold()
+            and backup is not None
+            and backup.is_file()
+            and sha256_file(backup).casefold() in supported
+        ):
+            return False
+    return True
+
+
+@contextmanager
+def _restore_recorded_originals(
+    game: GameInstall,
+    target: SpineTarget,
+    staging: Path,
+    progress: ProgressCallback | None = None,
+) -> Iterator[dict | None]:
+    if _unified_record_accepts_current(game, target):
+        yield None
+        return
+    record = _validated_redeploy_record(game, target)
+    if record is None:
+        yield None
+        return
+    files = [*record["bundles"], record["catalog"]]
+    deployed = [item for item in files if item["state"] == "deployed"]
+    snapshots: list[tuple[Path, Path]] = []
+    if deployed:
+        with _stage(progress, "从原始备份准备再次替换"):
+            staging.mkdir(parents=True, exist_ok=True)
+            for index, item in enumerate(deployed):
+                destination = Path(item["target"])
+                snapshot = staging / f"previous-spine-{index:02d}-{destination.name}"
+                atomic_copy_file(destination, snapshot)
+                snapshots.append((snapshot, destination))
+                atomic_copy_file(Path(item["backup"]), destination)
+    try:
+        yield record
+    except Exception:
+        for snapshot, destination in snapshots:
+            atomic_copy_file(snapshot, destination)
+        LOGGER.exception("spine_redeploy_original_restore_rolled_back")
+        raise
+
+
+def _record_original_backups(
+    result: dict,
+    game: GameInstall,
+    target: SpineTarget,
+) -> Path:
+    directory = original_backup_directory(target)
+    bundle_records = []
+    for item in result.get("native_patches") or []:
+        spine_entries = item.get("spine") or []
+        if not any(entry.get("adapter_id") == target.adapter_id for entry in spine_entries):
+            continue
+        source = Path(item["backup"])
+        destination = directory / Path(item["target"]).name
+        if destination.is_file() and sha256_file(destination) != item["original_sha256"]:
+            raise RuntimeError(f"固定 Spine 原始备份校验失败：{destination}")
+        if not destination.is_file():
+            atomic_copy_file(source, destination)
+        bundle_records.append(
+            {
+                "target": item["target"],
+                "backup": str(destination),
+                "original_sha256": item["original_sha256"],
+                "deployed_sha256": item["patched_sha256"],
+            }
+        )
+    catalog_patch = result.get("native_catalog_patch") or {}
+    if not bundle_records or not catalog_patch:
+        raise RuntimeError("统一部署结果中缺少 Spine 原始备份信息。")
+    catalog_source = Path(catalog_patch["backup"])
+    catalog_destination = directory / "catalog.bin"
+    if (
+        catalog_destination.is_file()
+        and sha256_file(catalog_destination) != catalog_patch["original_sha256"]
+    ):
+        raise RuntimeError(f"固定 Spine catalog.bin 备份校验失败：{catalog_destination}")
+    if not catalog_destination.is_file():
+        atomic_copy_file(catalog_source, catalog_destination)
+    record = {
+        "schema_version": 1,
+        "adapter_id": target.adapter_id,
+        "game_dir": str(game.game_dir.resolve()),
+        "bundles": bundle_records,
+        "catalog": {
+            "target": catalog_patch["target"],
+            "backup": str(catalog_destination),
+            "original_sha256": catalog_patch["original_sha256"],
+            "deployed_sha256": catalog_patch["patched_sha256"],
+        },
+    }
+    path = _backup_record_path(target)
+    path.write_text(json.dumps(record, ensure_ascii=False, indent=2), encoding="utf-8")
+    LOGGER.info("spine_original_backups_recorded path=%s", path)
+    return directory
 
 
 def spine_patch_plan_issues(requests: list[dict], game: GameInstall) -> list[str]:
@@ -942,8 +1297,17 @@ def deploy(
         with _stage(progress, "保留当前皮肤管理器工作区"):
             packs = _staged_existing_packs(record, root)
             runtime = _staged_runtime(record, root)
-        with _stage(progress, "通过皮肤管理器统一事务部署"):
-            return install_many(runtime, packs, game, spine_requests=requests)
+        with _restore_recorded_originals(game, target, root, progress) as redeploy_record:
+            with _stage(progress, "通过皮肤管理器统一事务部署"):
+                result = install_many(runtime, packs, game, spine_requests=requests)
+        try:
+            backup_directory = _record_original_backups(result, game, target)
+            result["spine_original_backup_directory"] = str(backup_directory)
+        except Exception:
+            LOGGER.exception("spine_original_backup_record_failed")
+        if redeploy_record and redeploy_record.get("legacy_manifest"):
+            Path(redeploy_record["legacy_manifest"]).unlink(missing_ok=True)
+        return result
 
 
 def installation_manifest() -> dict | None:

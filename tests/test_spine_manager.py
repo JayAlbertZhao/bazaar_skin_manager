@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import sys
@@ -26,6 +27,8 @@ from spine_manager_core import (  # noqa: E402
     SpinePackage,
     SpinePlacement,
     SpineTarget,
+    _record_original_backups,
+    _restore_recorded_originals,
     _stage,
     _prepared_json,
     _rewrite_atlas,
@@ -39,12 +42,12 @@ from spine_static_preview import render_setup_pose  # noqa: E402
 
 
 class SpineManagerTests(unittest.TestCase):
-    def create_package(self, root: Path) -> Path:
+    def create_package(self, root: Path, version: str = "4.2.43") -> Path:
         source = root / "source"
         source.mkdir()
         payload = {
             "skeleton": {
-                "spine": "4.2.43",
+                "spine": version,
                 "x": -10,
                 "y": -20,
                 "width": 100,
@@ -78,11 +81,38 @@ class SpineManagerTests(unittest.TestCase):
     def test_imports_safe_spine_42_single_page_package(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
-            package = import_spine_package(self.create_package(root), root / "workspace")
+            with mock.patch("spine_manager_core._convert_spine_json") as converter:
+                package = import_spine_package(
+                    self.create_package(root), root / "workspace"
+                )
+            converter.assert_not_called()
             self.assertEqual(package.version, "4.2.43")
+            self.assertIsNone(package.source_version)
             self.assertEqual(package.animations, ("walk", "wave"))
             self.assertEqual(package.skins, ("default",))
             self.assertEqual((package.width, package.height), (32, 32))
+
+    def test_routes_spine_35_through_40_through_converter(self) -> None:
+        for version in ("3.5.51", "3.6.53", "3.7.94", "3.8.99", "4.0.64"):
+            with self.subTest(version=version), tempfile.TemporaryDirectory() as temp:
+                root = Path(temp)
+
+                def convert(source_json: Path, output_json: Path) -> dict:
+                    converted = json.loads(source_json.read_text(encoding="utf-8"))
+                    converted["skeleton"]["spine"] = "4.2.43"
+                    output_json.parent.mkdir(parents=True, exist_ok=True)
+                    output_json.write_text(json.dumps(converted), encoding="utf-8")
+                    return converted
+
+                with mock.patch(
+                    "spine_manager_core._convert_spine_json", side_effect=convert
+                ) as converter:
+                    package = import_spine_package(
+                        self.create_package(root, version), root / "workspace"
+                    )
+                converter.assert_called_once()
+                self.assertEqual(package.version, "4.2.43")
+                self.assertEqual(package.source_version, version)
 
     def test_imports_spine_41_multi_page_atlas_and_ignores_source_images(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
@@ -91,7 +121,9 @@ class SpineManagerTests(unittest.TestCase):
             (source / "images").mkdir(parents=True)
             payload = {
                 "skeleton": {"spine": "4.1.24", "width": 64, "height": 64},
-                "bones": [{"name": "root"}],
+                "bones": [
+                    {"name": "root", "transform": "noRotationOrReflection"}
+                ],
                 "slots": [{"name": "body", "bone": "root", "attachment": "second"}],
                 "skins": [
                     {
@@ -115,9 +147,29 @@ class SpineManagerTests(unittest.TestCase):
             Image.new("RGBA", (8, 6), (0, 255, 0, 255)).save(source / "page2.png")
             Image.new("RGBA", (4, 4), (0, 0, 255, 255)).save(source / "images" / "source.png")
 
-            package = import_spine_package(source, root / "workspace")
+            def convert(source_json: Path, output_json: Path) -> dict:
+                converted = json.loads(source_json.read_text(encoding="utf-8"))
+                converted["skeleton"]["spine"] = "4.2.43"
+                for bone in converted["bones"]:
+                    if "transform" in bone:
+                        bone["inherit"] = bone.pop("transform")
+                output_json.parent.mkdir(parents=True, exist_ok=True)
+                output_json.write_text(json.dumps(converted), encoding="utf-8")
+                return converted
 
-            self.assertEqual(package.version, "4.1.24")
+            with mock.patch(
+                "spine_manager_core._convert_spine_json", side_effect=convert
+            ) as converter:
+                package = import_spine_package(source, root / "workspace")
+
+            converter.assert_called_once()
+            self.assertEqual(package.version, "4.2.43")
+            self.assertEqual(package.source_version, "4.1.24")
+            converted = json.loads(package.json_path.read_text(encoding="utf-8"))
+            self.assertEqual(
+                converted["bones"][0]["inherit"], "noRotationOrReflection"
+            )
+            self.assertNotIn("transform", converted["bones"][0])
             self.assertEqual((package.width, package.height), (8, 14))
             self.assertEqual(package.atlas_scale, 0.5)
             atlas = package.atlas_path.read_text(encoding="utf-8")
@@ -137,6 +189,21 @@ class SpineManagerTests(unittest.TestCase):
             )
             self.assertEqual(prepared["skeleton"]["spine"], "4.2.43")
             self.assertEqual(json.loads(text)["skeleton"]["spine"], "4.2.43")
+
+    def test_rejects_versions_outside_supported_conversion_range(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self.create_package(root)
+            source = root / "source"
+            payload = json.loads((source / "hero.json").read_text(encoding="utf-8"))
+            payload["skeleton"]["spine"] = "4.3.00"
+            (source / "hero.json").write_text(json.dumps(payload), encoding="utf-8")
+            with (
+                mock.patch("spine_manager_core._convert_spine_json") as converter,
+                self.assertRaisesRegex(ValueError, "版本不兼容.*3.5.*4.2"),
+            ):
+                import_spine_package(source, root / "workspace")
+            converter.assert_not_called()
 
     def test_prepared_json_applies_root_offsets_and_idle_alias(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
@@ -255,6 +322,80 @@ class SpineManagerTests(unittest.TestCase):
             self.assertEqual(combined[0]["mode"], "composed_native_bundle")
             self.assertEqual(normalized[0]["deployed_bundles"][0]["prefix"], target.prefix)
 
+    def test_recorded_original_allows_direct_b_to_c_redeployment(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            game_root = root / "game"
+            relative = "TheBazaar_Data/StreamingAssets/aa/StandaloneWindows64/skin_test.bundle"
+            bundle = game_root / relative
+            catalog = game_root / "TheBazaar_Data/StreamingAssets/aa/catalog.bin"
+            bundle.parent.mkdir(parents=True)
+            catalog.parent.mkdir(parents=True, exist_ok=True)
+            original_bundle = b"spine-a"
+            deployed_bundle = b"spine-b"
+            replacement_bundle = b"spine-c"
+            original_catalog = b"catalog-a"
+            deployed_catalog = b"catalog-b"
+            replacement_catalog = b"catalog-c"
+            bundle.write_bytes(deployed_bundle)
+            catalog.write_bytes(deployed_catalog)
+            manager_bundle_backup = root / "manager-backups/skin_test.bundle"
+            manager_catalog_backup = root / "manager-backups/catalog.bin"
+            manager_bundle_backup.parent.mkdir(parents=True)
+            manager_bundle_backup.write_bytes(original_bundle)
+            manager_catalog_backup.write_bytes(original_catalog)
+            digest = lambda value: hashlib.sha256(value).hexdigest()
+            target = SpineTarget(
+                adapter_id="test-default",
+                hero="Test",
+                skin="Skin_TEST_01/A",
+                prefix="Skin_TEST_01a",
+                bundle_relative=relative,
+                unity_version="6000.3.11f1",
+                supported_original_sha256=(digest(original_bundle),),
+                supported_builds=(),
+            )
+            game = GameInstall(
+                game_dir=game_root,
+                manifest=None,
+                build_id=None,
+                complete=True,
+            )
+            result = {
+                "native_patches": [
+                    {
+                        "target": str(bundle),
+                        "backup": str(manager_bundle_backup),
+                        "original_sha256": digest(original_bundle),
+                        "patched_sha256": digest(deployed_bundle),
+                        "spine": [{"adapter_id": target.adapter_id}],
+                    }
+                ],
+                "native_catalog_patch": {
+                    "target": str(catalog),
+                    "backup": str(manager_catalog_backup),
+                    "original_sha256": digest(original_catalog),
+                    "patched_sha256": digest(deployed_catalog),
+                },
+            }
+            fixed_backups = root / "fixed-backups"
+            with mock.patch("spine_manager_core.ORIGINAL_BACKUP_ROOT", fixed_backups):
+                directory = _record_original_backups(result, game, target)
+                self.assertEqual((directory / bundle.name).read_bytes(), original_bundle)
+                self.assertEqual((directory / "catalog.bin").read_bytes(), original_catalog)
+                self.assertTrue((directory / "backup-record.json").is_file())
+                with _restore_recorded_originals(
+                    game,
+                    target,
+                    root / "redeploy-staging",
+                ):
+                    self.assertEqual(bundle.read_bytes(), original_bundle)
+                    self.assertEqual(catalog.read_bytes(), original_catalog)
+                    bundle.write_bytes(replacement_bundle)
+                    catalog.write_bytes(replacement_catalog)
+            self.assertEqual(bundle.read_bytes(), replacement_bundle)
+            self.assertEqual(catalog.read_bytes(), replacement_catalog)
+
     def test_verified_default_targets_are_available(self) -> None:
         available = targets()
         self.assertEqual(
@@ -279,6 +420,9 @@ class SpineManagerTests(unittest.TestCase):
         self.assertIn("spine-manager-build.json", build)
         self.assertIn('"--hidden-import", "spine_static_preview"', build)
         self.assertIn("manager\\spine-preview", build)
+        self.assertIn("SpineSkeletonDataConverter.exe", build)
+        self.assertIn("b2ca82e46f1f4ca463abf0ccfab32e3c01eb0dd89fc7289b6478f728ca8ed68a", build)
+        self.assertIn('"--add-binary", "$converterExe;spine-converter"', build)
 
     def test_offline_static_preview_renders_without_web_player(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
@@ -306,7 +450,7 @@ class SpineManagerTests(unittest.TestCase):
         self.assertTrue(messages[-1].startswith("测试阶段完成（"))
         configure_logging()
         self.assertTrue(LOG_PATH.is_file())
-        self.assertEqual(APP_VERSION, "1.1.2")
+        self.assertEqual(APP_VERSION, "1.1.4")
 
     def test_background_exception_is_bound_before_tk_callback(self) -> None:
         source = (TOOLS / "bazaar_spine_manager_ui.py").read_text(encoding="utf-8")
