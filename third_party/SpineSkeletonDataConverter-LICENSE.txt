@@ -1,0 +1,12 @@
+SpineSkeletonDataConverter v3.8
+
+Source and attribution:
+https://github.com/wang606/SpineSkeletonDataConverter
+
+Copyright belongs to the SpineSkeletonDataConverter contributors.
+
+This component is distributed under the PolyForm Noncommercial License 1.0.0:
+https://polyformproject.org/licenses/noncommercial/1.0.0
+
+The component may be used, modified, and shared only for purposes permitted by
+that license. It is provided as-is, without warranty or liability.

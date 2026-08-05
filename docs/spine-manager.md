@@ -9,7 +9,7 @@ Addressables paths, prefab references, object IDs, and bundle filename.
 The importer supports this deterministic contract:
 
 - one ZIP or extracted directory;
-- one Spine 4.1 or 4.2 JSON file;
+- one Spine 3.5–3.8, 4.0, 4.1, or 4.2 JSON file;
 - one `.atlas` file;
 - one or more PNG pages declared by that atlas;
 - a `default` skin;
@@ -19,8 +19,9 @@ PNG files below source folders such as `images/` are ignored unless the atlas
 declares them as pages. Multi-page atlases are merged vertically into one
 runtime texture and every region coordinate is translated to the merged page,
 because the verified Bazaar target bundle contains one Texture2D and one atlas
-material. Packages exported by Spine 4.1 have their JSON runtime version marker
-normalized to the game's Spine 4.2 runtime during deployment.
+material. Packages exported by Spine 3.5–4.1 are structurally converted to
+Spine 4.2.43 by the pinned, hash-verified converter bundled with the release.
+Native Spine 4.2 packages bypass conversion.
 
 The selected animation is copied to the game's expected `idle` animation.
 The tool rewrites the atlas page to the target Unity texture name, converts
@@ -69,7 +70,7 @@ files retained.
 On Windows with Python 3.12 and `manager\requirements-build.txt` installed:
 
 ```powershell
-.\build-spine-manager.ps1 -Version 1.2.0
+.\build-spine-manager.ps1 -Version 1.4.14
 ```
 
 The executable is written to:

@@ -543,7 +543,7 @@ class ModManagerStudio:
         ttk.Label(
             heading,
             text=(
-                "皮肤管理器内置组件 · 导入 Spine 4.1/4.2 资源、离线预览位置，"
+                "皮肤管理器内置组件 · 导入 Spine 3.5–3.8、4.0–4.2 资源、离线预览位置，"
                 "部署与恢复继续使用统一事务。"
             ),
             style="Muted.TLabel",
@@ -3446,9 +3446,12 @@ def main() -> int:
         try:
             from archspec.cpu import host
             import fmod_toolkit.fmod  # noqa: F401
+            from spine_manager_core import _spine_converter_path
 
             if not host().name:
                 return 5
+            if _spine_converter_path().name != "SpineSkeletonDataConverter.exe":
+                return 11
             # Exercise the frozen Tcl/Tk payload, not just the Python import.
             # A mismatched tcl86t.dll and init.tcl otherwise survives packaging
             # and only fails when the user opens the manager.

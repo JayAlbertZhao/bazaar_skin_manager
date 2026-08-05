@@ -91,7 +91,9 @@ Download the software artifacts from
 
 The installer and portable ZIP contain a single manager executable. Skin creation
 and Spine animation import are already integrated into that executable. The animation
-page accepts complete Spine 4.1/4.2 ZIP packages, including multi-page atlases.
+page accepts complete Spine 3.5–3.8 and 4.0–4.2 ZIP packages, including
+multi-page atlases. Older packages are converted to Spine 4.2.43 with the
+pinned, hash-verified converter bundled in the release.
 
 The installer is per-user and does not require administrator rights. If a
 release is unsigned, Windows may display a reputation warning; verify the

@@ -10,6 +10,8 @@ import os
 import re
 import shutil
 import struct
+import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -46,8 +48,10 @@ MAX_ARCHIVE_BYTES = 128 * 1024 * 1024
 MAX_EXTRACTED_BYTES = 512 * 1024 * 1024
 LOGGER = logging.getLogger("bazaar_spine_manager.core")
 ProgressCallback = Callable[[str], None]
-SUPPORTED_SPINE_VERSIONS = ("4.1", "4.2")
 TARGET_SPINE_VERSION = "4.2.43"
+CONVERTIBLE_SPINE_VERSIONS = ("3.5", "3.6", "3.7", "3.8", "4.0", "4.1")
+SPINE_CONVERTER_VERSION = "v3.8"
+SPINE_CONVERTER_NAME = "SpineSkeletonDataConverter.exe"
 
 
 @contextmanager
@@ -121,6 +125,7 @@ class SpinePackage:
     atlas_scale: float
     width: int
     height: int
+    source_version: str | None = None
 
 
 @dataclass(frozen=True)
@@ -177,6 +182,86 @@ def atlas_scale(text: str) -> float:
         if line.startswith("scale:"):
             return float(line.split(":", 1)[1])
     return 1.0
+
+
+def _spine_converter_path() -> Path:
+    configured = os.environ.get("BAZAAR_SPINE_CONVERTER")
+    if configured:
+        candidate = Path(configured).expanduser().resolve()
+        if candidate.is_file():
+            return candidate
+        raise FileNotFoundError(f"Spine converter does not exist: {candidate}")
+    resource_root = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parents[1]))
+    candidates = (
+        resource_root / "spine-converter" / SPINE_CONVERTER_NAME,
+        resource_root
+        / ".codex-work"
+        / "spine-converter"
+        / SPINE_CONVERTER_VERSION
+        / SPINE_CONVERTER_NAME,
+    )
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate
+    raise RuntimeError(
+        "缺少 Spine 旧版本转换模块。请使用完整发布版，或通过 "
+        "BAZAAR_SPINE_CONVERTER 指定 SpineSkeletonDataConverter.exe。"
+    )
+
+
+def _convert_spine_json(source: Path, output: Path) -> dict:
+    converter = _spine_converter_path()
+    output.parent.mkdir(parents=True, exist_ok=True)
+    command = [str(converter), str(source), str(output), "-v", TARGET_SPINE_VERSION]
+    LOGGER.info(
+        "spine_conversion_start converter=%s source=%s output=%s target=%s",
+        converter,
+        source,
+        output,
+        TARGET_SPINE_VERSION,
+    )
+    try:
+        completed = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=180,
+            check=False,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+    except subprocess.TimeoutExpired as error:
+        raise RuntimeError("Spine 旧版本转换超时。") from error
+    output_text = "\n".join(
+        item.strip() for item in (completed.stdout, completed.stderr) if item.strip()
+    )
+    if completed.returncode != 0 or not output.is_file():
+        raise RuntimeError(
+            f"Spine 旧版本转换失败（退出码 {completed.returncode}）。"
+            + (f"\n{output_text}" if output_text else "")
+        )
+    if output.stat().st_size > MAX_EXTRACTED_BYTES:
+        output.unlink(missing_ok=True)
+        raise RuntimeError("Spine 转换结果超过安全大小限制。")
+    try:
+        payload = json.loads(output.read_text(encoding="utf-8-sig"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as error:
+        output.unlink(missing_ok=True)
+        raise RuntimeError("Spine 转换器输出的 JSON 无法读取。") from error
+    converted_version = str((payload.get("skeleton") or {}).get("spine") or "")
+    if not converted_version.startswith("4.2"):
+        output.unlink(missing_ok=True)
+        raise RuntimeError(
+            f"Spine 转换器输出版本异常：{converted_version or '未知'}。"
+        )
+    LOGGER.info(
+        "spine_conversion_complete target=%s output_bytes=%s details=%s",
+        converted_version,
+        output.stat().st_size,
+        output_text,
+    )
+    return payload
 
 
 @dataclass(frozen=True)
@@ -328,9 +413,23 @@ def import_spine_package(source: Path, workspace: Path = WORKSPACE_ROOT) -> Spin
     payload = json.loads(json_path.read_text(encoding="utf-8-sig"))
     skeleton = payload.get("skeleton") or {}
     version = str(skeleton.get("spine") or "")
-    if not version.startswith(SUPPORTED_SPINE_VERSIONS):
+    source_version = None
+    if version.startswith(CONVERTIBLE_SPINE_VERSIONS):
+        source_version = version
+        converted_path = staging / "normalized" / "skeleton.json"
+        payload = _convert_spine_json(json_path, converted_path)
+        json_path.unlink()
+        json_path = converted_path
+        version = str((payload.get("skeleton") or {}).get("spine") or "")
+        LOGGER.info(
+            "spine_package_converted source_version=%s target_version=%s",
+            source_version,
+            version,
+        )
+    elif not version.startswith("4.2"):
         raise ValueError(
-            f"Spine 4.1 or 4.2 JSON is required; found {version or 'unknown'}."
+            "版本不兼容，请使用 Spine 3.5–3.8、4.0、4.1 或 4.2 的资源"
+            f"（检测到：{version or '未知'}）。"
         )
     skins = tuple(
         str(item.get("name"))
@@ -361,6 +460,7 @@ def import_spine_package(source: Path, workspace: Path = WORKSPACE_ROOT) -> Spin
         atlas_scale=atlas_scale(atlas_text),
         width=width,
         height=height,
+        source_version=source_version,
     )
 
 
@@ -491,14 +591,6 @@ def _premultiply(image: Image.Image) -> Image.Image:
 
 def _prepared_json(package: SpinePackage, placement: SpinePlacement) -> tuple[str, dict]:
     payload = json.loads(package.json_path.read_text(encoding="utf-8-sig"))
-    skeleton = payload.setdefault("skeleton", {})
-    if package.version.startswith("4.1"):
-        skeleton["spine"] = TARGET_SPINE_VERSION
-        LOGGER.info(
-            "spine_json_version_normalized source=%s target=%s",
-            package.version,
-            TARGET_SPINE_VERSION,
-        )
     animations = payload.get("animations") or {}
     if placement.animation not in animations:
         raise ValueError(f"Animation does not exist: {placement.animation}")
@@ -686,6 +778,7 @@ def serialize_spine_request(
             "json_sha256": sha256_file(package.json_path),
             "atlas_sha256": sha256_file(package.atlas_path),
             "texture_sha256": sha256_file(package.texture_path),
+            "source_version": package.source_version,
         },
         "placement": asdict(placement),
     }
@@ -737,6 +830,7 @@ def _load_spine_request(record: dict) -> tuple[SpinePackage, SpineTarget, SpineP
         atlas_scale=atlas_scale(paths["atlas"].read_text(encoding="utf-8-sig")),
         width=width,
         height=height,
+        source_version=package_record.get("source_version"),
     )
     placement = SpinePlacement(**(record.get("placement") or {}))
     if placement.animation not in package.animations:

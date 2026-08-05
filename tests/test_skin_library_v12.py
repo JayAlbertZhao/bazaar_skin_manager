@@ -231,14 +231,25 @@ class FirstClassAssetLibraryTests(unittest.TestCase):
                     if path.is_file():
                         output.write(path, path.relative_to(source).as_posix())
 
-            library = AssetLibrary(root / "library")
-            record = library.import_spine(
-                [archive],
-                name="维琳娜",
-                runtime_version="4.2",
-            )
+            def convert(source_json: Path, output_json: Path) -> dict:
+                converted = json.loads(source_json.read_text(encoding="utf-8"))
+                converted["skeleton"]["spine"] = "4.2.43"
+                output_json.parent.mkdir(parents=True, exist_ok=True)
+                output_json.write_text(json.dumps(converted), encoding="utf-8")
+                return converted
 
-            self.assertEqual(record["metadata"]["runtime_version"], "4.1.24")
+            library = AssetLibrary(root / "library")
+            with mock.patch(
+                "spine_manager_core._convert_spine_json", side_effect=convert
+            ):
+                record = library.import_spine(
+                    [archive],
+                    name="维琳娜",
+                    runtime_version="4.2",
+                )
+
+            self.assertEqual(record["metadata"]["runtime_version"], "4.2.43")
+            self.assertEqual(record["metadata"]["source_version"], "4.1.24")
             self.assertEqual(record["metadata"]["animations"], ["loop"])
             self.assertEqual(record["metadata"]["skins"], ["default"])
             self.assertEqual(record["metadata"]["atlas_scale"], 0.33)
