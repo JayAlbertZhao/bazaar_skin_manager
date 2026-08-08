@@ -188,12 +188,90 @@ def alpha_contain_scale(
     return min((right - left) / source_width, (bottom - top) / source_height)
 
 
+def scaled_target_bounds(
+    bounds: tuple[int, int, int, int],
+    factor: float,
+    *,
+    anchor: tuple[float, float] = (0.5, 1.0),
+) -> tuple[int, int, int, int]:
+    """Scale an authored placement rectangle around its declared anchor."""
+    if not 0.25 <= float(factor) <= 3.0:
+        raise ValueError("Character scale must be between 25% and 300%.")
+    left, top, right, bottom = bounds
+    width = right - left
+    height = bottom - top
+    anchor_x = left + width * float(anchor[0])
+    anchor_y = top + height * float(anchor[1])
+    scaled_width = width * float(factor)
+    scaled_height = height * float(factor)
+    return (
+        round(anchor_x - scaled_width * float(anchor[0])),
+        round(anchor_y - scaled_height * float(anchor[1])),
+        round(anchor_x + scaled_width * (1.0 - float(anchor[0]))),
+        round(anchor_y + scaled_height * (1.0 - float(anchor[1]))),
+    )
+
+
 def translate_rgba(source: Image.Image, offset: tuple[int, int]) -> Image.Image:
     """Translate an already-fitted layer without changing its output canvas."""
     image = source.convert("RGBA")
     output = Image.new("RGBA", image.size, (0, 0, 0, 0))
     output.alpha_composite(image, dest=(int(offset[0]), int(offset[1])))
     return output
+
+
+def apply_declared_clip_mask(
+    source: Image.Image,
+    declaration: dict | None,
+) -> Image.Image:
+    """Apply an authored mask while retaining the square output canvas.
+
+    Encounter portraits use the native frame's inner edge as three door
+    panels: left, bottom, and right occlude the character, while the top stays
+    open so hair, hats, and props may rise above the frame.
+    """
+
+    if not declaration:
+        return source.convert("RGBA")
+    if declaration.get("type") != "open_top_inner_frame":
+        raise ValueError(f"Unsupported clip mask: {declaration.get('type')}")
+    reference_size = tuple(
+        int(value) for value in declaration.get("reference_size", source.size)
+    )
+    if len(reference_size) != 2 or min(reference_size) <= 0:
+        raise ValueError("Clip-mask reference_size must contain two positive values.")
+    bounds = tuple(int(value) for value in declaration.get("inner_bounds", ()))
+    if len(bounds) != 4:
+        raise ValueError("Open-top clip mask requires four inner_bounds values.")
+    left, _top, right, bottom = bounds
+    if not (0 <= left < right <= reference_size[0] and 0 < bottom <= reference_size[1]):
+        raise ValueError("Open-top clip-mask inner_bounds are outside reference_size.")
+    radius = int(declaration.get("bottom_corner_radius", 0))
+    if radius < 0:
+        raise ValueError("Clip-mask corner radius must be non-negative.")
+
+    image = source.convert("RGBA")
+    supersample = 4
+    scale_x = image.width / reference_size[0]
+    scale_y = image.height / reference_size[1]
+    mask = Image.new(
+        "L",
+        (image.width * supersample, image.height * supersample),
+        0,
+    )
+    ImageDraw.Draw(mask).rounded_rectangle(
+        (
+            round(left * scale_x * supersample),
+            round(-2 * radius * scale_y * supersample),
+            round(right * scale_x * supersample),
+            round(bottom * scale_y * supersample),
+        ),
+        radius=round(radius * min(scale_x, scale_y) * supersample),
+        fill=255,
+    )
+    mask = mask.resize(image.size, Image.Resampling.LANCZOS)
+    image.putalpha(ImageChops.multiply(image.getchannel("A"), mask))
+    return image
 
 
 def _normalise_output_offsets(
@@ -251,10 +329,23 @@ def split_authored_underlay(
     return foreground, underlay, mask
 
 
-def fit_cover(source: Image.Image, *, size: tuple[int, int]) -> Image.Image:
-    """Resize and center-crop an image to cover a canvas deterministically."""
+def fit_cover(
+    source: Image.Image,
+    *,
+    size: tuple[int, int],
+    zoom: float = 1.0,
+    offset: tuple[int, int] = (0, 0),
+) -> Image.Image:
+    """Resize and crop an image to cover a canvas deterministically.
+
+    ``zoom`` is relative to the minimum cover scale. Positive offsets move the
+    image right/down inside the crop. The crop origin is clamped so adjustments
+    can never expose an empty strip beyond the background edge.
+    """
     source = source.convert("RGBA")
-    scale = max(size[0] / source.width, size[1] / source.height)
+    if zoom < 1.0:
+        raise ValueError("Background zoom must be at least 100% of cover scale.")
+    scale = max(size[0] / source.width, size[1] / source.height) * zoom
     resized = source.resize(
         (
             max(1, int(round(source.width * scale))),
@@ -262,8 +353,10 @@ def fit_cover(source: Image.Image, *, size: tuple[int, int]) -> Image.Image:
         ),
         Image.Resampling.LANCZOS,
     )
-    left = (resized.width - size[0]) // 2
-    top = (resized.height - size[1]) // 2
+    overflow_x = max(0, resized.width - size[0])
+    overflow_y = max(0, resized.height - size[1])
+    left = max(0, min(overflow_x, overflow_x // 2 - int(offset[0])))
+    top = max(0, min(overflow_y, overflow_y // 2 - int(offset[1])))
     return resized.crop((left, top, left + size[0], top + size[1]))
 
 
@@ -635,6 +728,9 @@ def generate_pack(
     adapter_directory: Path = DEFAULT_ADAPTER_DIRECTORY,
     badge_template_root: Path | None = None,
     character_canvas_offset: tuple[int, int] = (0, 0),
+    character_scale: float = 1.0,
+    background_offset: tuple[int, int] = (0, 0),
+    background_scale: float = 1.0,
     output_offsets: dict[str, tuple[int, int]] | None = None,
     allow_partial: bool = False,
 ) -> dict:
@@ -769,6 +865,13 @@ def generate_pack(
         int(character_canvas_offset[0]),
         int(character_canvas_offset[1]),
     )
+    character_scale = float(character_scale)
+    if not 0.25 <= character_scale <= 3.0:
+        raise ValueError("Character scale must be between 25% and 300%.")
+    background_offset = (int(background_offset[0]), int(background_offset[1]))
+    background_scale = float(background_scale)
+    if not 1.0 <= background_scale <= 3.0:
+        raise ValueError("Background scale must be between 100% and 300%.")
     requested_output_offsets = _normalise_output_offsets(output_offsets)
     unknown_adjustments = set(requested_output_offsets) - set(output_recipes)
     if unknown_adjustments:
@@ -842,12 +945,15 @@ def generate_pack(
             shadow = (
                 None if character_shadow is None else character_shadow.crop(crop_box)
             )
-            scale = alpha_contain_scale(
-                fit_reference,
-                target_bounds=tuple(
-                    int(value) for value in output_recipe["target_alpha_bounds"]
-                ),
+            anchor = tuple(
+                float(value) for value in output_recipe.get("anchor", [0.5, 1.0])
             )
+            target_bounds = scaled_target_bounds(
+                tuple(int(value) for value in output_recipe["target_alpha_bounds"]),
+                character_scale,
+                anchor=anchor,
+            )
+            scale = alpha_contain_scale(fit_reference, target_bounds=target_bounds)
             badge_canvas_size = template_images["base"].size
             output_size = tuple(int(value) for value in output_recipe["size"])
             local_template_offset = (
@@ -857,9 +963,6 @@ def generate_pack(
             character_template_offset = (
                 round(character_canvas_offset[0] * scale) + local_template_offset[0],
                 round(character_canvas_offset[1] * scale) + local_template_offset[1],
-            )
-            target_bounds = tuple(
-                int(value) for value in output_recipe["target_alpha_bounds"]
             )
             target_bounds = (
                 target_bounds[0] + character_template_offset[0],
@@ -886,7 +989,7 @@ def generate_pack(
             metrics["layers"] = list(output_recipe.get("layers") or [])
             metrics["template"] = template_metadata
             metrics["character_crop"] = list(crop)
-            if character_canvas_offset != (0, 0) or local_offset != (0, 0):
+            if character_scale != 1.0 or character_canvas_offset != (0, 0) or local_offset != (0, 0):
                 metrics["adjustment"] = {
                     "character_canvas": list(character_canvas_offset),
                     "local_output": list(local_offset),
@@ -895,6 +998,8 @@ def generate_pack(
                         round(character_template_offset[1] * output_size[1] / badge_canvas_size[1]),
                     ],
                 }
+                if character_scale != 1.0:
+                    metrics["adjustment"]["character_scale"] = character_scale
             if cast_shadow_declaration:
                 metrics["cast_shadow_lasso"] = {
                     "method": "authored-coordinate-lasso",
@@ -950,9 +1055,11 @@ def generate_pack(
                 fit_reference = foreground_fit_reference
             elif input_name == "character_shadow":
                 if character_shadow is None:
-                    raise ValueError(
-                        f"{slot} requests character_shadow but no cast-shadow lasso is declared."
-                    )
+                    # Generic hero recipes inherit the Dooley layer stack, but
+                    # most heroes deliberately clear Dooley's authored shadow
+                    # lasso.  In that case the shadow layer is an optional
+                    # transparent no-op, matching LivePreviewRenderer.
+                    continue
                 layer_source = character_shadow
                 fit_reference = foreground_fit_reference
             else:
@@ -963,7 +1070,20 @@ def generate_pack(
                 if fit_reference is not None:
                     fit_reference = fit_reference.transpose(Image.Transpose.FLIP_LEFT_RIGHT)
             if fit == "cover":
-                fitted = fit_cover(layer_source, size=size)
+                effective_background_offset = (
+                    round(background_offset[0] * size[0] / 1024),
+                    round(background_offset[1] * size[1] / 1024),
+                )
+                fitted = fit_cover(
+                    layer_source,
+                    size=size,
+                    zoom=background_scale if input_name == "background" else 1.0,
+                    offset=(
+                        effective_background_offset
+                        if input_name == "background"
+                        else (0, 0)
+                    ),
+                )
             elif fit == "alpha_contain":
                 target_bounds = tuple(
                     int(value)
@@ -972,17 +1092,24 @@ def generate_pack(
                         output_recipe["target_alpha_bounds"],
                     )
                 )
+                anchor = tuple(
+                    float(value)
+                    for value in layer.get(
+                        "anchor",
+                        output_recipe.get("anchor", [0.5, 1.0]),
+                    )
+                )
+                if input_name in {"character", "character_shadow"}:
+                    target_bounds = scaled_target_bounds(
+                        target_bounds,
+                        character_scale,
+                        anchor=anchor,
+                    )
                 fitted = fit_alpha_contain(
                     layer_source,
                     size=size,
                     target_bounds=target_bounds,
-                    anchor=tuple(
-                        float(value)
-                        for value in layer.get(
-                            "anchor",
-                            output_recipe.get("anchor", [0.5, 1.0]),
-                        )
-                    ),
+                    anchor=anchor,
                     fit_reference=fit_reference,
                 )
             else:
@@ -999,14 +1126,29 @@ def generate_pack(
                 fitted = translate_rgba(fitted, effective_character_offset)
             elif input_name == "small_icon" and local_offset != (0, 0):
                 fitted = translate_rgba(fitted, local_offset)
+            fitted = apply_declared_clip_mask(fitted, layer.get("clip_mask"))
             rendered.alpha_composite(fitted)
         metrics = image_metrics(rendered)
         _validate_metrics(slot, metrics, output_recipe)
         metrics["depends_on"] = active_dependencies
         metrics["layers"] = active_layers
+        if "background" in active_dependencies and (
+            background_scale != 1.0 or background_offset != (0, 0)
+        ):
+            metrics["background_adjustment"] = {
+                "reference_offset": list(background_offset),
+                "reference_size": [1024, 1024],
+                "effective_offset": [
+                    round(background_offset[0] * size[0] / 1024),
+                    round(background_offset[1] * size[1] / 1024),
+                ],
+                "scale": background_scale,
+                "fit": "cover",
+                "empty_edges": "clamped",
+            }
         if (
             "character" in active_dependencies
-            and character_canvas_offset != (0, 0)
+            and (character_scale != 1.0 or character_canvas_offset != (0, 0))
         ) or local_offset != (0, 0):
             metrics["adjustment"] = {
                 "character_canvas": list(character_canvas_offset),
@@ -1017,6 +1159,8 @@ def generate_pack(
                     else local_offset
                 ),
             }
+            if character_scale != 1.0:
+                metrics["adjustment"]["character_scale"] = character_scale
         outputs[slot] = rendered
         output_metadata[slot] = metrics
 
@@ -1080,7 +1224,13 @@ def generate_pack(
         "outputs": output_metadata,
         "skipped_outputs": skipped_outputs,
     }
-    if character_canvas_offset != (0, 0) or output_offsets:
+    if (
+        character_scale != 1.0
+        or character_canvas_offset != (0, 0)
+        or background_scale != 1.0
+        or background_offset != (0, 0)
+        or output_offsets
+    ):
         workspace.state["authoring"]["adjustments"] = {
             "character_canvas": list(character_canvas_offset),
             "per_output": {
@@ -1092,6 +1242,14 @@ def generate_pack(
                 for slot in sorted(requested_output_offsets)
             },
         }
+        if character_scale != 1.0:
+            workspace.state["authoring"]["adjustments"]["character_scale"] = character_scale
+        if background_scale != 1.0 or background_offset != (0, 0):
+            workspace.state["authoring"]["adjustments"]["background"] = {
+                "offset": list(background_offset),
+                "scale": background_scale,
+                "fit": "cover",
+            }
     if transparency_declaration:
         workspace.state["authoring"]["foreground"]["authored_transparency"] = {
             "method": "authored-coordinate-lasso",

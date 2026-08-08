@@ -81,10 +81,14 @@ namespace BazaarSkinManager.TheBazaar
                     manifest.Target.Game,
                     "The Bazaar",
                     StringComparison.Ordinal) ||
-                !string.Equals(
+                (!string.Equals(
                     manifest.Target.SteamBuild,
                     "24001960",
-                    StringComparison.Ordinal) ||
+                    StringComparison.Ordinal) &&
+                 !string.Equals(
+                    manifest.Target.SteamBuild,
+                    "24570932",
+                    StringComparison.Ordinal)) ||
                 !string.Equals(
                     manifest.Target.Hero,
                     "Mak",

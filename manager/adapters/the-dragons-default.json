@@ -1,0 +1,67 @@
+{
+  "schema_version": 1,
+  "id": "the-dragons-default",
+  "adapter_version": 1,
+  "supported_builds": ["24570932"],
+  "target": {
+    "game": "the-bazaar",
+    "hero": "Hero8",
+    "skin": "Skin_DRA_01/A",
+    "skin_name_contains": "DRA_01a"
+  },
+  "visual_replacements": [
+    {"slot": "portrait_gameplay", "pixels_per_unit": 256, "match_mode": "exact", "match_names": ["Skin_DRA_01a_Portrait"]},
+    {"slot": "portrait_background", "direct_only": true, "match_mode": "exact", "match_names": []},
+    {"slot": "portrait_small", "match_mode": "exact", "match_names": ["Skin_DRA_01a_Portrait"]},
+    {
+      "slot": "store_image",
+      "deployment": {"mode": "preload_unity_texture2d", "target": "TheBazaar_Data/StreamingAssets/aa/StandaloneWindows64/skin_dra_01_assets_all.bundle", "asset_name": "Skin_DRA_01a_StoreImage_TUI", "unity_version": "6000.3.11f1", "target_size": [2048, 2048], "supported_original_sha256": ["a09837c424b3412706f888f4f70efceeab9bbfdd8ef70f6cc9a7753a6f541748"]},
+      "match_names": ["Skin_DRA_01a_StoreImage_TUI"]
+    },
+    {
+      "slot": "marketplace_list",
+      "deployment": {"mode": "preload_unity_texture2d", "target": "TheBazaar_Data/StreamingAssets/aa/StandaloneWindows64/skin_dra_01_assets_all.bundle", "asset_name": "Skin_DRA_01a_StoreImage_TUI", "unity_version": "6000.3.11f1", "target_size": [2048, 2048], "supported_original_sha256": ["a09837c424b3412706f888f4f70efceeab9bbfdd8ef70f6cc9a7753a6f541748"]},
+      "match_names": ["Skin_DRA_01a_StoreImage_TUI"]
+    },
+    {
+      "slot": "marketplace_details",
+      "deployment": {"mode": "preload_unity_texture2d", "target": "TheBazaar_Data/StreamingAssets/aa/StandaloneWindows64/skin_dra_01_assets_all.bundle", "asset_name": "Skin_DRA_01a_StoreImage_TUI", "unity_version": "6000.3.11f1", "target_size": [2048, 2048], "supported_original_sha256": ["a09837c424b3412706f888f4f70efceeab9bbfdd8ef70f6cc9a7753a6f541748"]},
+      "match_names": ["Skin_DRA_01a_StoreImage_TUI"]
+    },
+    {
+      "slot": "collection_list",
+      "deployment": {"mode": "preload_unity_texture2d", "target": "TheBazaar_Data/StreamingAssets/aa/StandaloneWindows64/skin_dra_01_assets_all.bundle", "asset_name": "Skin_DRA_01a_PreviewCollection_TUI", "unity_version": "6000.3.11f1", "target_size": [512, 512], "supported_original_sha256": ["a09837c424b3412706f888f4f70efceeab9bbfdd8ef70f6cc9a7753a6f541748"]},
+      "match_names": ["Skin_DRA_01a_PreviewCollection_TUI"]
+    },
+    {"slot": "collection_details", "direct_only": true, "match_mode": "exact", "match_names": ["Skin_DRA_01a_Base_P", "Skin_DRA_01a_P"]},
+    {
+      "slot": "daily_weekly",
+      "deployment": {"mode": "preload_unity_texture2d", "target": "TheBazaar_Data/StreamingAssets/aa/StandaloneWindows64/skin_dra_01_assets_all.bundle", "asset_name": "Skin_DRA_01a_PreviewCollection_TUI", "unity_version": "6000.3.11f1", "target_size": [512, 512], "supported_original_sha256": ["a09837c424b3412706f888f4f70efceeab9bbfdd8ef70f6cc9a7753a6f541748"]},
+      "match_names": ["Skin_DRA_01a_PreviewCollection_TUI"]
+    },
+    {
+      "slot": "hero_select",
+      "deployment": {"mode": "preload_unity_texture2d", "target": "TheBazaar_Data/StreamingAssets/aa/StandaloneWindows64/defaultlocalgroup_assets_thedragons_icon.bundle", "asset_name": "TheDragons", "unity_version": "6000.3.11f1", "target_size": [512, 512], "supported_original_sha256": ["5a569924996c4f893aa9c5d867e1affe9b8a9e73cc6bdbd8bd817ddf1f05f52f"]},
+      "direct_only": true,
+      "match_mode": "exact",
+      "match_names": []
+    },
+    {
+      "slot": "hero_icon_small",
+      "pixels_per_unit": 100,
+      "deployment": {"mode": "preload_unity_texture2d", "target": "TheBazaar_Data/StreamingAssets/aa/StandaloneWindows64/defaultlocalgroup_assets_assets_thebazaar_art_ui_icons_heros_rough_icon_flatrough_dra_tui.png.bundle", "asset_name": "Icon_FlatRough_DRA_TUI", "unity_version": "6000.3.11f1", "target_size": [256, 256], "supported_original_sha256": ["0f7e227a68c9f800a7afa384258df808683f9e9b5d33cee0187fe1a04c22e1d3"]},
+      "match_mode": "exact",
+      "match_names": ["Icon_FlatRough_DRA_TUI"]
+    },
+    {"slot": "standing_overlay", "direct_only": true, "match_mode": "exact", "match_names": ["Skin_DRA_01a_Base_P", "Skin_DRA_01a_UI_Base_P", "Skin_DRA_01a_SE_P", "Skin_DRA_01a_SkeletonData"]}
+  ],
+  "authoring_recipe": {
+    "id": "deterministic-raster-v1",
+    "version": 2,
+    "inherits_adapter": "dooley-default",
+    "overrides": {
+      "foreground": {"transparent_lassos": null, "cast_shadow_lasso": null},
+      "outputs": {"hero_select": {"size": [512, 512]}}
+    }
+  }
+}

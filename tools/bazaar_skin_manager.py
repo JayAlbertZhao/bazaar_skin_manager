@@ -20,7 +20,7 @@ from typing import Iterable
 
 
 APP_ID = "1617400"
-MANAGER_VERSION = "1.1.2"
+MANAGER_VERSION = "1.2.10"
 PROJECT_ROOT = Path(
     getattr(sys, "_MEIPASS", Path(__file__).resolve().parents[1])
 )
@@ -1219,6 +1219,7 @@ def install_many(
                     "id": manifest["id"],
                     "version": manifest["version"],
                     "target": manifest.get("target"),
+                    "source_pack": manifest.get("source_pack"),
                     "manifest_sha256": sha256_file(pack / "mod.json"),
                 }
             )
@@ -1573,6 +1574,7 @@ def installation_diagnostics() -> dict:
                     "id": entry.get("id"),
                     "version": entry.get("version"),
                     "target": entry.get("target"),
+                    "source_pack": entry.get("source_pack"),
                     "manifest_sha256": entry.get("manifest_sha256"),
                 }
                 for entry in pack_entries
@@ -1630,8 +1632,50 @@ def uninstall() -> list[str]:
             return [str(compatibility)]
         return []
     record = json.loads(record_path.read_text(encoding="utf-8"))
-    removed: list[str] = []
+    # Native bundle and catalog restoration is one transaction.  If Steam (or
+    # another tool) changed any managed file while a skin was deployed, do not
+    # restore only the files that still match and then discard the backups.
+    # That can leave an original catalog pointing at a modified bundle (or the
+    # reverse), which makes Addressables loop at 100% during game startup.
+    native_restore_issues: list[str] = []
+    native_records = []
     catalog_patch = record.get("native_catalog_patch")
+    if catalog_patch:
+        native_records.append(("Addressables catalog", catalog_patch))
+    native_records.extend(
+        (f"native bundle {Path(item['target']).name}", item)
+        for item in reversed(record.get("native_patches") or [])
+    )
+    for label, item in native_records:
+        target = Path(item["target"])
+        backup = Path(item["backup"])
+        current_hash = sha256_file(target) if target.is_file() else None
+        original_hash = item.get("original_sha256")
+        patched_hash = item.get("patched_sha256")
+        backup_valid = (
+            backup.is_file() and sha256_file(backup) == original_hash
+        )
+        if current_hash == original_hash:
+            continue
+        if current_hash == patched_hash or current_hash is None:
+            if not backup_valid:
+                native_restore_issues.append(
+                    f"{label}: verified original backup is missing"
+                )
+            continue
+        native_restore_issues.append(
+            f"{label}: file changed outside Skin Manager"
+        )
+    if native_restore_issues:
+        raise RuntimeError(
+            "Cannot safely cancel deployment because managed game files no "
+            "longer form one verified transaction. No backups or install "
+            "records were removed. Verify The Bazaar's files in Steam, then "
+            "retry. Details: "
+            + "; ".join(native_restore_issues)
+        )
+
+    removed: list[str] = []
     if catalog_patch:
         target = Path(catalog_patch["target"])
         backup = Path(catalog_patch["backup"])

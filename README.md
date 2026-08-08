@@ -22,21 +22,21 @@ Fidelity-critical extraction rules are recorded in
 
 ## Components
 
-This repository publishes one manager suite with three Windows desktop components:
+This repository publishes one manager application. The main application contains
+the complete workflow. The older standalone creator entry points remain in source
+for development and compatibility testing, but are not separate release programs:
 
-- **Skin Manager** — imports, validates, deploys, updates, and removes external
-  skin packs. Its desktop entry point is `tools/bazaar_skin_manager_ui.py`.
-- **Asset Generator** — creates deterministic skin-pack ZIP files from creator
-  inputs and hands deployment back to the Skin Manager. Its desktop entry point
-  is `tools/asset_generator_ui.py`.
-- **Spine Manager** — imports Spine 4.1/4.2 JSON packages, previews root
-  placement offline, and reversibly replaces verified hero-skin bundles. Its
-  desktop entry point is `tools/bazaar_spine_manager_ui.py`.
+- **Skin Manager** — the primary application. It provides skin deployment,
+  skin-pack and first-class asset management, embedded deterministic skin
+  creation, Spine animation import, and Steam/game settings. Its desktop entry
+  point is `tools/bazaar_skin_manager_ui.py`.
+- **Asset Generator source entry point** — development access to the same
+  deterministic creator pipeline embedded in the manager.
+- **Spine Manager source entry point** — development access to the same Spine
+  import and verification pipeline embedded in the manager.
 
-The Skin Manager is the control center. The Asset Generator and Spine Manager
-open from its component pages, share the verified adapter registry, and hand
-all deployment, backup, catalog patching, rollback, and diagnostics back to the
-same Manager transaction.
+The Skin Manager is the only deployment control center. Every change to game
+files goes through its verified, reversible deployment transaction.
 
 ## Features
 
@@ -57,9 +57,13 @@ same Manager transaction.
 - Starts the game through Steam.
 
 The current adapters have verified deployment support for the default skins
-of Mak, Vanessa, Pygmalien, Dooley, Jules, Stelle, and Karnok on Steam build `24001960`.
+of Mak, Vanessa, Pygmalien, Dooley, Jules, Stelle, Karnok, and The Dragons
+(Rin & Jin). The original seven adapters support Steam builds `24001960` and
+`24570932`; The Dragons first appears on build `24570932`.
 Additional skins remain visible in the catalog but are disabled until their
 adapters have been verified.
+The update and adapter-verification procedure is recorded in
+[`docs/game-build-compatibility.md`](docs/game-build-compatibility.md).
 
 ## Install
 
@@ -68,10 +72,9 @@ Download the software artifacts from
 
 - `TheBazaarModManager-Setup-<version>.exe`
 - `TheBazaarModManager-Portable-<version>.zip`
-- `TheBazaarAssetGenerator-Portable-<version>.zip`
 
-The installer and Manager portable ZIP include both companion component
-executables; they do not need to be downloaded separately.
+The installer and portable ZIP contain a single manager executable. Skin creation
+and Spine animation import are already integrated into that executable.
 
 The installer is per-user and does not require administrator rights. If a
 release is unsigned, Windows may display a reputation warning; verify the
@@ -175,13 +178,13 @@ Build the runtime and manager:
 
 ```powershell
 .\build.ps1 -Configuration Release
-.\build.ps1 -Version 1.1.2
-.\build-manager.ps1 -Version 1.1.2
-.\build-asset-generator.ps1 -Version 1.1.2
-.\build-spine-manager.ps1 -Version 1.1.2
-.\build-installer.ps1 -Version 1.1.2
-.\package-manager-portable.ps1 -Version 1.1.2
-.\package-asset-generator-portable.ps1 -Version 1.1.2
+.\build.ps1 -Version 1.2.10
+.\build-manager.ps1 -Version 1.2.10
+.\build-asset-generator.ps1 -Version 1.2.10
+.\build-spine-manager.ps1 -Version 1.2.10
+.\build-installer.ps1 -Version 1.2.10
+.\package-manager-portable.ps1 -Version 1.2.10
+.\package-asset-generator-portable.ps1 -Version 1.2.10
 ```
 
 Useful source commands:

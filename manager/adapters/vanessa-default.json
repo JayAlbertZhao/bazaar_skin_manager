@@ -2,7 +2,7 @@
   "schema_version": 1,
   "id": "vanessa-default",
   "adapter_version": 2,
-  "supported_builds": ["24001960"],
+  "supported_builds": ["24001960", "24570932"],
   "target": {
     "game": "the-bazaar",
     "hero": "Vanessa",
@@ -35,7 +35,7 @@
         "asset_name": "Skin_VAN_01a_StoreImage",
         "unity_version": "6000.3.11f1",
         "target_size": [2048, 2048],
-        "supported_original_sha256": ["a69ee330823eaa62d24b2a9eee16f43e9f9b50347954c7c76a11ac8f642b7bc6"]
+        "supported_original_sha256": ["a69ee330823eaa62d24b2a9eee16f43e9f9b50347954c7c76a11ac8f642b7bc6", "ad389051824dd9cc642c4b6e7cc11d74095eb74c6f218c81659797844b48dd1c"]
       },
       "match_names": ["Skin_VAN_01a_StoreImage"]
     },
@@ -47,7 +47,7 @@
         "asset_name": "Skin_VAN_01a_StoreImage",
         "unity_version": "6000.3.11f1",
         "target_size": [2048, 2048],
-        "supported_original_sha256": ["a69ee330823eaa62d24b2a9eee16f43e9f9b50347954c7c76a11ac8f642b7bc6"]
+        "supported_original_sha256": ["a69ee330823eaa62d24b2a9eee16f43e9f9b50347954c7c76a11ac8f642b7bc6", "ad389051824dd9cc642c4b6e7cc11d74095eb74c6f218c81659797844b48dd1c"]
       },
       "match_names": ["Skin_VAN_01a_StoreImage"]
     },
@@ -59,7 +59,7 @@
         "asset_name": "Skin_VAN_01a_StoreImage",
         "unity_version": "6000.3.11f1",
         "target_size": [2048, 2048],
-        "supported_original_sha256": ["a69ee330823eaa62d24b2a9eee16f43e9f9b50347954c7c76a11ac8f642b7bc6"]
+        "supported_original_sha256": ["a69ee330823eaa62d24b2a9eee16f43e9f9b50347954c7c76a11ac8f642b7bc6", "ad389051824dd9cc642c4b6e7cc11d74095eb74c6f218c81659797844b48dd1c"]
       },
       "match_names": ["Skin_VAN_01a_StoreImage"]
     },
@@ -71,7 +71,7 @@
         "asset_name": "Skin_VAN_01a_PreviewCollection_TUI",
         "unity_version": "6000.3.11f1",
         "target_size": [512, 512],
-        "supported_original_sha256": ["a69ee330823eaa62d24b2a9eee16f43e9f9b50347954c7c76a11ac8f642b7bc6"]
+        "supported_original_sha256": ["a69ee330823eaa62d24b2a9eee16f43e9f9b50347954c7c76a11ac8f642b7bc6", "ad389051824dd9cc642c4b6e7cc11d74095eb74c6f218c81659797844b48dd1c"]
       },
       "match_names": ["Skin_VAN_01a_PreviewCollection_TUI"]
     },
@@ -89,7 +89,7 @@
         "asset_name": "Skin_VAN_01a_PreviewCollection_TUI",
         "unity_version": "6000.3.11f1",
         "target_size": [512, 512],
-        "supported_original_sha256": ["a69ee330823eaa62d24b2a9eee16f43e9f9b50347954c7c76a11ac8f642b7bc6"]
+        "supported_original_sha256": ["a69ee330823eaa62d24b2a9eee16f43e9f9b50347954c7c76a11ac8f642b7bc6", "ad389051824dd9cc642c4b6e7cc11d74095eb74c6f218c81659797844b48dd1c"]
       },
       "match_names": ["Skin_VAN_01a_PreviewCollection_TUI"]
     },

@@ -84,9 +84,24 @@ namespace BazaarSkinManager.TheBazaar
         private static void Postfix(object __instance, ref Task<Sprite> __result)
         {
             RuntimePack pack = SkinPatchTargets.PackFor(__instance);
-            if (pack == null ||
-                !VisualOwnership.IsLocalHeroPortraitLoad())
+            if (pack == null)
             {
+                return;
+            }
+
+            VisualOwnership.PortraitLoadOwnership ownership =
+                VisualOwnership.ClassifyPortraitLoad();
+            if (ownership !=
+                    VisualOwnership.PortraitLoadOwnership.Local &&
+                ownership !=
+                    VisualOwnership.PortraitLoadOwnership.Diagnostic)
+            {
+                RuntimeDiagnostics.ReportPortraitDecision(
+                    "portrait_gameplay",
+                    pack,
+                    ownership,
+                    "SkinAssetDataSO.LoadPortraitSpriteAsync",
+                    "retained");
                 return;
             }
 
@@ -107,6 +122,12 @@ namespace BazaarSkinManager.TheBazaar
                 RuntimeDiagnostics.ReportReplacement(
                     "portrait_gameplay",
                     "LoadPortraitSpriteAsync");
+                RuntimeDiagnostics.ReportPortraitDecision(
+                    "portrait_gameplay",
+                    pack,
+                    ownership,
+                    "SkinAssetDataSO.LoadPortraitSpriteAsync",
+                    "applied");
             }
         }
     }
@@ -151,6 +172,30 @@ namespace BazaarSkinManager.TheBazaar
                 return;
             }
 
+            VisualOwnership.PortraitLoadOwnership portraitOwnership =
+                VisualOwnership.PortraitLoadOwnership.Unknown;
+            if (__originalMethod.Name == "LoadPortrait")
+            {
+                portraitOwnership =
+                    VisualOwnership.ClassifyPortraitLoad();
+                if (!VisualOwnership.IsPreviewPortraitLoad(
+                        portraitOwnership))
+                {
+                    string retainedSlot =
+                        __args != null && __args.Length > 0 &&
+                        __args[0] is bool && (bool)__args[0]
+                            ? "portrait_small"
+                            : "portrait_gameplay";
+                    RuntimeDiagnostics.ReportPortraitDecision(
+                        retainedSlot,
+                        pack,
+                        portraitOwnership,
+                        "SkinAssetDataSO.LoadPortrait",
+                        "retained");
+                    return;
+                }
+            }
+
             string slot;
             switch (__originalMethod.Name)
             {
@@ -193,6 +238,15 @@ namespace BazaarSkinManager.TheBazaar
             {
                 __result = Task.FromResult(texture);
                 RuntimeDiagnostics.ReportReplacement(slot, __originalMethod.Name);
+                if (__originalMethod.Name == "LoadPortrait")
+                {
+                    RuntimeDiagnostics.ReportPortraitDecision(
+                        slot,
+                        pack,
+                        portraitOwnership,
+                        "SkinAssetDataSO.LoadPortrait",
+                        "applied");
+                }
             }
         }
     }
@@ -361,7 +415,8 @@ namespace BazaarSkinManager.TheBazaar
 
             // LoadSkinEditSkinAsync has no player/opponent argument. For the
             // PvP transition, wait until HeroSelectDisplay.AnimateMaterialsIn
-            // where the owning HeroViewTransition can be resolved exactly.
+            // where the exact HeroViewTransition owns this display and its
+            // serialized _isHero flag can prove local ownership.
             if (string.Equals(
                     placementName,
                     "PvpScreen",
@@ -456,8 +511,8 @@ namespace BazaarSkinManager.TheBazaar
                 return;
             }
 
-            GameObject root =
-                _skinEditActiveSkinField.GetValue(__instance) as GameObject;
+            GameObject root = VisualOwnership.SkinEditGameObject(
+                _skinEditActiveSkinField.GetValue(__instance));
             object placement = _placementField.GetValue(__instance);
             Sprite sprite = pack.Sprite("standing_overlay");
             if (root == null || placement == null || sprite == null)
@@ -537,9 +592,30 @@ namespace BazaarSkinManager.TheBazaar
         private static MethodBase TargetMethod()
         {
             Type type = AccessTools.TypeByName(HeroSelectDisplayTypeName);
-            return type == null
-                ? null
-                : AccessTools.Method(type, "UpdateSelectedSkin");
+            if (type == null)
+            {
+                return null;
+            }
+
+            // Build 24570932 renamed the asynchronous hero-select refresh
+            // entry point. Keep the prior name for build 24001960 and bind
+            // the new public Task method when it is present.
+            // AccessTools.Method logs a Harmony warning for the intentionally
+            // absent name before null-coalescing to the compatible one. Resolve
+            // from the declared method list so a verified rename is quiet and
+            // a genuinely unsupported surface remains the only failure.
+            MethodInfo legacy = AccessTools.GetDeclaredMethods(type)
+                .FirstOrDefault(method =>
+                    method.Name == "UpdateSelectedSkin" &&
+                    typeof(Task).IsAssignableFrom(method.ReturnType));
+            if (legacy != null)
+            {
+                return legacy;
+            }
+            return AccessTools.GetDeclaredMethods(type)
+                .FirstOrDefault(method =>
+                    method.Name == "UpdateHeroDisplay" &&
+                    typeof(Task).IsAssignableFrom(method.ReturnType));
         }
 
         private static void Postfix(

@@ -5,7 +5,7 @@
   "coverage": "complete_hero",
   "target": {
     "game": "The Bazaar",
-    "steam_build": "24001960",
+    "steam_build": "24570932",
     "hero": "Mak"
   },
   "fallback": "original",

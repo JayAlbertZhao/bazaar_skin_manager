@@ -259,7 +259,16 @@ class SpineManagerTests(unittest.TestCase):
         available = targets()
         self.assertEqual(
             {item.hero for item in available},
-            {"Mak", "Vanessa", "Pygmalien", "Dooley", "Jules", "Stelle", "Karnok"},
+            {
+                "Mak",
+                "Vanessa",
+                "Pygmalien",
+                "Dooley",
+                "Jules",
+                "Stelle",
+                "Karnok",
+                "Hero8",
+            },
         )
         mak = next(item for item in available if item.hero == "Mak")
         self.assertEqual(mak.prefix, "Skin_MAK_01a")
@@ -306,7 +315,7 @@ class SpineManagerTests(unittest.TestCase):
         self.assertTrue(messages[-1].startswith("测试阶段完成（"))
         configure_logging()
         self.assertTrue(LOG_PATH.is_file())
-        self.assertEqual(APP_VERSION, "1.1.2")
+        self.assertEqual(APP_VERSION, "1.2.10")
 
     def test_background_exception_is_bound_before_tk_callback(self) -> None:
         source = (TOOLS / "bazaar_spine_manager_ui.py").read_text(encoding="utf-8")

@@ -46,7 +46,7 @@ namespace BazaarSkinManager.TheBazaar
                         image.sprite.texture.name,
                         out replacement);
                 }
-                if (replacement != null)
+                if (IsSafeForGenericScan(replacement))
                 {
                     Sprite sprite = pack.Sprite(replacement.Slot);
                     if (sprite != null)
@@ -87,7 +87,7 @@ namespace BazaarSkinManager.TheBazaar
                 RuntimePack pack = Plugin.PackMatchingAsset(
                     image.texture.name,
                     out replacement);
-                if (replacement != null)
+                if (IsSafeForGenericScan(replacement))
                 {
                     Texture2D texture = pack.Texture(replacement.Slot);
                     if (texture != null)
@@ -133,7 +133,7 @@ namespace BazaarSkinManager.TheBazaar
                         renderer.sprite.texture.name,
                         out replacement);
                 }
-                if (replacement != null)
+                if (IsSafeForGenericScan(replacement))
                 {
                     Sprite sprite = pack.Sprite(replacement.Slot);
                     if (sprite != null)
@@ -156,6 +156,27 @@ namespace BazaarSkinManager.TheBazaar
             }
 
             return count;
+        }
+
+        private static bool IsSafeForGenericScan(
+            VisualReplacement replacement)
+        {
+            if (replacement == null)
+            {
+                return false;
+            }
+
+            // Portrait asset names are reused by both the local and opponent
+            // EncounterController. A hierarchy scan cannot prove ownership:
+            // the opponent portrait does not consistently live below an
+            // "Opponent"-named transform. These slots are therefore owned
+            // exclusively by the loader patches, where the local
+            // BoardBuilder call path is available. This became essential once
+            // multi-pack deployment allowed a matching pack for the
+            // opponent's profession to be enabled at the same time.
+            return replacement.Slot != "portrait_gameplay" &&
+                replacement.Slot != "portrait_small" &&
+                replacement.Slot != "portrait_background";
         }
 
         private static string HierarchyName(Transform transform)

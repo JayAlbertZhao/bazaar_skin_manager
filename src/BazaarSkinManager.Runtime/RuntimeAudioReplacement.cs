@@ -263,7 +263,8 @@ namespace BazaarSkinManager.TheBazaar
                 }
 
                 // Mirror every guard that precedes EventInstance creation in
-                // build 24001960. If an unknown state cannot be proven safe,
+                // validated builds 24001960 and 24570932. If an unknown state
+                // cannot be proven safe,
                 // fail open to the original method.
                 if (ReadBoolean(__instance, "IsSilentEncounter") && !isHero)
                 {

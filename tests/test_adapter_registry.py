@@ -74,6 +74,31 @@ class AdapterRegistryTests(unittest.TestCase):
             vanessa.payload["authoring_recipe"]["foreground"]["cast_shadow_lasso"]
         )
 
+    def test_build_24570932_and_the_dragons_default_are_declared(self):
+        registry = AdapterRegistry.load(ROOT / "manager" / "adapters")
+        for record in registry.records:
+            self.assertIn("24570932", record.supported_builds)
+
+        dragons = registry.find("Hero8", "Skin_DRA_01/A")
+        self.assertIsNotNone(dragons)
+        self.assertEqual(dragons.skin_name_contains, "DRA_01a")
+        deployments = {
+            item["slot"]: item.get("deployment") or {}
+            for item in dragons.payload["visual_replacements"]
+        }
+        self.assertEqual(
+            deployments["hero_select"]["asset_name"],
+            "TheDragons",
+        )
+        self.assertEqual(
+            deployments["hero_icon_small"]["asset_name"],
+            "Icon_FlatRough_DRA_TUI",
+        )
+        self.assertEqual(
+            deployments["store_image"]["asset_name"],
+            "Skin_DRA_01a_StoreImage_TUI",
+        )
+
     def test_registry_indexes_multiple_hero_skin_adapters(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)

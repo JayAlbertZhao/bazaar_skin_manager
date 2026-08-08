@@ -216,7 +216,7 @@ class RuntimeStructureTests(unittest.TestCase):
             STANDING_STATE,
         )
 
-    def test_runtime_version_is_1_1_1(self) -> None:
+    def test_runtime_version_is_1_2_8(self) -> None:
         plugin = (
             ROOT / "src" / "BazaarSkinManager.Runtime" / "Plugin.cs"
         ).read_text(encoding="utf-8")
@@ -224,8 +224,24 @@ class RuntimeStructureTests(unittest.TestCase):
             ROOT / "src" / "BazaarSkinManager.Runtime" / "AssemblyInfo.cs"
         ).read_text(encoding="utf-8")
 
-        self.assertIn('PluginVersion = "1.1.1"', plugin)
-        self.assertIn('AssemblyVersion("1.1.1.0")', assembly)
+        self.assertIn('PluginVersion = "1.2.10"', plugin)
+        self.assertIn('AssemblyVersion("1.2.10.0")', assembly)
+
+    def test_runtime_self_test_exercises_local_portrait_route(self) -> None:
+        diagnostics = (
+            ROOT / "src" / "BazaarSkinManager.Runtime" / "RuntimeDiagnostics.cs"
+        ).read_text(encoding="utf-8")
+
+        scope = "VisualOwnership.AssumeLocalPortraitForDiagnostic()"
+        invoke = "task = method.Invoke("
+        self.assertIn(scope, diagnostics)
+        self.assertIn(invoke, diagnostics)
+        self.assertLess(diagnostics.index(scope), diagnostics.index(invoke))
+
+    def test_hero_select_refresh_supports_both_verified_builds(self) -> None:
+        self.assertIn('method.Name == "UpdateSelectedSkin"', PATCHES)
+        self.assertIn('method.Name == "UpdateHeroDisplay"', PATCHES)
+        self.assertIn("typeof(Task).IsAssignableFrom(method.ReturnType)", PATCHES)
 
     def test_audio_replacement_is_exact_predecoded_and_fail_open(self) -> None:
         root = ROOT / "src" / "BazaarSkinManager.Runtime"
@@ -307,6 +323,19 @@ class RuntimeStructureTests(unittest.TestCase):
             PATCHES,
         )
         self.assertIn("SkinEditVisibleOverlayAttacher", PATCHES)
+        prepare_start = PATCHES.index(
+            "private static async Task<UnityEngine.Object> PrepareBeforeDisplay"
+        )
+        visible_patch = PATCHES.index(
+            "internal static class SkinEditVisiblePresentationPatch"
+        )
+        prepare_block = PATCHES[prepare_start:visible_patch]
+        self.assertIn('placementName,\n                    "PvpScreen"', prepare_block)
+        self.assertIn("return result;", prepare_block)
+        self.assertIn(
+            "VisualOwnership.ShouldReplaceSkinEditDisplay(",
+            PATCHES[visible_patch:],
+        )
         self.assertIn(
             "class SkinEditVisibleOverlayAttacher",
             STANDING_OVERLAY,
@@ -334,6 +363,16 @@ class RuntimeStructureTests(unittest.TestCase):
             STANDING_OVERLAY,
         )
         self.assertIn("overlay.layer = root.layer;", STANDING_OVERLAY)
+        self.assertIn(
+            "typeof(WorldStandingOverlayMarker)",
+            STANDING_OVERLAY,
+        )
+        self.assertIn("transform.SetParent(root.transform, false);", STANDING_OVERLAY)
+        self.assertNotIn("transform.SetParent(null, true);", STANDING_OVERLAY)
+        self.assertIn(
+            "UnityEngine.Object.Destroy(marker.gameObject);",
+            STANDING_OVERLAY,
+        )
 
     def test_hero_select_is_exclusive_to_direct_content_icon_patch(self) -> None:
         hero_select = next(
@@ -373,6 +412,10 @@ class RuntimeStructureTests(unittest.TestCase):
     def test_in_match_visuals_are_guarded_by_local_ownership(self) -> None:
         self.assertIn("VisualOwnership.IsOpponentHierarchy(image)", SCANNER)
         self.assertIn("VisualOwnership.IsOpponentHierarchy(renderer)", SCANNER)
+        self.assertIn("IsSafeForGenericScan(replacement)", SCANNER)
+        self.assertIn('replacement.Slot != "portrait_gameplay"', SCANNER)
+        self.assertIn('replacement.Slot != "portrait_small"', SCANNER)
+        self.assertIn('replacement.Slot != "portrait_background"', SCANNER)
         self.assertIn(
             "VisualOwnership.ShouldReplaceSkinEditDisplay(",
             PATCHES,
@@ -380,10 +423,30 @@ class RuntimeStructureTests(unittest.TestCase):
         self.assertIn('"PvpScreen"', VISUAL_OWNERSHIP)
         self.assertIn('"_selectedHero"', VISUAL_OWNERSHIP)
         self.assertIn('"_isHero"', VISUAL_OWNERSHIP)
+        self.assertIn("SkinEditGameObject(object value)", VISUAL_OWNERSHIP)
+        self.assertIn("value as Component", VISUAL_OWNERSHIP)
+        self.assertNotIn("ResolvePreparedSkinEditRoot(", VISUAL_OWNERSHIP)
+        self.assertNotIn("SkinEditRootOwnership", STANDING_OVERLAY)
         self.assertIn(
-            "!VisualOwnership.IsLocalHeroPortraitLoad()",
-            LOADER_COVERAGE,
+            "VisualOwnership.SkinEditGameObject(",
+            PATCHES,
         )
+        self.assertIn("ClassifyPortraitLoad()", VISUAL_OWNERSHIP)
+        self.assertIn(
+            '"BoardBuilder+<LoadHeroPortraitAsync>"',
+            VISUAL_OWNERSHIP,
+        )
+        self.assertIn(
+            '"EncounterController+<<Setup>g__CreateOpponentSkinData"',
+            VISUAL_OWNERSHIP,
+        )
+        self.assertIn("IsPreviewPortraitLoad(", PATCHES)
+        self.assertIn("PortraitLoadOwnership.Local", LOADER_COVERAGE)
+        self.assertIn("PortraitLoadOwnership.Diagnostic", LOADER_COVERAGE)
+        self.assertIn("ReportPortraitDecision(", DIAGNOSTICS)
+        self.assertIn('" action=" + action', DIAGNOSTICS)
+        self.assertIn('"retained"', LOADER_COVERAGE)
+        self.assertIn('"applied"', LOADER_COVERAGE)
 
     def test_requested_audit_scopes_local_portrait_ownership(self) -> None:
         self.assertIn("[ThreadStatic]", VISUAL_OWNERSHIP)
@@ -411,6 +474,52 @@ class RuntimeStructureTests(unittest.TestCase):
         )
         self.assertIn(
             '"GenerateEncounterData -> backgroundTextureReference"',
+            LOADER_COVERAGE,
+        )
+
+    def test_local_encounter_override_disables_new_native_animated_route(self) -> None:
+        self.assertIn(
+            '"animatedPortraitPrefabReference"',
+            LOADER_COVERAGE,
+        )
+        self.assertIn("bool hadAnimatedPortrait", LOADER_COVERAGE)
+        self.assertIn("HasValidRuntimeKey(", LOADER_COVERAGE)
+        self.assertIn(
+            "animatedPortraitField.SetValue(result, null)",
+            LOADER_COVERAGE,
+        )
+        self.assertIn(
+            "native animated portrait route disabled",
+            LOADER_COVERAGE,
+        )
+
+    def test_encounter_portrait_does_not_require_optional_background(self) -> None:
+        self.assertIn(
+            "bool hasPortraitReplacement =",
+            LOADER_COVERAGE,
+        )
+        self.assertIn(
+            "bool hasBackgroundReplacement =",
+            LOADER_COVERAGE,
+        )
+        self.assertIn(
+            "(hasPortraitReplacement && portraitField == null)",
+            LOADER_COVERAGE,
+        )
+        self.assertIn(
+            "(hasBackgroundReplacement && backgroundField == null)",
+            LOADER_COVERAGE,
+        )
+        self.assertIn(
+            "if (hasPortraitReplacement && !preloadedPortrait)",
+            LOADER_COVERAGE,
+        )
+        self.assertIn(
+            "if (hasBackgroundReplacement && !preloadedBackground)",
+            LOADER_COVERAGE,
+        )
+        self.assertNotIn(
+            "portraitField == null || backgroundField == null",
             LOADER_COVERAGE,
         )
 
@@ -509,6 +618,11 @@ class RuntimeStructureTests(unittest.TestCase):
         self.assertIn("StandingOverlay.RemoveFromWorld(root)", SKIN_AUDIT)
         self.assertNotIn('InvokeLoader(target, "LoadChestRewardAsync"', SKIN_AUDIT)
         self.assertNotIn('InvokeLoader(target, "GenerateEncounterData"', SKIN_AUDIT)
+        self.assertIn('result.GetType().GetField(', SKIN_AUDIT)
+        self.assertNotIn(
+            'AccessTools.Field(\n                    result.GetType(),\n                    "LoadedCollectibleInstance")',
+            SKIN_AUDIT,
+        )
 
     def test_central_standing_diagnostic_is_bounded_and_reversible(self) -> None:
         self.assertIn("TryRunDiagnostic", STANDING_STATE)

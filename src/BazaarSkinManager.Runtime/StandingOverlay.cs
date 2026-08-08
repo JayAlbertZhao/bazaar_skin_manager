@@ -116,14 +116,20 @@ namespace BazaarSkinManager.TheBazaar
                 return;
             }
 
+            CountDown();
+        }
+
+        private void CountDown()
+        {
             _remainingFrames--;
-            if (_remainingFrames <= 0)
+            if (_remainingFrames > 0)
             {
-                Plugin.Log.LogWarning(
-                    "Timed out waiting for visible SkinEdit placement " +
-                    _placementName + " on " + gameObject.name + ".");
-                enabled = false;
+                return;
             }
+            Plugin.Log.LogWarning(
+                "Timed out waiting for visible local SkinEdit placement " +
+                _placementName + " on " + gameObject.name + ".");
+            enabled = false;
         }
     }
 
@@ -335,6 +341,11 @@ namespace BazaarSkinManager.TheBazaar
                     FindBestRenderCamera(bounds, root.layer, out screenHeight);
                 if (renderCamera != null && screenHeight > 0.5f)
                 {
+                    // Keep this object parented to the exact Spine placement.
+                    // The verified 0.4.5-0.4.7 implementation relies on that
+                    // hierarchy for transition/vortex occlusion and cleanup.
+                    // Detaching it makes the sprite render above the vortex
+                    // and survive into the board as a screen-sized overlay.
                     transform.position = bounds.center;
                     transform.rotation = renderCamera.transform.rotation;
                     transform.localScale = Vector3.one;

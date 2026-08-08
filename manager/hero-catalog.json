@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "game": "The Bazaar",
-  "steam_build": "24001960",
+  "steam_build": "24570932",
   "heroes": [
     {
       "id": "Mak",
@@ -98,6 +98,20 @@
           "id": "Skin_KAR_01/A",
           "display_name": "默认",
           "name_contains": "KAR_01a"
+        }
+      ]
+    },
+    {
+      "id": "Hero8",
+      "asset_code": "DRA",
+      "display_name": "The Dragons（Rin & Jin）",
+      "runtime_supported": true,
+      "audio_supported": false,
+      "skins": [
+        {
+          "id": "Skin_DRA_01/A",
+          "display_name": "默认皮肤",
+          "name_contains": "DRA_01a"
         }
       ]
     }

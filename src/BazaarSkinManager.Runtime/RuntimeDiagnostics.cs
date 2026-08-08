@@ -18,6 +18,8 @@ namespace BazaarSkinManager.TheBazaar
             new HashSet<string>(StringComparer.Ordinal);
         private static readonly HashSet<string> ReportedLoaderStates =
             new HashSet<string>(StringComparer.Ordinal);
+        private static readonly HashSet<string> ReportedPortraitDecisions =
+            new HashSet<string>(StringComparer.Ordinal);
 
         private float _nextScan;
         private bool _selfTestRunning;
@@ -34,6 +36,37 @@ namespace BazaarSkinManager.TheBazaar
             }
 
             Plugin.Log.LogInfo("Applied " + slot + " replacement via " + source);
+        }
+
+        public static void ReportPortraitDecision(
+            string slot,
+            RuntimePack pack,
+            VisualOwnership.PortraitLoadOwnership ownership,
+            string callSite,
+            string action)
+        {
+            string packId = pack == null || pack.Manifest == null
+                ? "<none>"
+                : pack.Manifest.Id ?? "<unknown>";
+            string skin = pack == null || pack.Manifest == null ||
+                pack.Manifest.Target == null
+                    ? "<unknown>"
+                    : pack.Manifest.Target.Skin ?? "<unknown>";
+            string owner = VisualOwnership.PortraitOwnerName(ownership);
+            string detail = "slot=" + slot +
+                " pack=" + packId +
+                " skin=" + skin +
+                " owner=" + owner +
+                " callSite=" + callSite +
+                " action=" + action;
+            lock (ReportedPortraitDecisions)
+            {
+                if (!ReportedPortraitDecisions.Add(detail))
+                {
+                    return;
+                }
+            }
+            Plugin.Log.LogInfo("Portrait route: " + detail);
         }
 
         public static void ReportUnmatchedMakVisual(
@@ -164,9 +197,20 @@ namespace BazaarSkinManager.TheBazaar
                         "LoadPortraitSpriteAsync(CancellationToken)");
                 }
 
-                Task<Sprite> task = method.Invoke(
-                    target,
-                    new object[] { CancellationToken.None }) as Task<Sprite>;
+                Task<Sprite> task;
+                // The diagnostic invokes the loader outside BoardBuilder's
+                // normal local-player call stack. Mark only this synchronous
+                // invocation as local so the exact same ownership-gated
+                // postfix exercised in real gameplay can replace the result.
+                // Without this scope the diagnostic always observed the
+                // untouched loader (often <null>) and reported a false
+                // failure even though the runtime route was healthy.
+                using (VisualOwnership.AssumeLocalPortraitForDiagnostic())
+                {
+                    task = method.Invoke(
+                        target,
+                        new object[] { CancellationToken.None }) as Task<Sprite>;
+                }
                 if (task == null)
                 {
                     throw new InvalidOperationException(

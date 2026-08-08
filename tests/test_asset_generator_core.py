@@ -18,9 +18,16 @@ if str(TOOLS) not in sys.path:
     sys.path.insert(0, str(TOOLS))
 
 import asset_generator_core as generator  # noqa: E402
+from skin_pack_builder import scaled_target_bounds  # noqa: E402
 
 
 class AssetGeneratorCoreTests(unittest.TestCase):
+    def test_character_scale_preserves_bottom_center_anchor(self) -> None:
+        self.assertEqual(
+            scaled_target_bounds((10, 20, 110, 220), 1.5),
+            (-15, -80, 135, 220),
+        )
+
     def _profile(self, root: Path) -> generator.GeneratorProfile:
         inputs = root / "inputs"
         inputs.mkdir()
@@ -59,7 +66,12 @@ class AssetGeneratorCoreTests(unittest.TestCase):
 
     def test_generate_cleans_only_dedicated_pack_workspace(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
-            profile = self._profile(Path(temp))
+            profile = replace(
+                self._profile(Path(temp)),
+                background_offset_x=24,
+                background_offset_y=-11,
+                background_scale=1.3,
+            )
             stale = profile.generated_workspace / "assets" / "stale.png"
             stale.parent.mkdir(parents=True)
             stale.write_bytes(b"stale")
@@ -79,6 +91,8 @@ class AssetGeneratorCoreTests(unittest.TestCase):
             self.assertEqual(result["zip_sha256"], "abc")
             self.assertEqual(build.call_args.kwargs["character"], profile.character)
             self.assertEqual(build.call_args.kwargs["workspace_root"], profile.workspace_root)
+            self.assertEqual(build.call_args.kwargs["background_offset"], (24, -11))
+            self.assertEqual(build.call_args.kwargs["background_scale"], 1.3)
 
     def test_authoring_targets_require_a_deterministic_recipe(self) -> None:
         records = generator.authoring_adapters()
@@ -91,8 +105,209 @@ class AssetGeneratorCoreTests(unittest.TestCase):
                 "mak-default",
                 "pygmalien-default",
                 "stelle-default",
+                "the-dragons-default",
                 "vanessa-default",
             },
+        )
+
+    def test_workspace_edit_profile_restores_identity_inputs_and_adjustments(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            workspace = generator.StudioWorkspace.create(
+                "test.edit.pack",
+                root=root / "library",
+                name="Same Skin Name",
+                version="0.7.0",
+                hero="Dooley",
+                skin="Skin_DOO_01/A",
+                skin_name_contains="DOO_01a",
+            )
+            inputs = workspace.directory / "authoring" / "inputs"
+            inputs.mkdir(parents=True)
+            character = inputs / "character.png"
+            icon_source = inputs / "small_icon_source.png"
+            small_icon = inputs / "small_icon.png"
+            for path in (character, icon_source, small_icon):
+                Image.new("RGBA", (96, 96), (40, 90, 130, 255)).save(path)
+            workspace.state["authoring"] = {
+                "generator": {"adapter_id": "dooley-default"},
+                "inputs": {
+                    "character": {
+                        "workspace_file": "authoring/inputs/character.png",
+                        "sha256": "generated",
+                        "bytes": 123,
+                        "image_size": [96, 96],
+                        "origin": "user_supplied",
+                        "aigc": False,
+                        "authoritative_alpha": True,
+                    },
+                    "small_icon": {
+                        "workspace_file": "authoring/inputs/small_icon.png",
+                        "origin": "deterministic_derivative",
+                        "preset": "outline",
+                        "aigc": False,
+                    },
+                    "small_icon_source": {
+                        "workspace_file": "authoring/inputs/small_icon_source.png",
+                        "origin": "user_supplied",
+                        "aigc": False,
+                    },
+                },
+                "adjustments": {
+                    "character_canvas": [-12, 66],
+                    "character_scale": 1.25,
+                    "background": {
+                        "offset": [21, -9],
+                        "scale": 1.4,
+                        "fit": "cover",
+                    },
+                    "per_output": {"hero_select": [-19, 71]},
+                },
+            }
+            workspace.save()
+            badge = root / "badges"
+            badge.mkdir()
+
+            profile = generator.profile_for_workspace_edit(
+                workspace,
+                profile_path=root / "edit" / "profile.json",
+                badge_template_root=badge,
+                workspace_root=root / "generated",
+                output_zip=root / "exports" / "pack.zip",
+            )
+
+            self.assertEqual(profile.pack_id, "test.edit.pack")
+            self.assertEqual(profile.name, "Same Skin Name")
+            self.assertEqual(profile.version, "0.7.0")
+            self.assertEqual(profile.adapter_id, "dooley-default")
+            self.assertNotEqual(profile.character, character.resolve())
+            self.assertEqual(profile.character.parent, (root / "edit" / "inputs").resolve())
+            self.assertEqual(profile.character.read_bytes(), character.read_bytes())
+            self.assertNotEqual(profile.small_icon_source, icon_source.resolve())
+            self.assertEqual(profile.small_icon_source.read_bytes(), icon_source.read_bytes())
+            self.assertEqual(profile.small_icon_mode, "outline")
+            self.assertEqual((profile.character_offset_x, profile.character_offset_y), (-12, 66))
+            self.assertEqual(profile.character_scale, 1.25)
+            self.assertEqual((profile.background_offset_x, profile.background_offset_y), (21, -9))
+            self.assertEqual(profile.background_scale, 1.4)
+            self.assertEqual(profile.output_offsets, {"hero_select": (-19, 71)})
+            metadata = json.loads(profile.input_metadata.read_text(encoding="utf-8"))
+            self.assertTrue(metadata["character"]["authoritative_alpha"])
+            self.assertNotIn("sha256", metadata["character"])
+
+    def test_workspace_edit_profile_keeps_legacy_identity_without_reusing_outputs(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            workspace = generator.StudioWorkspace.create(
+                "legacy.edit.pack",
+                root=root / "library",
+                name="Legacy Skin",
+                hero="Mak",
+                skin="Skin_MAK_01/A",
+                skin_name_contains="MAK_01a",
+            )
+            workspace.import_pil_image(
+                "portrait_gameplay",
+                Image.new("RGBA", (96, 96), (40, 90, 130, 255)),
+            )
+            badge = root / "badges"
+            badge.mkdir()
+
+            profile = generator.profile_for_workspace_edit(
+                workspace,
+                profile_path=root / "edit" / "profile.json",
+                badge_template_root=badge,
+                workspace_root=root / "generated",
+                output_zip=root / "exports" / "pack.zip",
+            )
+
+            self.assertEqual(profile.pack_id, "legacy.edit.pack")
+            self.assertEqual(profile.name, "Legacy Skin")
+            self.assertEqual(profile.adapter_id, "mak-default")
+            self.assertFalse(profile.character.is_file())
+            self.assertNotEqual(profile.character, workspace.visual_path("portrait_gameplay"))
+
+    def test_workspace_edit_profile_recovers_archived_input_by_hash(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            workspace = generator.StudioWorkspace.create(
+                "recover.edit.pack",
+                root=root / "library",
+                name="Recover Skin",
+                hero="Dooley",
+                skin="Skin_DOO_01/A",
+                skin_name_contains="DOO_01a",
+            )
+            recovered = (
+                root
+                / "generated"
+                / "recover.edit.pack"
+                / "authoring"
+                / "inputs"
+                / "character.png"
+            )
+            recovered.parent.mkdir(parents=True)
+            Image.new("RGBA", (96, 96), (11, 22, 33, 255)).save(recovered)
+            workspace.state["authoring"] = {
+                "generator": {"adapter_id": "dooley-default"},
+                "inputs": {
+                    "character": {
+                        "workspace_file": "authoring/inputs/character.png",
+                        "sha256": generator.sha256_file(recovered),
+                        "origin": "user_supplied",
+                        "aigc": False,
+                        "authoritative_alpha": True,
+                    }
+                },
+            }
+            workspace.save()
+            badge = root / "badges"
+            badge.mkdir()
+
+            profile = generator.profile_for_workspace_edit(
+                workspace,
+                profile_path=root / "edit" / "profile.json",
+                badge_template_root=badge,
+                workspace_root=root / "generated",
+                output_zip=root / "exports" / "pack.zip",
+                input_search_roots=(root / "generated",),
+            )
+
+            self.assertNotEqual(profile.character, recovered.resolve())
+            self.assertEqual(profile.character.read_bytes(), recovered.read_bytes())
+            self.assertTrue(profile.character.is_file())
+            with mock.patch.object(
+                generator,
+                "generate_pack",
+                return_value={
+                    "workspace": str(profile.generated_workspace),
+                    "zip": str(profile.output_zip),
+                    "zip_sha256": "edited",
+                },
+            ) as build:
+                generator.generate_assets(profile)
+            self.assertFalse(recovered.exists())
+            self.assertTrue(profile.character.is_file())
+            self.assertEqual(build.call_args.kwargs["character"], profile.character)
+
+    def test_automatic_pack_id_follows_new_project_target_only(self) -> None:
+        self.assertEqual(
+            generator.retarget_automatic_pack_id(
+                "local.dooley.a1b2c3d4e5", "Dooley", "Pygmalien"
+            ),
+            "local.pygmalien.a1b2c3d4e5",
+        )
+        self.assertEqual(
+            generator.retarget_automatic_pack_id(
+                "local.dooley.custom", "Dooley", "Pygmalien"
+            ),
+            "local.dooley.custom",
+        )
+        self.assertEqual(
+            generator.retarget_automatic_pack_id(
+                "publisher.named.pack", "Dooley", "Pygmalien"
+            ),
+            "publisher.named.pack",
         )
 
     def test_installed_manager_capability_accepts_exact_adapter_version(self) -> None:
@@ -172,6 +387,46 @@ class AssetGeneratorCoreTests(unittest.TestCase):
             self.assertIsNone(build.call_args.kwargs["small_icon"])
             self.assertTrue(build.call_args.kwargs["allow_partial"])
 
+    def test_existing_small_icon_overrides_stale_none_mode(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            profile = replace(self._profile(Path(temp)), small_icon_mode="none")
+            profile.save()
+            self.assertEqual(
+                generator.GeneratorProfile.load(profile.profile_path).small_icon_mode,
+                "user",
+            )
+            with mock.patch.object(
+                generator,
+                "generate_pack",
+                return_value={
+                    "workspace": str(profile.generated_workspace),
+                    "zip": str(profile.output_zip),
+                    "zip_sha256": "no-icon",
+                },
+            ) as build:
+                generator.generate_assets(profile)
+            self.assertEqual(build.call_args.kwargs["small_icon"], profile.small_icon)
+
+    def test_portrait_composite_preview_stacks_cropped_background_below_foreground(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            profile = self._profile(Path(temp))
+            Image.new("RGBA", (160, 96), (12, 34, 56, 255)).save(profile.background)
+            renderer = generator.LivePreviewRenderer(profile)
+            preview = renderer.render_portrait_composite(
+                background_offset=(200, 0),
+                background_scale=1.2,
+            )
+            self.assertEqual(preview.size, (1024, 1024))
+            self.assertEqual(preview.getpixel((0, 0))[:3], (12, 34, 56))
+            self.assertEqual(preview.getpixel((512, 512))[:3], (40, 90, 130))
+
+    def test_profile_rejects_fully_transparent_user_small_icon(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            profile = self._profile(Path(temp))
+            Image.new("RGBA", (256, 256), (0, 0, 0, 0)).save(profile.small_icon)
+            with self.assertRaisesRegex(ValueError, "小图标没有可见像素"):
+                profile.validate()
+
     def test_pipeline_delegates_import_and_deploy_to_manager_workspace(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             profile = self._profile(Path(temp))
@@ -237,6 +492,10 @@ class AssetGeneratorCoreTests(unittest.TestCase):
                 base_profile,
                 character_offset_x=17,
                 character_offset_y=-23,
+                character_scale=1.25,
+                background_offset_x=31,
+                background_offset_y=-14,
+                background_scale=1.35,
                 output_offsets={"portrait_small": (8, -5)},
                 small_icon_mode="block-gaps",
                 small_icon_source=icon_source,
@@ -245,17 +504,24 @@ class AssetGeneratorCoreTests(unittest.TestCase):
             loaded = generator.GeneratorProfile.load(profile.profile_path)
             self.assertEqual(loaded.character_offset_x, 17)
             self.assertEqual(loaded.character_offset_y, -23)
+            self.assertEqual(loaded.character_scale, 1.25)
+            self.assertEqual((loaded.background_offset_x, loaded.background_offset_y), (31, -14))
+            self.assertEqual(loaded.background_scale, 1.35)
             self.assertEqual(loaded.output_offsets["portrait_small"], (8, -5))
             self.assertEqual(loaded.small_icon_mode, "block-gaps")
             self.assertEqual(loaded.small_icon_source, icon_source.resolve())
             payload = json.loads(profile.profile_path.read_text(encoding="utf-8"))
             self.assertEqual(
                 payload["character_adjustment"],
-                {"offset_x": 17, "offset_y": -23},
+                {"offset_x": 17, "offset_y": -23, "scale": 1.25},
             )
             self.assertEqual(
                 payload["output_adjustments"]["portrait_small"],
                 {"offset_x": 8, "offset_y": -5},
+            )
+            self.assertEqual(
+                payload["background_adjustment"],
+                {"offset_x": 31, "offset_y": -14, "scale": 1.35, "fit": "cover"},
             )
             self.assertEqual(
                 payload["small_icon_generation"],
@@ -307,12 +573,14 @@ class AssetGeneratorCoreTests(unittest.TestCase):
                 self._profile(Path(temp)),
                 character_offset_x=3,
                 character_offset_y=-2,
+                character_scale=1.2,
                 output_offsets={"hero_select": (7, 11)},
             )
 
             def inspect_build(**kwargs):
                 self.assertEqual(kwargs["character"], profile.character)
                 self.assertEqual(kwargs["character_canvas_offset"], (3, -2))
+                self.assertEqual(kwargs["character_scale"], 1.2)
                 self.assertEqual(kwargs["output_offsets"], {"hero_select": (7, 11)})
                 return {
                     "workspace": str(profile.generated_workspace),

@@ -16,9 +16,11 @@ sys.path.insert(0, str(TOOLS))
 
 from skin_pack_builder import (  # noqa: E402
     _load_badge_template,
+    apply_declared_clip_mask,
     derive_small_icon_binary,
     derive_small_icon_file,
     fit_alpha_contain,
+    fit_cover,
     generate_pack,
     image_metrics,
     remove_edge_connected_background,
@@ -93,6 +95,41 @@ def write_test_badge_template(root: Path) -> Path:
 
 
 class SkinPackBuilderTests(unittest.TestCase):
+    def test_portrait_inner_frame_mask_blocks_three_sides_and_leaves_top_open(self) -> None:
+        source = Image.new("RGBA", (100, 100), (230, 80, 40, 255))
+        masked = apply_declared_clip_mask(
+            source,
+            {
+                "type": "open_top_inner_frame",
+                "reference_size": [100, 100],
+                "inner_bounds": [10, 0, 90, 90],
+                "bottom_corner_radius": 10,
+            },
+        )
+
+        alpha = masked.getchannel("A")
+        self.assertEqual(alpha.getpixel((50, 0)), 255)
+        self.assertEqual(alpha.getpixel((5, 50)), 0)
+        self.assertEqual(alpha.getpixel((95, 50)), 0)
+        self.assertEqual(alpha.getpixel((50, 95)), 0)
+        self.assertEqual(alpha.getpixel((50, 85)), 255)
+
+    def test_background_cover_crop_pans_zooms_and_never_exposes_empty_edges(self) -> None:
+        source = Image.new("RGBA", (4, 2), (0, 0, 0, 0))
+        for x, color in enumerate(("red", "green", "blue", "yellow")):
+            ImageDraw.Draw(source).rectangle((x, 0, x, 1), fill=color)
+
+        centered = fit_cover(source, size=(2, 2))
+        panned_right = fit_cover(source, size=(2, 2), offset=(999, 0))
+        panned_left = fit_cover(source, size=(2, 2), offset=(-999, 0))
+        zoomed = fit_cover(source, size=(2, 2), zoom=2.0, offset=(999, 999))
+
+        self.assertEqual(centered.getpixel((0, 0))[:3], (0, 128, 0))
+        self.assertEqual(panned_right.getpixel((0, 0))[:3], (255, 0, 0))
+        self.assertEqual(panned_left.getpixel((1, 0))[:3], (255, 255, 0))
+        self.assertEqual(zoomed.size, (2, 2))
+        self.assertIsNotNone(zoomed.getchannel("A").getbbox())
+
     def test_sparse_binary_icon_is_not_rejected_as_too_small(self) -> None:
         adapter = json.loads(
             (ROOT / "manager" / "adapters" / "dooley-default.json").read_text(
@@ -263,6 +300,49 @@ class SkinPackBuilderTests(unittest.TestCase):
             )
             with Image.open(workspace / "assets" / "standing_overlay.png") as actual:
                 self.assertEqual(actual.convert("RGBA").tobytes(), expected.tobytes())
+
+    def test_inherited_shadow_layer_is_noop_without_adapter_lasso(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            character = root / "character.png"
+            character_image = Image.new("RGBA", (96, 128), (0, 0, 0, 0))
+            ImageDraw.Draw(character_image).rectangle(
+                (24, 12, 72, 127),
+                fill=(230, 180, 80, 255),
+            )
+            character_image.save(character)
+            background = root / "background.png"
+            Image.new("RGBA", (128, 128), (35, 65, 95, 255)).save(background)
+            icon = root / "icon.png"
+            icon_image = Image.new("RGBA", (64, 64), (0, 0, 0, 0))
+            ImageDraw.Draw(icon_image).ellipse(
+                (18, 8, 46, 56),
+                outline=(245, 245, 245, 255),
+                width=6,
+            )
+            icon_image.save(icon)
+
+            result = generate_pack(
+                adapter_id="mak-default",
+                character=character,
+                background=background,
+                small_icon=icon,
+                workspace_root=root / "work",
+                output_zip=root / "pack.zip",
+                pack_id="test.mak-no-shadow-lasso",
+                name="Mak No Shadow Lasso Test",
+                version="0.1.0",
+                input_metadata={
+                    "character": {"aigc": False},
+                    "background": {"aigc": False},
+                    "small_icon": {"aigc": False},
+                },
+                badge_template_root=write_test_badge_template(root / "templates"),
+            )
+
+            self.assertIn("store_image", result["outputs"])
+            self.assertIn("collection_list", result["outputs"])
+            self.assertTrue((Path(result["workspace"]) / "assets" / "store_image.png").is_file())
 
     def test_lower_badge_transparency_knocks_out_character(self) -> None:
         size = (512, 512)
@@ -723,6 +803,9 @@ class SkinPackBuilderTests(unittest.TestCase):
                 {
                     "mod.json",
                     "asset-index.json",
+                    "authoring/inputs/character.png",
+                    "authoring/inputs/background.png",
+                    "authoring/inputs/small_icon.png",
                     "assets/portrait_gameplay.png",
                     "assets/portrait_background.png",
                     "assets/portrait_small.png",

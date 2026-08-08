@@ -9,8 +9,10 @@ import shutil
 import sys
 import threading
 import traceback
+import uuid
 from dataclasses import replace
 from pathlib import Path
+from typing import Callable
 import tkinter as tk
 from tkinter import colorchooser, filedialog, messagebox, ttk
 
@@ -22,10 +24,12 @@ from asset_generator_core import (
     LivePreviewRenderer,
     PipelineResult,
     authoring_adapters,
+    profile_for_workspace_edit,
+    retarget_automatic_pack_id,
     run_pipeline,
 )
 from bazaar_skin_manager import manager_root
-from mod_studio_core import PROJECT_ROOT
+from mod_studio_core import PROJECT_ROOT, StudioWorkspace
 from mod_studio_core import remove_color_screen
 from skin_pack_builder import derive_small_icon_file
 
@@ -72,7 +76,7 @@ def default_output_directory() -> Path:
 PREVIEW_SLOTS = (
     ("中央立绘", "standing_overlay"),
     ("徽章", "hero_select"),
-    ("商店 / 对局头像", "portrait_gameplay"),
+    ("商店 / 对局头像（背景合成）", "portrait_gameplay"),
     ("列表头像", "portrait_small"),
     ("小图标", "hero_icon_small"),
 )
@@ -80,13 +84,14 @@ SMALL_ICON_SOURCE_PREVIEW = "small_icon_source_preview"
 PREVIEW_CARDS = (
     ("中央立绘", "standing_overlay"),
     ("徽章", "hero_select"),
-    ("商店 / 对局头像", "portrait_gameplay"),
+    ("商店 / 对局头像（背景合成）", "portrait_gameplay"),
     ("列表头像", "portrait_small"),
     ("图标生成源图", SMALL_ICON_SOURCE_PREVIEW),
     ("小图标", "hero_icon_small"),
 )
 ICON_MODE_LABELS = {
-    "用户提供（默认）": "user",
+    "未提供时不生成": "none",
+    "用户提供": "user",
     "从人物生成：描边": "outline",
     "从人物生成：色块缝隙": "block-gaps",
     "从人物生成：实心剪影": "silhouette",
@@ -95,26 +100,41 @@ ICON_MODE_NAMES = {value: label for label, value in ICON_MODE_LABELS.items()}
 
 
 class AssetGeneratorUI:
-    def __init__(self) -> None:
-        self.root = RootClass()
-        self.root.title(
-            f"The Bazaar 素材包制作器 v{ASSET_GENERATOR_VERSION}"
-        )
-        screen_width = self.root.winfo_screenwidth()
-        screen_height = self.root.winfo_screenheight()
-        window_width = min(1380, max(1024, screen_width - 80))
-        window_height = min(900, max(640, screen_height - 140))
-        window_x = max(0, (screen_width - window_width) // 2)
-        window_y = max(0, (screen_height - window_height - 40) // 2)
-        self.root.geometry(
-            f"{window_width}x{window_height}+{window_x}+{window_y}"
-        )
-        self.root.minsize(1024, 640)
-        self.root.configure(bg=COLORS["window"])
-        try:
-            self.root.tk.call("tk", "scaling", 1.25)
-        except tk.TclError:
-            pass
+    def __init__(
+        self,
+        parent: tk.Misc | None = None,
+        *,
+        on_import: Callable[[GeneratorProfile, PipelineResult], None] | None = None,
+        on_material_import: Callable[[str, Path], None] | None = None,
+        on_choose_asset: Callable[[str], Path | None] | None = None,
+    ) -> None:
+        self.embedded = parent is not None
+        self.root = parent.winfo_toplevel() if parent is not None else RootClass()
+        self.host = parent if parent is not None else self.root
+        self.on_import = on_import
+        self.on_material_import = on_material_import
+        self.on_choose_asset = on_choose_asset
+        self.pending_embedded_action: str | None = None
+        self.editing_workspace_id: str | None = None
+        if not self.embedded:
+            self.root.title(
+                f"The Bazaar 素材包制作器 v{ASSET_GENERATOR_VERSION}"
+            )
+            screen_width = self.root.winfo_screenwidth()
+            screen_height = self.root.winfo_screenheight()
+            window_width = min(1380, max(1024, screen_width - 80))
+            window_height = min(900, max(640, screen_height - 140))
+            window_x = max(0, (screen_width - window_width) // 2)
+            window_y = max(0, (screen_height - window_height - 40) // 2)
+            self.root.geometry(
+                f"{window_width}x{window_height}+{window_x}+{window_y}"
+            )
+            self.root.minsize(1024, 640)
+            self.root.configure(bg=COLORS["window"])
+            try:
+                self.root.tk.call("tk", "scaling", 1.25)
+            except tk.TclError:
+                pass
         self.events: queue.Queue[tuple[str, object]] = queue.Queue()
         self.profile: GeneratorProfile | None = None
         self.preview_canvases: dict[str, tk.Canvas] = {}
@@ -132,6 +152,10 @@ class AssetGeneratorUI:
         self.form_scroll_canvases: list[tk.Canvas] = []
         self.character_offset_x = 0
         self.character_offset_y = 0
+        self.character_scale = 1.0
+        self.background_offset_x = 0
+        self.background_offset_y = 0
+        self.background_scale = 1.0
         self.character_canvas_photo: ImageTk.PhotoImage | None = None
         self.character_checker_photo: ImageTk.PhotoImage | None = None
         self.character_canvas_scale = 1.0
@@ -147,8 +171,8 @@ class AssetGeneratorUI:
         }
         self._configure_style()
         self._build_ui()
-        self.root.bind("<Control-v>", self._global_paste)
-        self.root.bind("<Control-V>", self._global_paste)
+        self.root.bind("<Control-v>", self._global_paste, add="+")
+        self.root.bind("<Control-V>", self._global_paste, add="+")
         self.root.bind_all(
             "<Control-Key-1>",
             lambda _event: self.authoring_pages.select(0),
@@ -215,14 +239,30 @@ class AssetGeneratorUI:
         )
 
     def _build_ui(self) -> None:
-        outer = ttk.Frame(self.root, style="Window.TFrame", padding=18)
+        outer = ttk.Frame(
+            self.host,
+            style="Window.TFrame" if not self.embedded else "TFrame",
+            padding=18 if not self.embedded else 0,
+        )
         outer.pack(fill="both", expand=True)
-        header = ttk.Frame(outer, style="Window.TFrame")
+        header = ttk.Frame(
+            outer,
+            style="Window.TFrame" if not self.embedded else "TFrame",
+        )
         header.pack(fill="x", pady=(0, 14))
-        ttk.Label(header, text="素材包制作器", style="Title.TLabel").pack(side="left")
         ttk.Label(
             header,
-            text="放入素材、调整预览、生成素材包；安装继续复用 Skin Manager",
+            text="皮肤制作" if self.embedded else "素材包制作器",
+            style="Title.TLabel" if not self.embedded else "TLabel",
+            font=("Microsoft YaHei UI", 17, "bold") if self.embedded else None,
+        ).pack(side="left")
+        ttk.Label(
+            header,
+            text=(
+                "放入一级素材、调整预览；完成后导入皮肤库或导出到指定位置"
+                if self.embedded
+                else "放入素材、调整预览、生成素材包；安装继续复用 Skin Manager"
+            ),
             style="Muted.TLabel",
         ).pack(side="left", padx=(18, 0), pady=(9, 0))
         ttk.Button(header, text="载入配置…", command=self._choose_profile).pack(side="right")
@@ -331,17 +371,25 @@ class AssetGeneratorUI:
         actions = ttk.Frame(parent)
         actions.pack(side="bottom", fill="x", pady=(12, 0))
         self.action_buttons: list[ttk.Button] = []
-        for text, stages, accent in (
-            ("1  生成资产包", ("generate",), False),
-            ("2  导入 Skin Manager", ("import",), False),
-            ("3  部署并运行 Doctor", ("import", "deploy"), False),
-            ("从头运行全部", ("generate", "import", "deploy"), True),
-        ):
+        action_specs = (
+            (
+                ("导入到皮肤库", self._embedded_import, True),
+                ("导出到指定位置…", self._embedded_export, False),
+            )
+            if self.embedded
+            else (
+                ("1  生成资产包", lambda: self._start(("generate",)), False),
+                ("2  导入 Skin Manager", lambda: self._start(("import",)), False),
+                ("3  部署并运行 Doctor", lambda: self._start(("import", "deploy")), False),
+                ("从头运行全部", lambda: self._start(("generate", "import", "deploy")), True),
+            )
+        )
+        for text, command, accent in action_specs:
             button = ttk.Button(
                 actions,
                 text=text,
                 style="Accent.TButton" if accent else "TButton",
-                command=lambda selected=stages: self._start(selected),
+                command=command,
             )
             button.pack(fill="x", pady=4)
             self.action_buttons.append(button)
@@ -405,7 +453,7 @@ class AssetGeneratorUI:
         ttk.Label(inputs, text="图标生成方式").grid(
             row=4, column=0, sticky="w", pady=(12, 4)
         )
-        self.small_icon_mode_var = tk.StringVar(value="用户提供（默认）")
+        self.small_icon_mode_var = tk.StringVar(value="未提供时不生成")
         icon_mode = ttk.Combobox(
             inputs,
             textvariable=self.small_icon_mode_var,
@@ -466,7 +514,7 @@ class AssetGeneratorUI:
         grid = ttk.Frame(advanced)
         grid.pack(fill="x", pady=(10, 14))
         self._field(grid, 0, "适配器 ID（随生成目标同步）", "adapter")
-        self._field(grid, 1, "资产包 ID", "pack_id")
+        self._field(grid, 1, "内部 ID（自动生成，防止覆盖其他皮肤）", "pack_id", readonly=True)
         self._field(grid, 2, "名称", "name")
         self._field(grid, 3, "版本", "version")
         paths = ttk.Frame(advanced)
@@ -484,9 +532,22 @@ class AssetGeneratorUI:
             variable=self.clean_var,
         ).pack(anchor="w", pady=(14, 0))
 
-    def _field(self, parent: ttk.Frame, row: int, label: str, key: str) -> None:
+    def _field(
+        self,
+        parent: ttk.Frame,
+        row: int,
+        label: str,
+        key: str,
+        *,
+        readonly: bool = False,
+    ) -> None:
         ttk.Label(parent, text=label).grid(row=row, column=0, sticky="w", pady=4)
-        ttk.Entry(parent, textvariable=self.vars[key], width=40).grid(
+        ttk.Entry(
+            parent,
+            textvariable=self.vars[key],
+            width=40,
+            state="readonly" if readonly else "normal",
+        ).grid(
             row=row, column=1, sticky="ew", padx=(10, 0), pady=4
         )
         parent.columnconfigure(1, weight=1)
@@ -551,7 +612,25 @@ class AssetGeneratorUI:
                 width=5,
                 command=lambda selected=key: self._clear_material(selected),
             ).grid(row=row, column=4, padx=(6, 0), pady=4)
+            if self.on_choose_asset is not None:
+                ttk.Button(
+                    parent,
+                    text="素材库",
+                    width=6,
+                    command=lambda selected=key: self._choose_library_material(selected),
+                ).grid(row=row, column=5, padx=(6, 0), pady=4)
         parent.columnconfigure(1, weight=1)
+
+    def _choose_library_material(self, key: str) -> None:
+        if self.on_choose_asset is None:
+            return
+        try:
+            selected = self.on_choose_asset(key)
+        except Exception as error:
+            messagebox.showerror("无法选择一级素材", str(error), parent=self.root)
+            return
+        if selected is not None:
+            self._accept_material_file(key, selected)
 
     def _build_preview(self, parent: ttk.Frame) -> None:
         placement_header = ttk.Frame(parent, style="Alt.TFrame")
@@ -568,14 +647,102 @@ class AssetGeneratorUI:
             textvariable=self.offset_var,
             style="Alt.TLabel",
         ).pack(side="left", padx=(14, 0))
+        ttk.Label(
+            placement_header,
+            text="人物缩放",
+            style="Alt.TLabel",
+        ).pack(side="left", padx=(18, 5))
+        self.character_scale_percent_var = tk.IntVar(value=100)
+        scale_box = ttk.Spinbox(
+            placement_header,
+            from_=25,
+            to=300,
+            increment=5,
+            width=5,
+            textvariable=self.character_scale_percent_var,
+            command=self._character_scale_changed,
+        )
+        scale_box.pack(side="left")
+        scale_box.bind("<Return>", self._character_scale_changed)
+        scale_box.bind("<FocusOut>", self._character_scale_changed)
+        ttk.Label(placement_header, text="%", style="Alt.TLabel").pack(side="left")
+        ttk.Button(
+            placement_header,
+            text="重置缩放",
+            command=self._reset_character_scale,
+        ).pack(side="right", padx=(0, 8))
         ttk.Button(
             placement_header,
             text="重置位置",
             command=self._reset_character_offset,
         ).pack(side="right")
+
+        background_header = ttk.Frame(parent, style="Alt.TFrame")
+        background_header.pack(fill="x", pady=(7, 0))
+        ttk.Label(
+            background_header,
+            text="背景裁剪",
+            style="Alt.TLabel",
+            font=("Microsoft YaHei UI", 11, "bold"),
+        ).pack(side="left")
+        ttk.Label(background_header, text="X", style="Alt.TLabel").pack(
+            side="left", padx=(12, 4)
+        )
+        self.background_offset_x_var = tk.IntVar(value=0)
+        background_x = ttk.Spinbox(
+            background_header,
+            from_=-16384,
+            to=16384,
+            width=6,
+            textvariable=self.background_offset_x_var,
+            command=self._background_adjustment_changed,
+        )
+        background_x.pack(side="left")
+        background_x.bind("<Return>", self._background_adjustment_changed)
+        background_x.bind("<FocusOut>", self._background_adjustment_changed)
+        ttk.Label(background_header, text="Y", style="Alt.TLabel").pack(
+            side="left", padx=(8, 4)
+        )
+        self.background_offset_y_var = tk.IntVar(value=0)
+        background_y = ttk.Spinbox(
+            background_header,
+            from_=-16384,
+            to=16384,
+            width=6,
+            textvariable=self.background_offset_y_var,
+            command=self._background_adjustment_changed,
+        )
+        background_y.pack(side="left")
+        background_y.bind("<Return>", self._background_adjustment_changed)
+        background_y.bind("<FocusOut>", self._background_adjustment_changed)
+        ttk.Label(background_header, text="缩放", style="Alt.TLabel").pack(
+            side="left", padx=(12, 4)
+        )
+        self.background_scale_percent_var = tk.IntVar(value=100)
+        background_scale = ttk.Spinbox(
+            background_header,
+            from_=100,
+            to=300,
+            increment=5,
+            width=5,
+            textvariable=self.background_scale_percent_var,
+            command=self._background_adjustment_changed,
+        )
+        background_scale.pack(side="left")
+        background_scale.bind("<Return>", self._background_adjustment_changed)
+        background_scale.bind("<FocusOut>", self._background_adjustment_changed)
+        ttk.Label(background_header, text="%", style="Alt.TLabel").pack(side="left")
+        ttk.Button(
+            background_header,
+            text="重置背景",
+            command=self._reset_background_adjustment,
+        ).pack(side="right")
         ttk.Label(
             parent,
-            text="拖动画布调整人物在全部成品中的位置；下方每张预览还可以单独微调。",
+            text=(
+                "背景按原生 1024×1024 头像画布做 cover 裁剪，X/Y 调整取景、缩放继续放大；"
+                "裁剪会自动钳制，不会露出画布外空边。下方头像显示背景与人物的实际分层合成预览。"
+            ),
             style="Alt.TLabel",
         ).pack(anchor="w", pady=(3, 7))
         self.character_canvas = tk.Canvas(
@@ -622,7 +789,7 @@ class AssetGeneratorUI:
             if slot == SMALL_ICON_SOURCE_PREVIEW:
                 ttk.Label(
                     header,
-                    text="留空则使用人物源图",
+                    text="留空则不生成小图标",
                     style="Muted.TLabel",
                 ).pack(side="left", padx=(8, 0))
             else:
@@ -721,6 +888,7 @@ class AssetGeneratorUI:
             self._load_profile(Path(selected))
 
     def _new_project(self) -> None:
+        self.editing_workspace_id = None
         USER_PROJECT_ROOT.mkdir(parents=True, exist_ok=True)
         inputs = USER_PROJECT_ROOT / "inputs"
         inputs.mkdir(parents=True, exist_ok=True)
@@ -755,21 +923,23 @@ class AssetGeneratorUI:
                 encoding="utf-8",
             )
         default_adapter = self.authoring_adapter_records[0]
+        pack_id = f"local.{default_adapter.hero.casefold()}.{uuid.uuid4().hex[:10]}"
         profile = GeneratorProfile(
             profile_path=USER_PROFILE,
             adapter_id=default_adapter.adapter_id,
-            pack_id="local.dooley.custom",
-            name="自定义 Dooley 皮肤",
+            pack_id=pack_id,
+            name=f"自定义 {default_adapter.hero} 皮肤",
             version="0.1.0",
-            character=inputs / "character.png",
-            background=inputs / "background.png",
-            small_icon=inputs / "small_icon.png",
+            character=inputs / "character-not-provided",
+            background=inputs / "background-not-provided",
+            small_icon=inputs / "small-icon-not-provided",
             input_metadata=metadata,
             badge_template_root=self._ensure_local_badge_assets(),
             workspace_root=USER_PROJECT_ROOT / "workspaces",
             output_zip=default_output_directory() / "Dooley-Custom-0.1.0.zip",
             game_dir=None,
             small_icon_source=None,
+            small_icon_mode="none",
         )
         profile.save()
         self._populate_profile(profile)
@@ -782,6 +952,64 @@ class AssetGeneratorUI:
         if source.is_dir():
             shutil.copytree(source, destination, dirs_exist_ok=True)
         return destination
+
+    def edit_workspace(self, workspace: StudioWorkspace) -> GeneratorProfile:
+        """Load one library pack as the active creation project."""
+
+        pack = workspace.state.get("pack") or {}
+        pack_id = str(pack.get("id") or workspace.directory.name).strip()
+        version = str(pack.get("version") or "0.1.0").strip()
+        current_profile = None
+        if self.profile is not None:
+            try:
+                current_profile = self._profile_from_form(validate=False)
+            except Exception:
+                current_profile = self.profile
+        profile = profile_for_workspace_edit(
+            workspace,
+            profile_path=USER_PROFILE,
+            badge_template_root=self._ensure_local_badge_assets(),
+            workspace_root=USER_PROJECT_ROOT / "generated-workspaces",
+            output_zip=USER_PROJECT_ROOT / "exports" / f"{pack_id}-{version}.zip",
+            game_dir=self.profile.game_dir if self.profile is not None else None,
+            input_search_roots=(
+                USER_PROJECT_ROOT / "generated-workspaces",
+                USER_PROJECT_ROOT / "workspaces",
+                USER_PROJECT_ROOT / "inputs",
+                manager_root() / "library-assets",
+            ),
+        )
+        if (
+            current_profile is not None
+            and current_profile.pack_id.casefold() == profile.pack_id.casefold()
+        ):
+            # Re-entering the same pack after a failed build must not discard
+            # adjustments the UI already autosaved. Only the source paths are
+            # rehydrated; identity and current layout work remain intact.
+            profile = replace(
+                profile,
+                character_offset_x=current_profile.character_offset_x,
+                character_offset_y=current_profile.character_offset_y,
+                character_scale=current_profile.character_scale,
+                background_offset_x=current_profile.background_offset_x,
+                background_offset_y=current_profile.background_offset_y,
+                background_scale=current_profile.background_scale,
+                output_offsets=current_profile.output_offsets,
+            )
+        self.editing_workspace_id = profile.pack_id
+        profile.save()
+        self._populate_profile(profile)
+        name = profile.name
+        if profile.character.is_file():
+            detail = "原始素材和调整参数已恢复；加入皮肤库时会更新原皮肤包"
+        else:
+            detail = "该旧皮肤包未保存人物原图，请补充人物素材后再加入皮肤库"
+        self.status_var.set(f"正在编辑：{name} · {detail}")
+        self._append_log(
+            "edit",
+            f"已载入皮肤库项目：{name}（{profile.pack_id}）；{detail}",
+        )
+        return profile
 
     def _populate_profile(self, profile: GeneratorProfile) -> None:
         if not profile.badge_template_root.is_dir():
@@ -823,15 +1051,28 @@ class AssetGeneratorUI:
         )
         self.adapter_display_var.set(selected_label)
         self.small_icon_mode_var.set(
-            ICON_MODE_NAMES.get(profile.small_icon_mode, "用户提供（默认）")
+            ICON_MODE_NAMES.get(profile.small_icon_mode, "未提供时不生成")
         )
-        if profile.small_icon_mode == "user" and profile.small_icon.is_file():
-            self.user_small_icon_path = str(profile.small_icon)
+        self.user_small_icon_path = (
+            str(profile.small_icon)
+            if profile.small_icon_mode == "user" and profile.small_icon.is_file()
+            else ""
+        )
         self.path_entries["small_icon"].configure(
             state="normal" if profile.small_icon_mode == "user" else "disabled"
         )
         self.character_offset_x = profile.character_offset_x
         self.character_offset_y = profile.character_offset_y
+        self.character_scale = profile.character_scale
+        self.background_offset_x = profile.background_offset_x
+        self.background_offset_y = profile.background_offset_y
+        self.background_scale = profile.background_scale
+        if hasattr(self, "character_scale_percent_var"):
+            self.character_scale_percent_var.set(round(profile.character_scale * 100))
+        if hasattr(self, "background_offset_x_var"):
+            self.background_offset_x_var.set(profile.background_offset_x)
+            self.background_offset_y_var.set(profile.background_offset_y)
+            self.background_scale_percent_var.set(round(profile.background_scale * 100))
         self.output_offsets = {
             slot: profile.output_offsets.get(slot, (0, 0))
             for _title, slot in PREVIEW_SLOTS
@@ -862,9 +1103,14 @@ class AssetGeneratorUI:
         )
         self.vars["adapter"].set(adapter_id)
         if previous is not None:
-            old_slug = previous.hero.casefold()
-            if self.vars["pack_id"].get().strip() == f"local.{old_slug}.custom":
-                self.vars["pack_id"].set(f"local.{selected.hero.casefold()}.custom")
+            if self.editing_workspace_id is None:
+                self.vars["pack_id"].set(
+                    retarget_automatic_pack_id(
+                        self.vars["pack_id"].get(),
+                        previous.hero,
+                        selected.hero,
+                    )
+                )
             if self.vars["name"].get().strip() == f"自定义 {previous.hero} 皮肤":
                 self.vars["name"].set(f"自定义 {selected.hero} 皮肤")
             output_text = self.vars["output_zip"].get().strip()
@@ -938,6 +1184,13 @@ class AssetGeneratorUI:
                     self.chroma_color.get(),
                     self.chroma_tolerance.get(),
                 )
+            if key in {"character", "small_icon"} and processed.getchannel("A").getbbox() is None:
+                messagebox.showerror(
+                    "扣色结果为空",
+                    "扣除底色后图片已完全透明；已取消本次导入。请关闭扣色或降低容差后重试。",
+                    parent=self.root,
+                )
+                return
             processed.save(destination, "PNG", optimize=True)
             selected = destination.resolve()
             self._append_log(
@@ -949,15 +1202,17 @@ class AssetGeneratorUI:
             self._small_icon_mode_changed()
         self.vars[key].set(str(selected))
         self._input_changed(key)
+        if self.on_material_import is not None:
+            self.on_material_import(key, selected)
 
     def _clear_material(self, key: str) -> None:
-        if key == "small_icon" and self._selected_small_icon_mode() != "user":
-            self.small_icon_mode_var.set(ICON_MODE_NAMES["user"])
+        if key == "small_icon":
+            self.small_icon_mode_var.set(ICON_MODE_NAMES["none"])
             self._small_icon_mode_changed()
         self.vars[key].set("")
         if key == "small_icon":
             self.user_small_icon_path = ""
-            self._update_small_icon_metadata("user")
+            self._update_small_icon_metadata("none")
         self._input_changed(key)
         self.status_var.set(f"已清空：{key}")
         self._append_log("input", f"已清空当前素材：{key}")
@@ -1005,12 +1260,21 @@ class AssetGeneratorUI:
                     self.chroma_color.get(),
                     self.chroma_tolerance.get(),
                 )
+            if key in {"character", "small_icon"} and image.getchannel("A").getbbox() is None:
+                messagebox.showerror(
+                    "扣色结果为空",
+                    "扣除底色后图片已完全透明；已取消本次粘贴。请关闭扣色或降低容差后重试。",
+                    parent=self.root,
+                )
+                return "break"
             image.save(destination, optimize=True)
             if key == "small_icon" and self._selected_small_icon_mode() != "user":
                 self.small_icon_mode_var.set(ICON_MODE_NAMES["user"])
                 self._small_icon_mode_changed()
             self.vars[key].set(str(destination.resolve()))
             self._input_changed(key)
+            if self.on_material_import is not None:
+                self.on_material_import(key, destination.resolve())
             self._append_log("input", f"剪贴板图片已保存为 {destination}")
             return "break"
         try:
@@ -1041,6 +1305,8 @@ class AssetGeneratorUI:
         if key == "character":
             self.character_offset_x = 0
             self.character_offset_y = 0
+            self.character_scale = 1.0
+            self.character_scale_percent_var.set(100)
             self.output_offsets = {
                 slot: (0, 0) for _title, slot in PREVIEW_SLOTS
             }
@@ -1048,13 +1314,20 @@ class AssetGeneratorUI:
             self._render_character_canvas()
             self._render_small_icon_source_preview()
             self._update_output_offset_labels()
-            if self._selected_small_icon_mode() != "user":
+            if self._selected_small_icon_mode() not in {"none", "user"}:
                 self._materialize_derived_small_icon()
+        elif key == "background":
+            self.background_offset_x = 0
+            self.background_offset_y = 0
+            self.background_scale = 1.0
+            self.background_offset_x_var.set(0)
+            self.background_offset_y_var.set(0)
+            self.background_scale_percent_var.set(100)
         elif key == "small_icon" and self._selected_small_icon_mode() == "user":
             self.user_small_icon_path = self.vars["small_icon"].get().strip()
         elif key == "small_icon_source":
             self._render_small_icon_source_preview()
-            if self._selected_small_icon_mode() != "user":
+            if self._selected_small_icon_mode() not in {"none", "user"}:
                 self._materialize_derived_small_icon()
             else:
                 self._update_small_icon_metadata("user")
@@ -1062,7 +1335,7 @@ class AssetGeneratorUI:
         self._rebuild_live_renderer()
 
     def _selected_small_icon_mode(self) -> str:
-        return ICON_MODE_LABELS.get(self.small_icon_mode_var.get(), "user")
+        return ICON_MODE_LABELS.get(self.small_icon_mode_var.get(), "none")
 
     def _small_icon_mode_changed(self, _event: tk.Event | None = None) -> None:
         mode = self._selected_small_icon_mode()
@@ -1070,6 +1343,13 @@ class AssetGeneratorUI:
         if mode == "user":
             entry.configure(state="normal")
             self.vars["small_icon"].set(self.user_small_icon_path)
+            self._update_small_icon_metadata(mode)
+        elif mode == "none":
+            current = self.vars["small_icon"].get().strip()
+            if current and "small-icon-derived-" not in Path(current).name:
+                self.user_small_icon_path = current
+            entry.configure(state="disabled")
+            self.vars["small_icon"].set("")
             self._update_small_icon_metadata(mode)
         else:
             current = self.vars["small_icon"].get().strip()
@@ -1082,14 +1362,9 @@ class AssetGeneratorUI:
 
     def _materialize_derived_small_icon(self) -> None:
         mode = self._selected_small_icon_mode()
-        character_text = self.vars["character"].get().strip()
         icon_source_text = self.vars["small_icon_source"].get().strip()
-        source_text = (
-            icon_source_text
-            if icon_source_text and Path(icon_source_text).is_file()
-            else character_text
-        )
-        if mode == "user" or not source_text or not Path(source_text).is_file():
+        source_text = icon_source_text
+        if mode in {"none", "user"} or not source_text or not Path(source_text).is_file():
             self.vars["small_icon"].set("")
             return
         if self.profile is None:
@@ -1114,7 +1389,7 @@ class AssetGeneratorUI:
         self.vars["small_icon"].set(str(destination))
         self._update_small_icon_metadata(
             mode,
-            derived_from=("small_icon_source" if source_text == icon_source_text else "character"),
+            derived_from="small_icon_source",
         )
         self.status_var.set(f"已用“{self.small_icon_mode_var.get()}”生成小图标")
 
@@ -1134,6 +1409,11 @@ class AssetGeneratorUI:
             return
         payload["small_icon"] = (
             {
+                "origin": "not_provided",
+                "aigc": False,
+            }
+            if mode == "none"
+            else {
                 "origin": "user_supplied",
                 "aigc": False,
             }
@@ -1203,27 +1483,33 @@ class AssetGeneratorUI:
             return
         margin = 14
         scale = min((width - margin * 2) / source.width, (height - margin * 2) / source.height)
-        display_size = (
+        frame_size = (
             max(1, round(source.width * scale)),
             max(1, round(source.height * scale)),
         )
-        origin = ((width - display_size[0]) // 2, (height - display_size[1]) // 2)
-        checker = Image.new("RGBA", display_size, (218, 224, 231, 255))
+        origin = ((width - frame_size[0]) // 2, (height - frame_size[1]) // 2)
+        checker = Image.new("RGBA", frame_size, (218, 224, 231, 255))
         pixels = checker.load()
         tile = 14
-        for y in range(display_size[1]):
-            for x in range(display_size[0]):
+        for y in range(frame_size[1]):
+            for x in range(frame_size[0]):
                 if (x // tile + y // tile) % 2:
                     pixels[x, y] = (177, 187, 199, 255)
+        display_size = (
+            max(1, round(frame_size[0] * self.character_scale)),
+            max(1, round(frame_size[1] * self.character_scale)),
+        )
         resized = source.resize(display_size, Image.Resampling.LANCZOS)
         self.character_checker_photo = ImageTk.PhotoImage(checker)
         self.character_canvas_photo = ImageTk.PhotoImage(resized)
-        self.character_canvas_scale = scale
+        self.character_canvas_scale = scale * self.character_scale
         self.character_canvas_origin = origin
         self.character_source_size = source.size
         canvas.create_image(*origin, image=self.character_checker_photo, anchor="nw")
-        image_x = origin[0] + round(self.character_offset_x * scale)
-        image_y = origin[1] + round(self.character_offset_y * scale)
+        image_x = origin[0] + round((frame_size[0] - display_size[0]) * 0.5)
+        image_y = origin[1] + frame_size[1] - display_size[1]
+        image_x += round(self.character_offset_x * self.character_canvas_scale)
+        image_y += round(self.character_offset_y * self.character_canvas_scale)
         canvas.create_image(
             image_x,
             image_y,
@@ -1233,7 +1519,7 @@ class AssetGeneratorUI:
         )
         # Mask pixels translated beyond the authoritative source canvas.
         x0, y0 = origin
-        x1, y1 = x0 + display_size[0], y0 + display_size[1]
+        x1, y1 = x0 + frame_size[0], y0 + frame_size[1]
         mask = "#0d1219"
         canvas.create_rectangle(0, 0, width, y0, fill=mask, outline=mask)
         canvas.create_rectangle(0, y1, width, height, fill=mask, outline=mask)
@@ -1250,8 +1536,6 @@ class AssetGeneratorUI:
         if width < 20 or height < 20:
             return
         source_text = self.vars.get("small_icon_source", tk.StringVar()).get().strip()
-        if not source_text or not Path(source_text).is_file():
-            source_text = self.vars.get("character", tk.StringVar()).get().strip()
         canvas.delete("all")
         if not source_text or not Path(source_text).is_file():
             canvas.create_text(
@@ -1310,6 +1594,48 @@ class AssetGeneratorUI:
         self._render_character_canvas()
         self._schedule_live_previews()
         self._autosave_profile()
+
+    def _character_scale_changed(self, _event: tk.Event | None = None) -> None:
+        try:
+            percent = int(self.character_scale_percent_var.get())
+        except (tk.TclError, ValueError):
+            return
+        percent = max(25, min(300, percent))
+        if self.character_scale_percent_var.get() != percent:
+            self.character_scale_percent_var.set(percent)
+        self.character_scale = percent / 100.0
+        self._render_character_canvas()
+        self._schedule_live_previews()
+        self._autosave_profile()
+
+    def _reset_character_scale(self) -> None:
+        self.character_scale_percent_var.set(100)
+        self._character_scale_changed()
+
+    def _background_adjustment_changed(self, _event: tk.Event | None = None) -> None:
+        try:
+            offset_x = int(self.background_offset_x_var.get())
+            offset_y = int(self.background_offset_y_var.get())
+            percent = int(self.background_scale_percent_var.get())
+        except (tk.TclError, ValueError):
+            return
+        offset_x = max(-16384, min(16384, offset_x))
+        offset_y = max(-16384, min(16384, offset_y))
+        percent = max(100, min(300, percent))
+        self.background_offset_x_var.set(offset_x)
+        self.background_offset_y_var.set(offset_y)
+        self.background_scale_percent_var.set(percent)
+        self.background_offset_x = offset_x
+        self.background_offset_y = offset_y
+        self.background_scale = percent / 100.0
+        self._schedule_live_previews()
+        self._autosave_profile()
+
+    def _reset_background_adjustment(self) -> None:
+        self.background_offset_x_var.set(0)
+        self.background_offset_y_var.set(0)
+        self.background_scale_percent_var.set(100)
+        self._background_adjustment_changed()
 
     def _output_drag_start(self, slot: str, event: tk.Event) -> None:
         x, y = self.output_offsets.get(slot, (0, 0))
@@ -1399,6 +1725,10 @@ class AssetGeneratorUI:
             ),
             character_offset_x=self.character_offset_x,
             character_offset_y=self.character_offset_y,
+            character_scale=self.character_scale,
+            background_offset_x=self.background_offset_x,
+            background_offset_y=self.background_offset_y,
+            background_scale=self.background_scale,
             output_offsets={
                 slot: offset
                 for slot, offset in self.output_offsets.items()
@@ -1448,6 +1778,44 @@ class AssetGeneratorUI:
 
         threading.Thread(target=worker, daemon=True).start()
 
+    def _embedded_import(self) -> None:
+        if self.busy:
+            return
+        try:
+            profile = self._profile_from_form(validate=False)
+            output = USER_PROJECT_ROOT / "exports" / (
+                f"{profile.pack_id}-{profile.version}.zip"
+            )
+            self.vars["output_zip"].set(str(output))
+            self.vars["workspace_root"].set(
+                str(USER_PROJECT_ROOT / "generated-workspaces")
+            )
+            self.pending_embedded_action = "import"
+            self._start(("generate",))
+        except Exception as error:
+            messagebox.showerror("无法生成皮肤", str(error), parent=self.root)
+
+    def _embedded_export(self) -> None:
+        if self.busy:
+            return
+        try:
+            profile = self._profile_from_form(validate=False)
+        except Exception as error:
+            messagebox.showerror("配置无效", str(error), parent=self.root)
+            return
+        selected = filedialog.asksaveasfilename(
+            parent=self.root,
+            title="导出皮肤包到指定位置",
+            initialfile=f"{profile.name}-{profile.version}.zip",
+            defaultextension=".zip",
+            filetypes=(("皮肤包 ZIP", "*.zip"),),
+        )
+        if not selected:
+            return
+        self.vars["output_zip"].set(selected)
+        self.pending_embedded_action = "export"
+        self._start(("generate",))
+
     def _poll_events(self) -> None:
         try:
             while True:
@@ -1473,7 +1841,19 @@ class AssetGeneratorUI:
             workspace = Path(result.manager_workspace)
         if workspace is not None:
             self._refresh_previews(workspace)
+        action = self.pending_embedded_action
+        self.pending_embedded_action = None
+        if self.embedded and action == "import" and self.on_import is not None:
+            try:
+                self.on_import(self._profile_from_form(validate=False), result)
+            except Exception as error:
+                messagebox.showerror("无法加入皮肤库", str(error), parent=self.root)
+                return
         message = "操作完成。"
+        if self.embedded and action == "import":
+            message = "皮肤已经生成并加入皮肤库。"
+        elif self.embedded and action == "export":
+            message = f"皮肤包已导出：\n{result.output_zip}"
         if result.doctor_healthy is True:
             message += " Skin Manager doctor 正常。"
         messagebox.showinfo("完成", message, parent=self.root)
@@ -1547,13 +1927,23 @@ class AssetGeneratorUI:
             if canvas is None or canvas.winfo_width() < 20 or canvas.winfo_height() < 20:
                 continue
             try:
-                preview = self.live_renderer.render(
-                    slot,
-                    character_canvas_offset=(
+                render_arguments = {
+                    "character_canvas_offset": (
                         self.character_offset_x,
                         self.character_offset_y,
                     ),
-                    local_offset=self.output_offsets.get(slot, (0, 0)),
+                    "character_scale": self.character_scale,
+                    "background_offset": (
+                        self.background_offset_x,
+                        self.background_offset_y,
+                    ),
+                    "background_scale": self.background_scale,
+                    "local_offset": self.output_offsets.get(slot, (0, 0)),
+                }
+                preview = (
+                    self.live_renderer.render_portrait_composite(**render_arguments)
+                    if slot == "portrait_gameplay"
+                    else self.live_renderer.render(slot, **render_arguments)
                 )
                 self._render_output_canvas(slot, preview)
             except Exception as error:

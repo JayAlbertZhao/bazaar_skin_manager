@@ -4,7 +4,8 @@
   "adapter_version": 3,
   "default_authoring": true,
   "supported_builds": [
-    "24001960"
+    "24001960",
+    "24570932"
   ],
   "target": {
     "game": "the-bazaar",
@@ -39,7 +40,7 @@
           2048
         ],
         "supported_original_sha256": [
-          "29c0bb812b91c453aee56620f09a64cf49c57458210975f230becb8e95f3cd55"
+          "29c0bb812b91c453aee56620f09a64cf49c57458210975f230becb8e95f3cd55", "6038715302da406eb79d038074ba7731890cb03d91bbb29113fe4c52a4ca32a7"
         ]
       },
       "match_names": [
@@ -58,7 +59,7 @@
           512
         ],
         "supported_original_sha256": [
-          "29c0bb812b91c453aee56620f09a64cf49c57458210975f230becb8e95f3cd55"
+          "29c0bb812b91c453aee56620f09a64cf49c57458210975f230becb8e95f3cd55", "6038715302da406eb79d038074ba7731890cb03d91bbb29113fe4c52a4ca32a7"
         ]
       },
       "match_names": [
@@ -86,7 +87,7 @@
           2048
         ],
         "supported_original_sha256": [
-          "29c0bb812b91c453aee56620f09a64cf49c57458210975f230becb8e95f3cd55"
+          "29c0bb812b91c453aee56620f09a64cf49c57458210975f230becb8e95f3cd55", "6038715302da406eb79d038074ba7731890cb03d91bbb29113fe4c52a4ca32a7"
         ]
       },
       "match_names": [
@@ -105,7 +106,7 @@
           2048
         ],
         "supported_original_sha256": [
-          "29c0bb812b91c453aee56620f09a64cf49c57458210975f230becb8e95f3cd55"
+          "29c0bb812b91c453aee56620f09a64cf49c57458210975f230becb8e95f3cd55", "6038715302da406eb79d038074ba7731890cb03d91bbb29113fe4c52a4ca32a7"
         ]
       },
       "match_names": [
@@ -124,7 +125,7 @@
           512
         ],
         "supported_original_sha256": [
-          "29c0bb812b91c453aee56620f09a64cf49c57458210975f230becb8e95f3cd55"
+          "29c0bb812b91c453aee56620f09a64cf49c57458210975f230becb8e95f3cd55", "6038715302da406eb79d038074ba7731890cb03d91bbb29113fe4c52a4ca32a7"
         ]
       },
       "match_names": [
@@ -209,7 +210,8 @@
     "enabled": true,
     "target": {
       "game": "The Bazaar",
-      "steam_build": "24001960",
+      "steam_build": "24570932",
+      "supported_builds": ["24001960", "24570932"],
       "hero": "Mak"
     },
     "fallback": "original",

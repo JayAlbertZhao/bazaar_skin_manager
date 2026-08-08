@@ -405,16 +405,34 @@ namespace BazaarSkinManager.TheBazaar
                 return;
             }
 
-            if (loader == "GenerateEncounterData" &&
-                !VisualOwnership.IsLocalHeroPortraitLoad())
+            VisualOwnership.PortraitLoadOwnership portraitOwnership =
+                VisualOwnership.PortraitLoadOwnership.Unknown;
+            if (loader == "GenerateEncounterData")
             {
-                RuntimeSkinAudit.RecordLoader(
-                    loader,
-                    "wrong owner",
-                    "Encounter data belongs to a non-player portrait; native " +
-                        "portrait and background references were retained.",
-                    null);
-                return;
+                portraitOwnership =
+                    VisualOwnership.ClassifyPortraitLoad();
+                if (portraitOwnership !=
+                        VisualOwnership.PortraitLoadOwnership.Local &&
+                    portraitOwnership !=
+                        VisualOwnership.PortraitLoadOwnership.Diagnostic)
+                {
+                    RuntimeDiagnostics.ReportPortraitDecision(
+                        "portrait_gameplay+portrait_background",
+                        pack,
+                        portraitOwnership,
+                        "SkinAssetDataSO.GenerateEncounterData",
+                        "retained");
+                    RuntimeSkinAudit.RecordLoader(
+                        loader,
+                        "wrong owner",
+                        "Encounter data owner=" +
+                            VisualOwnership.PortraitOwnerName(
+                                portraitOwnership) +
+                            "; native portrait and background references " +
+                            "were retained.",
+                        null);
+                    return;
+                }
             }
 
             if (__result == null)
@@ -432,14 +450,20 @@ namespace BazaarSkinManager.TheBazaar
                 return;
             }
 
-            __result = Process(loader, __args, __result, pack);
+            __result = Process(
+                loader,
+                __args,
+                __result,
+                pack,
+                portraitOwnership);
         }
 
         private static async Task<T> Process<T>(
             string loader,
             object[] arguments,
             Task<T> original,
-            RuntimePack pack)
+            RuntimePack pack,
+            VisualOwnership.PortraitLoadOwnership portraitOwnership)
         {
             T result;
             try
@@ -466,6 +490,7 @@ namespace BazaarSkinManager.TheBazaar
                 arguments,
                 boxed,
                 pack,
+                portraitOwnership,
                 out status,
                 out detail);
             RuntimeSkinAudit.RecordLoader(
@@ -481,6 +506,7 @@ namespace BazaarSkinManager.TheBazaar
             object[] arguments,
             object result,
             RuntimePack pack,
+            VisualOwnership.PortraitLoadOwnership portraitOwnership,
             out string status,
             out string detail)
         {
@@ -551,7 +577,12 @@ namespace BazaarSkinManager.TheBazaar
                         out detail);
                     return;
                 case "GenerateEncounterData":
-                    ApplyEncounterData(result, pack, out status, out detail);
+                    ApplyEncounterData(
+                        result,
+                        pack,
+                        portraitOwnership,
+                        out status,
+                        out detail);
                     return;
                 case "LoadCollectionDetailsAssetAsync":
                     GameObject details = result as GameObject;
@@ -907,6 +938,7 @@ namespace BazaarSkinManager.TheBazaar
         private static void ApplyEncounterData(
             object result,
             RuntimePack pack,
+            VisualOwnership.PortraitLoadOwnership ownership,
             out string status,
             out string detail)
         {
@@ -916,6 +948,14 @@ namespace BazaarSkinManager.TheBazaar
             FieldInfo backgroundField = AccessTools.Field(
                 result.GetType(),
                 "backgroundTextureReference");
+            // This field does not exist on every supported build. Use normal
+            // reflection so an older verified build does not receive a
+            // misleading Harmony missing-field warning.
+            FieldInfo animatedPortraitField = result.GetType().GetField(
+                "animatedPortraitPrefabReference",
+                BindingFlags.Instance |
+                BindingFlags.Public |
+                BindingFlags.NonPublic);
             bool preloadedPortrait =
                 pack.UsesPreloadedDeployment(
                     "portrait_gameplay");
@@ -928,42 +968,86 @@ namespace BazaarSkinManager.TheBazaar
             Texture2D background = preloadedBackground
                 ? null
                 : pack.Texture("portrait_background");
-            if (portraitField == null || backgroundField == null ||
-                (!preloadedPortrait && portrait == null) ||
-                (!preloadedBackground && background == null))
+            bool hasPortraitReplacement =
+                preloadedPortrait || portrait != null;
+            bool hasBackgroundReplacement =
+                preloadedBackground || background != null;
+
+            // portrait_background is optional. Character-only packs created
+            // by the lightweight import flow intentionally contain only
+            // portrait_gameplay and standing_overlay. Requiring both encounter
+            // slots made the valid portrait replacement fail as one atomic
+            // operation whenever that optional background was absent.
+            if ((!hasPortraitReplacement && !hasBackgroundReplacement) ||
+                (hasPortraitReplacement && portraitField == null) ||
+                (hasBackgroundReplacement && backgroundField == null))
             {
                 status = "unsupported type";
                 detail =
-                    "Encounter data portrait/background fields are unavailable.";
+                    "Configured encounter visual fields or replacement assets " +
+                    "are unavailable (portrait=" +
+                    hasPortraitReplacement + ", background=" +
+                    hasBackgroundReplacement + ").";
+                RuntimeDiagnostics.ReportPortraitDecision(
+                    "portrait_gameplay+portrait_background",
+                    pack,
+                    ownership,
+                    "SkinAssetDataSO.GenerateEncounterData",
+                    "retained");
                 return;
             }
 
+            // Build 24570932 made EncounterController prefer the generated
+            // EncounterAssetDataSO animated portrait over its static sprite.
+            // Replacing portraitTextureReference alone is therefore not a
+            // complete local-player override: a valid native animated
+            // reference makes LoadPortraitSpriteAsync unreachable. Clear the
+            // generated reference only after local ownership has been proven.
+            // The opponent result never reaches this method and retains its
+            // native animated/static routing unchanged.
+            bool hadAnimatedPortrait = hasPortraitReplacement &&
+                animatedPortraitField != null &&
+                HasValidRuntimeKey(
+                    animatedPortraitField.GetValue(result));
             bool already =
-                (preloadedPortrait ||
+                (!hasPortraitReplacement ||
+                 preloadedPortrait ||
                  object.ReferenceEquals(
                      portraitField.GetValue(result),
                      portrait)) &&
-                (preloadedBackground ||
+                (!hasBackgroundReplacement ||
+                 preloadedBackground ||
                  object.ReferenceEquals(
                      backgroundField.GetValue(result),
-                     background));
+                     background)) &&
+                !hadAnimatedPortrait;
             if (already)
             {
                 status = "applied";
                 detail =
                     "Encounter data retains its native references; preloaded " +
                     "textures resolve from the patched Unity bundle.";
+                RuntimeDiagnostics.ReportPortraitDecision(
+                    "portrait_gameplay+portrait_background",
+                    pack,
+                    ownership,
+                    "SkinAssetDataSO.GenerateEncounterData",
+                    "applied");
                 return;
             }
 
-            if (!preloadedPortrait)
+            if (hadAnimatedPortrait)
+            {
+                animatedPortraitField.SetValue(result, null);
+            }
+            if (hasPortraitReplacement && !preloadedPortrait)
             {
                 portraitField.SetValue(result, portrait);
                 RuntimeDiagnostics.ReportReplacement(
                     "portrait_gameplay",
                     "GenerateEncounterData -> portraitTextureReference");
             }
-            if (!preloadedBackground)
+            if (hasBackgroundReplacement && !preloadedBackground)
             {
                 backgroundField.SetValue(result, background);
                 RuntimeDiagnostics.ReportReplacement(
@@ -971,8 +1055,49 @@ namespace BazaarSkinManager.TheBazaar
                     "GenerateEncounterData -> backgroundTextureReference");
             }
             status = "applied";
-            detail =
-                "EncounterAssetDataSO and Cleanup retained; visual fields updated.";
+            detail = hadAnimatedPortrait
+                ? "EncounterAssetDataSO and Cleanup retained; visual fields " +
+                    "updated and the native animated portrait route disabled."
+                : "EncounterAssetDataSO and Cleanup retained; visual fields " +
+                    "updated independently; unspecified fields retained.";
+            RuntimeDiagnostics.ReportPortraitDecision(
+                "portrait_gameplay+portrait_background",
+                pack,
+                ownership,
+                "SkinAssetDataSO.GenerateEncounterData",
+                "applied");
+        }
+
+        private static bool HasValidRuntimeKey(object reference)
+        {
+            if (reference == null)
+            {
+                return false;
+            }
+
+            MethodInfo method = reference.GetType().GetMethod(
+                "RuntimeKeyIsValid",
+                BindingFlags.Instance |
+                BindingFlags.Public,
+                null,
+                Type.EmptyTypes,
+                null);
+            if (method == null)
+            {
+                // A supported build exposing a different reference contract
+                // should fail toward the static replacement rather than let
+                // an unknown higher-priority animated route bypass it.
+                return true;
+            }
+            try
+            {
+                object value = method.Invoke(reference, null);
+                return value is bool && (bool)value;
+            }
+            catch (Exception)
+            {
+                return true;
+            }
         }
     }
 }

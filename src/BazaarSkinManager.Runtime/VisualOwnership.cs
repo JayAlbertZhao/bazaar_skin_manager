@@ -17,17 +17,34 @@ namespace BazaarSkinManager.TheBazaar
         private static FieldInfo _selectedHeroField;
         private static FieldInfo _isHeroField;
 
+        internal enum PortraitLoadOwnership
+        {
+            Unknown,
+            Local,
+            Opponent,
+            Preview,
+            Diagnostic
+        }
+
         public static bool IsLocalHeroPortraitLoad()
+        {
+            PortraitLoadOwnership ownership = ClassifyPortraitLoad();
+            return ownership == PortraitLoadOwnership.Local ||
+                ownership == PortraitLoadOwnership.Diagnostic;
+        }
+
+        public static PortraitLoadOwnership ClassifyPortraitLoad()
         {
             if (_diagnosticLocalPortraitDepth > 0)
             {
-                return true;
+                return PortraitLoadOwnership.Diagnostic;
             }
 
+            PortraitLoadOwnership best = PortraitLoadOwnership.Unknown;
             StackFrame[] frames = new StackTrace(false).GetFrames();
             if (frames == null)
             {
-                return false;
+                return best;
             }
 
             foreach (StackFrame frame in frames)
@@ -44,10 +61,35 @@ namespace BazaarSkinManager.TheBazaar
                         "BoardBuilder+<LoadHeroPortraitAsync>",
                         StringComparison.Ordinal) >= 0)
                 {
-                    return true;
+                    return PortraitLoadOwnership.Local;
+                }
+                if (!string.IsNullOrEmpty(typeName) &&
+                    typeName.IndexOf(
+                        "EncounterController+<<Setup>g__CreateOpponentSkinData",
+                        StringComparison.Ordinal) >= 0)
+                {
+                    best = PortraitLoadOwnership.Opponent;
+                    continue;
+                }
+                if (IsPreviewPortraitCallSite(typeName))
+                {
+                    best = PortraitLoadOwnership.Preview;
                 }
             }
-            return false;
+            return best;
+        }
+
+        public static bool IsPreviewPortraitLoad(
+            PortraitLoadOwnership ownership)
+        {
+            return ownership == PortraitLoadOwnership.Preview ||
+                ownership == PortraitLoadOwnership.Diagnostic;
+        }
+
+        public static string PortraitOwnerName(
+            PortraitLoadOwnership ownership)
+        {
+            return ownership.ToString().ToLowerInvariant();
         }
 
         public static IDisposable AssumeLocalPortraitForDiagnostic()
@@ -110,6 +152,17 @@ namespace BazaarSkinManager.TheBazaar
             return isHero;
         }
 
+        public static GameObject SkinEditGameObject(object value)
+        {
+            GameObject gameObject = value as GameObject;
+            if (gameObject != null)
+            {
+                return gameObject;
+            }
+            Component component = value as Component;
+            return component == null ? null : component.gameObject;
+        }
+
         private static object FindHeroViewTransition(object display)
         {
             if (!EnsureHeroViewBindings() || display == null)
@@ -163,6 +216,37 @@ namespace BazaarSkinManager.TheBazaar
                 ? null
                 : AccessTools.Field(_heroViewTransitionType, "_isHero");
             return _selectedHeroField != null && _isHeroField != null;
+        }
+
+        private static bool IsPreviewPortraitCallSite(string typeName)
+        {
+            if (string.IsNullOrEmpty(typeName))
+            {
+                return false;
+            }
+
+            // Current build 24570932 calls SkinAssetDataSO.LoadPortrait only
+            // from these non-match collection/store/career surfaces. Keep the
+            // whitelist explicit: a new board or opponent call site must not
+            // inherit preview permission merely because it requests the same
+            // SkinAssetDataSO.
+            string[] previewCallers =
+            {
+                "CosmeticButton",
+                "CosmeticItem",
+                "ProfileCareerHeroInfosController",
+                "TheBazaar.Store.SpecialContainer",
+                "BattlePassTierPaid",
+                "SkinAssetDataSO+<LoadDailyWeeklyImageAssetAsync>"
+            };
+            foreach (string caller in previewCallers)
+            {
+                if (typeName.IndexOf(caller, StringComparison.Ordinal) >= 0)
+                {
+                    return true;
+                }
+            }
+            return false;
         }
 
         private sealed class DiagnosticLocalPortraitScope : IDisposable

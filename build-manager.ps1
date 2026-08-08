@@ -1,5 +1,5 @@
 param(
-    [string]$Version = "1.1.2"
+    [string]$Version = "1.2.10"
 )
 
 $ErrorActionPreference = "Stop"
@@ -83,6 +83,7 @@ New-Item -ItemType Directory -Force -Path $output, $work, $spec | Out-Null
     --add-binary "$fmodDll;fmod_toolkit\libfmod\Windows\x64" `
     --add-data "$root\manager\hero-catalog.json;manager" `
     --add-data "$root\manager\adapters;manager\adapters" `
+    --add-data "$root\manager\assets;manager\assets" `
     --add-data "$runtime;dist\runtime" `
     --add-data "$runtimeMetadata;dist\runtime" `
     --add-data "$root\tools\unity_bundle_texture_patch.py;tools" `
@@ -104,6 +105,21 @@ $selfTest = Start-Process `
     -WindowStyle Hidden
 if ($selfTest.ExitCode -ne 0) {
     throw "Frozen release runtime self-test failed with exit code $($selfTest.ExitCode)"
+}
+$previousLocalAppData = $env:LOCALAPPDATA
+try {
+    $env:LOCALAPPDATA = Join-Path $work "self-test-localappdata"
+    $uiSelfTest = Start-Process `
+        -FilePath $exe `
+        -ArgumentList "--self-test-v12-ui" `
+        -Wait `
+        -PassThru `
+        -WindowStyle Hidden
+    if ($uiSelfTest.ExitCode -ne 0) {
+        throw "Frozen 1.2 UI self-test failed with exit code $($uiSelfTest.ExitCode)"
+    }
+} finally {
+    $env:LOCALAPPDATA = $previousLocalAppData
 }
 
 $adapterCapabilities = @(

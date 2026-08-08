@@ -243,15 +243,23 @@ def validate_manifest(
         problems.append(issue("target", "target must be an object"))
         target = {}
     expected_build = inventory.get("steam_build")
+    supported_builds = inventory.get("supported_builds")
     if expected_build is None and isinstance(inventory.get("target"), dict):
         expected_build = inventory["target"].get("steam_build")
+        supported_builds = inventory["target"].get("supported_builds")
     if expected_build is None and isinstance(
         inventory.get("audio_template"), dict
     ):
         audio_target = inventory["audio_template"].get("target")
         if isinstance(audio_target, dict):
             expected_build = audio_target.get("steam_build")
-    if target.get("steam_build") != expected_build:
+            supported_builds = audio_target.get("supported_builds")
+    allowed_builds = {
+        str(value)
+        for value in (supported_builds or [expected_build])
+        if value is not None
+    }
+    if str(target.get("steam_build") or "") not in allowed_builds:
         problems.append(
             issue(
                 "target_build",
@@ -483,6 +491,7 @@ def validate_manifest(
         "checked_slots": len(slots),
         "checked_files": checked_files,
         "inventory_build": expected_build,
+        "inventory_builds": sorted(allowed_builds),
         "inventory_exact_slot_count": len(expected),
     }
 

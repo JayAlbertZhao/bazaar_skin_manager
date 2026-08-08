@@ -20,16 +20,18 @@ from typing import Callable, Iterable
 from PIL import Image
 
 from adapter_registry import AdapterRegistry, DEFAULT_ADAPTER_DIRECTORY
-from bazaar_skin_manager import installation_diagnostics, local_app_data
+from bazaar_skin_manager import installation_diagnostics, local_app_data, sha256_file
 from badge_pipeline import compose_badge
 from mod_studio_core import PROJECT_ROOT, WORKSPACES_ROOT, StudioWorkspace
 from skin_pack_builder import (
     _load_badge_template,
     alpha_contain_scale,
+    apply_declared_clip_mask,
     fit_alpha_contain,
     fit_cover,
     generate_pack,
     remove_edge_connected_background,
+    scaled_target_bounds,
     split_authored_underlay,
     translate_rgba,
 )
@@ -38,7 +40,7 @@ from skin_pack_builder import (
 PROFILE_SCHEMA = 1
 AUTHORING_RECIPE_ID = "deterministic-raster-v1"
 AUTHORING_RECIPE_VERSION = 2
-ASSET_GENERATOR_VERSION = "1.1.2"
+ASSET_GENERATOR_VERSION = "1.2.10"
 ProgressCallback = Callable[[str, str], None]
 
 
@@ -76,6 +78,208 @@ def authoring_adapters(registry: AdapterRegistry | None = None) -> tuple:
             (adapter.payload.get("authoring_recipe") or {}).get("version") or 0
         )
         == AUTHORING_RECIPE_VERSION
+    )
+
+
+def retarget_automatic_pack_id(
+    pack_id: str,
+    previous_hero: str,
+    selected_hero: str,
+) -> str:
+    """Retarget only ids created automatically for a new generator project."""
+
+    parts = pack_id.strip().split(".")
+    if (
+        len(parts) == 3
+        and parts[0].casefold() == "local"
+        and parts[1].casefold() == previous_hero.casefold()
+        and len(parts[2]) == 10
+        and all(character in "0123456789abcdefABCDEF" for character in parts[2])
+    ):
+        return f"local.{selected_hero.casefold()}.{parts[2]}"
+    return pack_id
+
+
+def profile_for_workspace_edit(
+    workspace: StudioWorkspace,
+    *,
+    profile_path: Path,
+    badge_template_root: Path,
+    workspace_root: Path,
+    output_zip: Path,
+    game_dir: Path | None = None,
+    registry: AdapterRegistry | None = None,
+    input_search_roots: Iterable[Path] = (),
+) -> "GeneratorProfile":
+    """Rehydrate a generator profile from a Manager library workspace.
+
+    Generated packs archive their original inputs and deterministic adjustment
+    metadata under ``authoring``.  Reusing that data is what makes Manager's
+    Edit action a real round trip instead of starting a visually similar but
+    unrelated pack.  The pack id is deliberately preserved alongside the
+    display name: Manager replaces library entries by id, while the name alone
+    is not unique.
+
+    Legacy packs may not contain authoring inputs.  They still open with the
+    original identity and target, but with empty material fields so the user is
+    never tricked into regenerating from a lossy rendered output.
+    """
+
+    registry = registry or AdapterRegistry.load(DEFAULT_ADAPTER_DIRECTORY)
+    state = workspace.state
+    pack = state.get("pack") or {}
+    target = state.get("target") or {}
+    authoring = state.get("authoring") or {}
+    generator = authoring.get("generator") or {}
+
+    adapter_id = str(generator.get("adapter_id") or "").strip()
+    adapter = registry.find_by_id(adapter_id) if adapter_id else None
+    if adapter is None:
+        adapter = registry.find(
+            str(target.get("hero") or ""),
+            str(target.get("skin") or ""),
+        )
+    if adapter is None or adapter not in authoring_adapters(registry):
+        raise ValueError(
+            "该皮肤包的目标没有可用的确定性制作配方："
+            f"{target.get('hero') or '未知英雄'} / {target.get('skin') or '未知皮肤'}"
+        )
+
+    edit_root = profile_path.resolve().parent
+    metadata_path = edit_root / "inputs" / "edit-input-metadata.json"
+    input_records = authoring.get("inputs") or {}
+    input_names = ("character", "background", "small_icon", "small_icon_source")
+    direct_paths: dict[str, Path | None] = {}
+    for input_name in input_names:
+        record = input_records.get(input_name) or {}
+        relative = str(record.get("workspace_file") or "").strip()
+        candidate = (workspace.directory / relative).resolve() if relative else None
+        direct_paths[input_name] = (
+            candidate
+            if candidate is not None
+            and _safe_relative_to(candidate, workspace.directory)
+            and candidate.is_file()
+            else None
+        )
+    missing_hashes = {
+        str(record.get("sha256") or "").casefold()
+        for input_name, record in input_records.items()
+        if input_name in input_names
+        and direct_paths[input_name] is None
+        and str(record.get("sha256") or "").strip()
+    }
+    recovered_by_hash: dict[str, Path] = {}
+    for search_root in input_search_roots:
+        root = Path(search_root).resolve()
+        if not root.is_dir() or recovered_by_hash.keys() >= missing_hashes:
+            continue
+        for candidate in root.rglob("*"):
+            if recovered_by_hash.keys() >= missing_hashes:
+                break
+            if (
+                not candidate.is_file()
+                or candidate.suffix.casefold()
+                not in {".png", ".jpg", ".jpeg", ".webp", ".bmp"}
+            ):
+                continue
+            digest = sha256_file(candidate).casefold()
+            if digest in missing_hashes and digest not in recovered_by_hash:
+                recovered_by_hash[digest] = candidate.resolve()
+    input_paths: dict[str, Path | None] = {}
+    metadata: dict[str, dict] = {}
+    generated_fields = {"sha256", "bytes", "image_size", "workspace_file"}
+    for input_name in input_names:
+        record = input_records.get(input_name) or {}
+        if direct_paths[input_name] is not None:
+            input_paths[input_name] = direct_paths[input_name]
+            metadata[input_name] = {
+                key: value
+                for key, value in record.items()
+                if key not in generated_fields
+            }
+            metadata[input_name].setdefault("aigc", False)
+        elif str(record.get("sha256") or "").casefold() in recovered_by_hash:
+            input_paths[input_name] = recovered_by_hash[
+                str(record.get("sha256") or "").casefold()
+            ]
+            metadata[input_name] = {
+                key: value
+                for key, value in record.items()
+                if key not in generated_fields
+            }
+            metadata[input_name].setdefault("aigc", False)
+        else:
+            input_paths[input_name] = None
+
+    # Never keep the active edit profile pointed at a generated workspace or
+    # library workspace. The generator cleans its output directory before each
+    # build, and Manager replaces the library directory after a successful
+    # import. A private edit-session copy survives both lifecycle operations.
+    for input_name, source in tuple(input_paths.items()):
+        if source is None:
+            continue
+        extension = source.suffix.casefold() or ".png"
+        destination = metadata_path.parent / f"edit-{input_name}{extension}"
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        if source.resolve() != destination.resolve():
+            shutil.copy2(source, destination)
+        input_paths[input_name] = destination.resolve()
+
+    metadata.setdefault("character", {"origin": "not_provided", "aigc": False})
+    metadata.setdefault("background", {"origin": "not_provided", "aigc": False})
+    metadata.setdefault("small_icon", {"origin": "not_provided", "aigc": False})
+    metadata.setdefault(
+        "small_icon_source", {"origin": "not_provided", "aigc": False}
+    )
+    metadata_path.parent.mkdir(parents=True, exist_ok=True)
+    metadata_path.write_text(
+        json.dumps(metadata, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+    missing = metadata_path.parent / "not-provided"
+    adjustments = authoring.get("adjustments") or {}
+    character_canvas = adjustments.get("character_canvas") or (0, 0)
+    background_adjustment = adjustments.get("background") or {}
+    background_offset = background_adjustment.get("offset") or (0, 0)
+    per_output = adjustments.get("per_output") or {}
+    small_icon_record = input_records.get("small_icon") or {}
+    small_icon_mode = "none"
+    if input_paths["small_icon"] is not None:
+        preset = str(small_icon_record.get("preset") or "").casefold()
+        small_icon_mode = (
+            preset
+            if preset in {"outline", "block-gaps", "silhouette"}
+            else "user"
+        )
+
+    return GeneratorProfile(
+        profile_path=profile_path.resolve(),
+        adapter_id=adapter.adapter_id,
+        pack_id=str(pack.get("id") or workspace.directory.name).strip(),
+        name=str(pack.get("name") or pack.get("id") or workspace.directory.name).strip(),
+        version=str(pack.get("version") or "0.1.0").strip(),
+        character=input_paths["character"] or missing / "character",
+        background=input_paths["background"] or missing / "background",
+        small_icon=input_paths["small_icon"] or missing / "small-icon",
+        small_icon_source=input_paths["small_icon_source"],
+        input_metadata=metadata_path,
+        badge_template_root=badge_template_root.resolve(),
+        workspace_root=workspace_root.resolve(),
+        output_zip=output_zip.resolve(),
+        game_dir=game_dir.resolve() if game_dir is not None else None,
+        character_offset_x=int(character_canvas[0]) if len(character_canvas) > 0 else 0,
+        character_offset_y=int(character_canvas[1]) if len(character_canvas) > 1 else 0,
+        character_scale=float(adjustments.get("character_scale") or 1.0),
+        background_offset_x=int(background_offset[0]) if len(background_offset) > 0 else 0,
+        background_offset_y=int(background_offset[1]) if len(background_offset) > 1 else 0,
+        background_scale=float(background_adjustment.get("scale") or 1.0),
+        output_offsets={
+            str(slot): (int(offset[0]), int(offset[1]))
+            for slot, offset in per_output.items()
+            if isinstance(offset, (list, tuple)) and len(offset) >= 2
+        },
+        small_icon_mode=small_icon_mode,
     )
 
 
@@ -161,8 +365,12 @@ class GeneratorProfile:
     small_icon_source: Path | None = None
     character_offset_x: int = 0
     character_offset_y: int = 0
+    background_offset_x: int = 0
+    background_offset_y: int = 0
     output_offsets: dict[str, tuple[int, int]] = field(default_factory=dict)
-    small_icon_mode: str = "user"
+    small_icon_mode: str = "none"
+    character_scale: float = 1.0
+    background_scale: float = 1.0
 
     @classmethod
     def load(cls, path: Path, *, validate: bool = True) -> "GeneratorProfile":
@@ -176,6 +384,7 @@ class GeneratorProfile:
         inputs = payload.get("inputs") or {}
         paths = payload.get("paths") or {}
         adjustment = payload.get("character_adjustment") or {}
+        background_adjustment = payload.get("background_adjustment") or {}
         output_adjustments = payload.get("output_adjustments") or {}
         small_icon_generation = payload.get("small_icon_generation") or {}
         # Repository profiles are intentionally relocatable. External profiles
@@ -217,6 +426,10 @@ class GeneratorProfile:
             ),
             character_offset_x=int(adjustment.get("offset_x") or 0),
             character_offset_y=int(adjustment.get("offset_y") or 0),
+            character_scale=float(adjustment.get("scale") or 1.0),
+            background_offset_x=int(background_adjustment.get("offset_x") or 0),
+            background_offset_y=int(background_adjustment.get("offset_y") or 0),
+            background_scale=float(background_adjustment.get("scale") or 1.0),
             output_offsets={
                 str(slot): (
                     int((value or {}).get("offset_x") or 0),
@@ -225,9 +438,13 @@ class GeneratorProfile:
                 for slot, value in output_adjustments.items()
             },
             small_icon_mode=str(
-                small_icon_generation.get("mode") or "user"
+                small_icon_generation.get("mode") or "none"
             ).casefold(),
         )
+        if profile.small_icon.is_file() and profile.small_icon_mode == "none":
+            # A concrete user input is authoritative. "None" is the fallback
+            # for an empty field, not a veto that may silently discard a file.
+            profile = cls(**{**asdict(profile), "small_icon_mode": "user"})
         if validate:
             profile.validate()
         return profile
@@ -278,12 +495,25 @@ class GeneratorProfile:
                 raise ValueError("Character horizontal offset moves the complete source off-canvas.")
             if abs(self.character_offset_y) >= source.height:
                 raise ValueError("Character vertical offset moves the complete source off-canvas.")
+        if self.small_icon.is_file():
+            with Image.open(self.small_icon) as source:
+                if source.convert("RGBA").getchannel("A").getbbox() is None:
+                    raise ValueError(
+                        "用户提供的小图标没有可见像素；请重新导入，并关闭扣色或降低容差。"
+                    )
         for slot, offset in self.output_offsets.items():
             if not slot or len(offset) != 2:
                 raise ValueError("Each output adjustment must name a slot and contain X/Y.")
             if max(abs(int(offset[0])), abs(int(offset[1]))) > 16384:
                 raise ValueError(f"Output adjustment is unreasonably large: {slot}")
+        if not 0.25 <= self.character_scale <= 3.0:
+            raise ValueError("Character scale must be between 25% and 300%.")
+        if max(abs(self.background_offset_x), abs(self.background_offset_y)) > 16384:
+            raise ValueError("Background crop offset is unreasonably large.")
+        if not 1.0 <= self.background_scale <= 3.0:
+            raise ValueError("Background scale must be between 100% and 300%.")
         if self.small_icon_mode not in {
+            "none",
             "user",
             "outline",
             "block-gaps",
@@ -326,6 +556,13 @@ class GeneratorProfile:
             "character_adjustment": {
                 "offset_x": self.character_offset_x,
                 "offset_y": self.character_offset_y,
+                "scale": self.character_scale,
+            },
+            "background_adjustment": {
+                "offset_x": self.background_offset_x,
+                "offset_y": self.background_offset_y,
+                "scale": self.background_scale,
+                "fit": "cover",
             },
             "output_adjustments": {
                 slot: {"offset_x": offset[0], "offset_y": offset[1]}
@@ -456,6 +693,9 @@ class LivePreviewRenderer:
         slot: str,
         *,
         character_canvas_offset: tuple[int, int] = (0, 0),
+        character_scale: float = 1.0,
+        background_offset: tuple[int, int] = (0, 0),
+        background_scale: float = 1.0,
         local_offset: tuple[int, int] = (0, 0),
     ) -> Image.Image:
         output_recipe = self._resolve_recipe(slot)
@@ -478,7 +718,14 @@ class LivePreviewRenderer:
                 if self.character_shadow is None
                 else self.character_shadow.crop(crop_box)
             )
-            bounds = tuple(int(value) for value in output_recipe["target_alpha_bounds"])
+            anchor = tuple(
+                float(value) for value in output_recipe.get("anchor", [0.5, 1.0])
+            )
+            bounds = scaled_target_bounds(
+                tuple(int(value) for value in output_recipe["target_alpha_bounds"]),
+                character_scale,
+                anchor=anchor,
+            )
             scale = alpha_contain_scale(reference, target_bounds=bounds)
             output_size = tuple(int(value) for value in output_recipe["size"])
             template_size = template_images["base"].size
@@ -534,7 +781,20 @@ class LivePreviewRenderer:
                     reference = reference.transpose(Image.Transpose.FLIP_LEFT_RIGHT)
             fit = layer.get("fit")
             if fit == "cover":
-                fitted = fit_cover(source, size=size)
+                effective_background_offset = (
+                    round(background_offset[0] * size[0] / 1024),
+                    round(background_offset[1] * size[1] / 1024),
+                )
+                fitted = fit_cover(
+                    source,
+                    size=size,
+                    zoom=background_scale if input_name == "background" else 1.0,
+                    offset=(
+                        effective_background_offset
+                        if input_name == "background"
+                        else (0, 0)
+                    ),
+                )
             elif fit == "alpha_contain":
                 bounds = tuple(
                     int(value)
@@ -542,6 +802,18 @@ class LivePreviewRenderer:
                         "target_alpha_bounds", output_recipe["target_alpha_bounds"]
                     )
                 )
+                anchor = tuple(
+                    float(value)
+                    for value in layer.get(
+                        "anchor", output_recipe.get("anchor", [0.5, 1.0])
+                    )
+                )
+                if input_name in {"character", "character_shadow"}:
+                    bounds = scaled_target_bounds(
+                        bounds,
+                        character_scale,
+                        anchor=anchor,
+                    )
                 if source.getchannel("A").getbbox() is None:
                     fitted = Image.new("RGBA", size, (0, 0, 0, 0))
                 else:
@@ -549,12 +821,7 @@ class LivePreviewRenderer:
                         source,
                         size=size,
                         target_bounds=bounds,
-                        anchor=tuple(
-                            float(value)
-                            for value in layer.get(
-                                "anchor", output_recipe.get("anchor", [0.5, 1.0])
-                            )
-                        ),
+                        anchor=anchor,
                         fit_reference=reference,
                     )
             else:
@@ -573,8 +840,40 @@ class LivePreviewRenderer:
                 )
             elif input_name == "small_icon":
                 fitted = translate_rgba(fitted, local_offset)
+            fitted = apply_declared_clip_mask(fitted, layer.get("clip_mask"))
             rendered.alpha_composite(fitted)
         return rendered
+
+    def render_portrait_composite(
+        self,
+        *,
+        character_canvas_offset: tuple[int, int] = (0, 0),
+        character_scale: float = 1.0,
+        background_offset: tuple[int, int] = (0, 0),
+        background_scale: float = 1.0,
+        local_offset: tuple[int, int] = (0, 0),
+    ) -> Image.Image:
+        """Preview the game's separate encounter background/foreground stack.
+
+        The exported assets remain separate. Flattening the background into
+        ``portrait_gameplay`` would put a square above the native frame; this
+        helper only mirrors the final on-screen composition for authoring.
+        """
+        background = self.render(
+            "portrait_background",
+            background_offset=background_offset,
+            background_scale=background_scale,
+        )
+        foreground = self.render(
+            "portrait_gameplay",
+            character_canvas_offset=character_canvas_offset,
+            character_scale=character_scale,
+            local_offset=local_offset,
+        )
+        if background.size != foreground.size:
+            raise ValueError("Portrait foreground/background sizes do not match.")
+        background.alpha_composite(foreground)
+        return background
 
 
 def clean_generated_workspace(profile: GeneratorProfile) -> None:
@@ -635,7 +934,11 @@ def generate_assets(
         adapter_id=profile.adapter_id,
         character=profile.character,
         background=profile.background if profile.background.is_file() else None,
-        small_icon=profile.small_icon if profile.small_icon.is_file() else None,
+        small_icon=(
+            profile.small_icon
+            if profile.small_icon.is_file()
+            else None
+        ),
         workspace_root=profile.workspace_root,
         output_zip=profile.output_zip,
         pack_id=profile.pack_id,
@@ -653,6 +956,12 @@ def generate_assets(
             profile.character_offset_x,
             profile.character_offset_y,
         ),
+        character_scale=profile.character_scale,
+        background_offset=(
+            profile.background_offset_x,
+            profile.background_offset_y,
+        ),
+        background_scale=profile.background_scale,
         output_offsets=profile.output_offsets,
         allow_partial=True,
     )

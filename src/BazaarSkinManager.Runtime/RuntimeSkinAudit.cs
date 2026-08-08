@@ -90,7 +90,7 @@ namespace BazaarSkinManager.TheBazaar
         public int SchemaVersion = 1;
 
         [DataMember(Name = "steam_build")]
-        public string SteamBuild = "24001960";
+        public string SteamBuild = "24570932";
 
         [DataMember(Name = "target_skin")]
         public string TargetSkin;
@@ -863,9 +863,16 @@ namespace BazaarSkinManager.TheBazaar
             GameObject root = result as GameObject;
             if (root == null)
             {
-                FieldInfo instanceField = AccessTools.Field(
-                    result.GetType(),
-                    "LoadedCollectibleInstance");
+                // Most safe loaders return Texture2D/Sprite rather than the
+                // collectible value type. A missing field is the ordinary
+                // case here, so use reflection directly instead of
+                // AccessTools.Field (which logs a misleading Harmony warning
+                // for every non-collectible result).
+                FieldInfo instanceField = result.GetType().GetField(
+                    "LoadedCollectibleInstance",
+                    BindingFlags.Instance |
+                    BindingFlags.Public |
+                    BindingFlags.NonPublic);
                 root = instanceField == null
                     ? null
                     : instanceField.GetValue(result) as GameObject;

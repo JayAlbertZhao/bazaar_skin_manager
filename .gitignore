@@ -1,6 +1,7 @@
 bin/
 obj/
 dist/
+output/
 !manager/runtime/BazaarSkinManager.Runtime.dll
 *.user
 *.suo

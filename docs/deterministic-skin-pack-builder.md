@@ -24,8 +24,10 @@ The selected adapter owns every output size, alpha envelope, anchor, native
 Texture2D target, and supported original bundle hash.
 
 The audited adapters target the default skins of Mak, Vanessa, Pygmalien,
-Dooley, and Jules on Steam build `24001960`. They share the complete raster
-recipe and override only verified native differences such as hero-button size.
+Dooley, Jules, Stelle, Karnok, and The Dragons (Rin & Jin). The original seven
+support Steam builds `24001960` and `24570932`; The Dragons first appears on
+build `24570932`. They share the complete raster recipe and override only
+verified native differences such as hero-button size and native asset naming.
 The recipe produces the surfaces that can be derived and deployed faithfully
 as independent Texture2D assets:
 

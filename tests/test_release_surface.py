@@ -53,19 +53,19 @@ class ReleaseSurfaceTests(unittest.TestCase):
         workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text(
             encoding="utf-8"
         )
-        self.assertIn('default: "1.1.2"', workflow)
+        self.assertIn('default: "1.2.10"', workflow)
         self.assertIn('if ($tag.EndsWith("-experimental"))', workflow)
         self.assertNotIn("v1.0.0-experimental", workflow)
         self.assertNotIn("1.0.0 (experimental)", workflow)
 
-    def test_release_workflow_builds_all_software_components(self) -> None:
+    def test_release_workflow_publishes_only_integrated_manager(self) -> None:
         workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text(
             encoding="utf-8"
         )
-        self.assertIn("build-asset-generator.ps1", workflow)
-        self.assertIn("package-asset-generator-portable.ps1", workflow)
-        self.assertIn("TheBazaarAssetGenerator-Portable-", workflow)
-        self.assertIn("build-spine-manager.ps1", workflow)
+        self.assertNotIn("build-asset-generator.ps1", workflow)
+        self.assertNotIn("package-asset-generator-portable.ps1", workflow)
+        self.assertNotIn("TheBazaarAssetGenerator-Portable-", workflow)
+        self.assertNotIn("build-spine-manager.ps1", workflow)
         self.assertNotIn("DooleyChameleon", workflow)
         self.assertNotIn("KotoneAlchemist", workflow)
 
@@ -76,7 +76,7 @@ class ReleaseSurfaceTests(unittest.TestCase):
                 encoding="utf-8-sig"
             )
         )
-        self.assertEqual(metadata["version"], "1.1.1")
+        self.assertEqual(metadata["version"], "1.2.10")
         self.assertEqual(metadata["bytes"], runtime.stat().st_size)
         self.assertEqual(
             metadata["sha256"], hashlib.sha256(runtime.read_bytes()).hexdigest()
@@ -124,6 +124,9 @@ class ReleaseSurfaceTests(unittest.TestCase):
         self.assertIn("FMOD runtime required by UnityPy is missing", build)
         self.assertIn("--self-test-release-runtime", build)
         self.assertIn("Frozen release runtime self-test failed", build)
+        self.assertIn("manager\\assets;manager\\assets", build)
+        self.assertIn("--self-test-v12-ui", build)
+        self.assertIn("Frozen 1.2 UI self-test failed", build)
         self.assertLess(
             build.index("dist\\runtime\\BazaarSkinManager.Runtime.dll"),
             build.index("manager\\runtime\\BazaarSkinManager.Runtime.dll"),
@@ -167,8 +170,8 @@ class ReleaseSurfaceTests(unittest.TestCase):
         self.assertIn("def _launch_asset_generator(self)", ui)
         self.assertIn('"<Control-Key-g>"', ui)
         self.assertIn('executable_dir.parent', ui)
-        self.assertIn("TheBazaarAssetGenerator.exe", installer)
-        self.assertIn("TheBazaarAssetGenerator.exe", portable)
+        self.assertNotIn("TheBazaarAssetGenerator.exe", installer)
+        self.assertNotIn("TheBazaarAssetGenerator.exe", portable)
 
     def test_manager_integrates_spine_manager_component(self) -> None:
         ui = (ROOT / "tools" / "bazaar_skin_manager_ui.py").read_text(
@@ -183,32 +186,34 @@ class ReleaseSurfaceTests(unittest.TestCase):
         self.assertIn('text="Spine 动画管理器"', ui)
         self.assertIn("def _launch_spine_manager(self)", ui)
         self.assertIn('"<Control-Key-p>"', ui)
-        self.assertIn("TheBazaarSpineManager.exe", installer)
-        self.assertIn("TheBazaarSpineManager.exe", portable)
+        self.assertNotIn("TheBazaarSpineManager.exe", installer)
+        self.assertNotIn("TheBazaarSpineManager.exe", portable)
 
-    def test_manager_pages_group_actions_and_keep_hub_scrollable(self) -> None:
+    def test_manager_pages_separate_deployment_library_and_editor(self) -> None:
         ui = (ROOT / "tools" / "bazaar_skin_manager_ui.py").read_text(
             encoding="utf-8"
         )
         for group in (
             'text="工作区"',
             'text="部署"',
-            'text="目标与游戏"',
-            'text="资产包"',
+            'text="资产包库"',
+            'text="资产包导入"',
             'text="导出与清理"',
             'text="组件操作"',
         ):
             self.assertIn(group, ui)
         self.assertIn("hub_vertical", ui)
         self.assertIn("hub_horizontal", ui)
+        self.assertIn("self.library_canvas", ui)
+        self.assertIn("self.library_preview_images", ui)
         self.assertIn("parent.rowconfigure(1, weight=1)", ui)
         self.assertIn('"<Control-Key-3>"', ui)
         self.assertIn('show="tree headings"', ui)
         self.assertIn('"skin": "被替换皮肤"', ui)
-        self.assertIn('"（默认皮肤）"', ui)
+        self.assertIn('"默认皮肤（', ui)
         self.assertIn("def _hub_clicked(self", ui)
         self.assertIn("def _open_hub_pack_editor(self", ui)
-        self.assertIn('text="资产导入管理器"', ui)
+        self.assertIn('text="资产包导入"', ui)
         self.assertIn('text="部署"', ui)
         self.assertIn('text="取消部署"', ui)
 

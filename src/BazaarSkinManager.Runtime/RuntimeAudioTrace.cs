@@ -106,7 +106,7 @@ namespace BazaarSkinManager.TheBazaar
                 {
                     // Assembly-qualified generic names can vary by runtime;
                     // the first two exact parameters plus ValueTuple[] are
-                    // sufficient for this unique build-24001960 overload.
+                    // sufficient for the validated 24001960/24570932 overload.
                     foreach (MethodInfo candidate in voPlayer.GetMethods(
                         BindingFlags.Instance |
                         BindingFlags.Public |

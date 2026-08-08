@@ -20,6 +20,7 @@ from mod_studio_core import (  # noqa: E402
     PREVIEW_SIZE,
     StudioWorkspace,
     compose_image_preview,
+    materialized_pack_id,
     remove_color_screen,
     sha256_file,
 )
@@ -206,12 +207,22 @@ class ModStudioTests(unittest.TestCase):
                 "hero_select",
                 Image.new("RGBA", (32, 32), (10, 20, 30, 255)),
             )
+            authoring_input = source.directory / "authoring" / "inputs" / "character.png"
+            authoring_input.parent.mkdir(parents=True)
+            Image.new("RGBA", (48, 64), (30, 40, 50, 255)).save(authoring_input)
             source.state["authoring"] = {
                 "generator": {"id": "test-generator", "version": 1},
-                "inputs": {"character": {"sha256": "abc"}},
+                "inputs": {
+                    "character": {
+                        "sha256": "abc",
+                        "workspace_file": "authoring/inputs/character.png",
+                    }
+                },
             }
             source.save()
             archive = source.export_zip(root / "complete.zip")
+            with zipfile.ZipFile(archive) as package:
+                self.assertIn("authoring/inputs/character.png", package.namelist())
             destination = StudioWorkspace.create(
                 "test.roundtrip.destination",
                 root=root / "two",
@@ -222,6 +233,9 @@ class ModStudioTests(unittest.TestCase):
             self.assertEqual(
                 destination.state["pack"]["id"],
                 "test.roundtrip.source",
+            )
+            self.assertTrue(
+                (destination.directory / "authoring" / "inputs" / "character.png").is_file()
             )
             destination.build_pack()
             rebuilt = json.loads(
@@ -309,6 +323,89 @@ class ModStudioTests(unittest.TestCase):
         image = Image.new("RGBA", (1, 1), (0, 255, 0, 255))
         with self.assertRaisesRegex(ValueError, "RRGGBB"):
             remove_color_screen(image, "green")
+
+    def test_one_library_pack_materializes_for_two_professions(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            source = StudioWorkspace.create("test.reusable", root=root / "library")
+            source.import_pil_image(
+                "hero_select",
+                Image.new("RGBA", (512, 512), (10, 20, 30, 255)),
+            )
+            original_target = dict(source.state["target"])
+            targets = [
+                {
+                    "game": "the-bazaar",
+                    "hero": "Dooley",
+                    "skin": "Skin_DOO_01/A",
+                    "skin_name_contains": "DOO_01a",
+                },
+                {
+                    "game": "the-bazaar",
+                    "hero": "Jules",
+                    "skin": "Skin_JUL_01/A",
+                    "skin_name_contains": "JUL_01a",
+                },
+            ]
+            captured = []
+
+            def inspect(workspaces, game_dir=None):
+                for workspace in workspaces:
+                    workspace.build_pack()
+                    manifest = json.loads(
+                        (workspace.directory / "mod.json").read_text(
+                            encoding="utf-8"
+                        )
+                    )
+                    captured.append(manifest)
+                return {"packs": captured}
+
+            with mock.patch.object(
+                StudioWorkspace,
+                "deploy_many",
+                side_effect=inspect,
+            ):
+                StudioWorkspace.deploy_assignments(
+                    [(source, targets[0]), (source, targets[1])]
+                )
+
+            self.assertEqual(source.state["target"], original_target)
+            self.assertEqual(
+                {manifest["target"]["hero"] for manifest in captured},
+                {"Dooley", "Jules"},
+            )
+            self.assertEqual(len({manifest["id"] for manifest in captured}), 2)
+            for manifest in captured:
+                self.assertEqual(manifest["source_pack"]["id"], "test.reusable")
+                self.assertIn(
+                    "hero_select",
+                    {
+                        replacement["slot"]
+                        for replacement in manifest["visual_replacements"]
+                    },
+                )
+
+    def test_materialized_pack_id_preserves_target_for_long_source_ids(self):
+        source_id = "a" * 96
+        dooley = {
+            "game": "the-bazaar",
+            "hero": "Dooley",
+            "skin": "Skin_DOO_01/A",
+            "skin_name_contains": "DOO_01a",
+        }
+        jules = {
+            "game": "the-bazaar",
+            "hero": "Jules",
+            "skin": "Skin_JUL_01/A",
+            "skin_name_contains": "JUL_01a",
+        }
+        dooley_id = materialized_pack_id(source_id, dooley)
+        jules_id = materialized_pack_id(source_id, jules)
+        self.assertLessEqual(len(dooley_id), 96)
+        self.assertLessEqual(len(jules_id), 96)
+        self.assertNotEqual(dooley_id, jules_id)
+        self.assertTrue(dooley_id.endswith(".for.dooley-skin_doo_01-a"))
+        self.assertTrue(jules_id.endswith(".for.jules-skin_jul_01-a"))
 
 
 if __name__ == "__main__":

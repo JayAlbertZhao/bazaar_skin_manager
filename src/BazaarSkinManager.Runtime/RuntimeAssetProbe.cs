@@ -84,7 +84,7 @@ namespace BazaarSkinManager.TheBazaar
             "The Bazaar runtime HeroItemView/Content/Icon sprites";
 
         [DataMember(Name = "steam_build")]
-        public string SteamBuild = "24001960";
+        public string SteamBuild = "24570932";
 
         [DataMember(Name = "measurements")]
         public List<NativeIconMeasurement> Measurements =
@@ -102,7 +102,7 @@ namespace BazaarSkinManager.TheBazaar
             "SkinAssetDataSO.LoadPortraitSpriteAsync original result";
 
         [DataMember(Name = "steam_build")]
-        public string SteamBuild = "24001960";
+        public string SteamBuild = "24570932";
 
         [DataMember(Name = "sprite_name")]
         public string SpriteName;

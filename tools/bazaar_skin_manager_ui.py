@@ -5,11 +5,13 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
 import threading
 import traceback
+import zipfile
 from pathlib import Path
 import tkinter as tk
 from tkinter import colorchooser, filedialog, messagebox, ttk
@@ -27,7 +29,9 @@ from mod_studio_core import (
     StudioWorkspace,
     catalog,
     compose_image_preview,
+    default_project,
     discovered_catalog,
+    materialized_pack_id,
     restore_before_application_uninstall,
 )
 
@@ -63,6 +67,67 @@ ROUTE_CATEGORY_NAMES = {
 }
 
 
+def complete_pack_identity(archive: Path) -> tuple[str, str]:
+    """Read the stable id/name from one complete-pack ZIP without importing it."""
+    archive = archive.resolve()
+    with zipfile.ZipFile(archive) as package:
+        manifests = [
+            name
+            for name in package.namelist()
+            if Path(name.replace("\\", "/")).name.casefold() == "mod.json"
+        ]
+        if len(manifests) != 1:
+            raise ValueError("资产包 ZIP 必须且只能包含一个 mod.json。")
+        info = package.getinfo(manifests[0])
+        if info.file_size > 2 * 1024 * 1024:
+            raise ValueError("资产包 mod.json 异常过大。")
+        try:
+            manifest = json.loads(package.read(info).decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as error:
+            raise ValueError("资产包 mod.json 不是有效的 UTF-8 JSON。") from error
+    pack_id = str(manifest.get("id") or "").strip()
+    if not pack_id:
+        raise ValueError("资产包 mod.json 缺少 id。")
+    name = str(manifest.get("name") or pack_id).strip()
+    return pack_id, name
+
+
+def deployment_state(
+    *,
+    enabled: bool,
+    selected_pack_id: str,
+    selected_version: str,
+    expected_runtime_id: str,
+    installed: dict | None,
+) -> str:
+    """Describe the difference between the saved plan and installed state."""
+    if installed:
+        exact = (
+            enabled
+            and bool(selected_pack_id)
+            and str(installed.get("id") or "") == expected_runtime_id
+            and str(installed.get("version") or "") == selected_version
+        )
+        if exact:
+            return "已部署"
+        if enabled and selected_pack_id:
+            return "有更改（待部署）"
+        return "已部署（待移除）"
+    if enabled and selected_pack_id:
+        return "待部署"
+    if selected_pack_id:
+        return "未启用"
+    return "使用原版"
+
+
+def ellipsize(value: object, limit: int) -> str:
+    """Bound user-controlled text before it participates in Tk geometry."""
+    text = str(value or "")
+    if limit < 2 or len(text) <= limit:
+        return text[:limit]
+    return text[: limit - 1] + "…"
+
+
 class ModManagerStudio:
     def __init__(self) -> None:
         self.root = RootClass()
@@ -84,6 +149,7 @@ class ModManagerStudio:
         self.settings_payload: dict = {}
         self.managed_workspaces: dict[str, bool] = {}
         self.hub_selections: dict[str, str] = {}
+        self.deployment_assignments: dict[str, dict[str, object]] = {}
         self.workspace = self._open_last_or_default()
         self._load_managed_workspaces()
         self.catalog = discovered_catalog(self.game_dir_override)
@@ -230,6 +296,10 @@ class ModManagerStudio:
             lambda _event: self.main_pages.select(3),
         )
         self.root.bind_all(
+            "<Control-Key-5>",
+            lambda _event: self.main_pages.select(4),
+        )
+        self.root.bind_all(
             "<F5>",
             lambda _event: self._refresh_deployment_status(),
         )
@@ -294,6 +364,29 @@ class ModManagerStudio:
                 path = str(state_file.parent.resolve())
                 self.managed_workspaces.setdefault(path, False)
 
+        assignments = self.settings_payload.get("assignments") or {}
+        if isinstance(assignments, dict):
+            for target_key, record in assignments.items():
+                if not isinstance(record, dict):
+                    continue
+                pack_path = str(record.get("pack_path") or "")
+                if pack_path and Path(pack_path).is_dir():
+                    self.deployment_assignments[str(target_key)] = {
+                        "pack_path": str(Path(pack_path).resolve()),
+                        "enabled": bool(record.get("enabled", False)),
+                    }
+        if not self.deployment_assignments:
+            # Migrate 1.1.2 target selections without mutating source packs.
+            for target_key, pack_path in self.hub_selections.items():
+                resolved = str(Path(pack_path).resolve())
+                if Path(resolved).is_dir():
+                    self.deployment_assignments[target_key] = {
+                        "pack_path": resolved,
+                        "enabled": bool(
+                            self.managed_workspaces.get(resolved, False)
+                        ),
+                    }
+
     def _remember_workspace(self) -> None:
         path = self._settings_path()
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -307,13 +400,25 @@ class ModManagerStudio:
                         else None
                     ),
                     "managed_workspaces": [
-                        {"path": path, "enabled": enabled}
-                        for path, enabled in sorted(
+                        {
+                            "path": path,
+                            "enabled": any(
+                                bool(record.get("enabled"))
+                                and record.get("pack_path") == path
+                                for record in self.deployment_assignments.values()
+                            ),
+                        }
+                        for path, _enabled in sorted(
                             self.managed_workspaces.items()
                         )
                         if Path(path).is_dir()
                     ],
-                    "target_selections": self.hub_selections,
+                    "target_selections": {
+                        key: str(record.get("pack_path") or "")
+                        for key, record in self.deployment_assignments.items()
+                        if record.get("pack_path")
+                    },
+                    "assignments": self.deployment_assignments,
                 },
                 indent=2,
             ),
@@ -347,16 +452,20 @@ class ModManagerStudio:
 
         self.main_pages = ttk.Notebook(outer)
         self.main_pages.pack(fill="both", expand=True)
-        hub = ttk.Frame(self.main_pages, padding=18)
+        deployment = ttk.Frame(self.main_pages, padding=18)
+        library = ttk.Frame(self.main_pages, padding=18)
         editor = ttk.Frame(self.main_pages, style="Window.TFrame")
         generator = ttk.Frame(self.main_pages, padding=24)
         spine = ttk.Frame(self.main_pages, padding=24)
-        self.main_pages.add(hub, text="皮肤控制中台")
-        self.main_pages.add(editor, text="资产导入管理器")
+        self.main_pages.add(deployment, text="部署")
+        self.main_pages.add(library, text="资产包库")
+        self.main_pages.add(editor, text="资产包导入")
         self.main_pages.add(generator, text="素材包制作器")
         self.main_pages.add(spine, text="Spine 动画管理器")
+        self.library_page = library
         self.editor_page = editor
-        self._build_control_hub(hub)
+        self._build_control_hub(deployment)
+        self._build_asset_library(library)
         self._build_asset_generator_component(generator)
         self._build_spine_manager_component(spine)
 
@@ -487,17 +596,169 @@ class ModManagerStudio:
         title.grid(row=0, column=0, sticky="ew", pady=(0, 14))
         ttk.Label(
             title,
-            text="多职业皮肤控制中台",
+            text="部署方案",
             font=("Microsoft YaHei UI", 16, "bold"),
         ).pack(side="left")
-        ttk.Label(
+        self.hub_summary = ttk.Label(
             title,
-            text="点击勾叉启停；点击资产包单元格切换。键盘可用空格启停、F4 选择资产包。",
+            text="正在读取本地资产包…",
             style="Muted.TLabel",
-        ).pack(side="left", padx=(18, 0))
+        )
+        self.hub_summary.pack(side="right")
 
-        columns = ("hero", "skin", "pack", "version", "path")
-        table_group = ttk.LabelFrame(parent, text="已管理的职业皮肤", padding=10)
+        content = ttk.Frame(parent)
+        content.grid(row=1, column=0, sticky="nsew")
+        self._build_deployment_plan(content)
+
+    def _build_asset_library(self, parent: ttk.Frame) -> None:
+        parent.columnconfigure(0, weight=1)
+        parent.rowconfigure(1, weight=1)
+
+        toolbar = ttk.Frame(parent)
+        toolbar.grid(row=0, column=0, sticky="ew", pady=(0, 10))
+        toolbar.columnconfigure(1, weight=1)
+        ttk.Label(toolbar, text="搜索", style="Muted.TLabel").grid(
+            row=0,
+            column=0,
+            padx=(0, 8),
+        )
+        self.library_query = tk.StringVar()
+        search = ttk.Entry(
+            toolbar,
+            textvariable=self.library_query,
+        )
+        search.grid(row=0, column=1, sticky="ew")
+        search.insert(0, "")
+        self.library_query.trace_add(
+            "write",
+            lambda *_args: self._refresh_library(),
+        )
+        ttk.Button(
+            toolbar,
+            text="导入资产包 ZIP…",
+            command=self._library_import_zip,
+        ).grid(row=0, column=2, padx=(8, 0))
+        ttk.Button(
+            toolbar,
+            text="添加现有工作区…",
+            command=self._hub_add,
+        ).grid(row=0, column=3, padx=(8, 0))
+
+        gallery = ttk.LabelFrame(parent, text="本地资产包", padding=10)
+        gallery.grid(row=1, column=0, sticky="nsew")
+        gallery.columnconfigure(0, weight=1)
+        gallery.rowconfigure(0, weight=1)
+        self.library_canvas = tk.Canvas(
+            gallery,
+            bg=COLORS["panel_alt"],
+            highlightthickness=0,
+        )
+        scrollbar = ttk.Scrollbar(
+            gallery,
+            orient="vertical",
+            command=self.library_canvas.yview,
+        )
+        self.library_canvas.configure(yscrollcommand=scrollbar.set)
+        self.library_canvas.grid(row=0, column=0, sticky="nsew")
+        scrollbar.grid(row=0, column=1, sticky="ns")
+        self.library_cards = tk.Frame(
+            self.library_canvas,
+            bg=COLORS["panel_alt"],
+        )
+        self.library_cards_window = self.library_canvas.create_window(
+            (0, 0),
+            window=self.library_cards,
+            anchor="nw",
+        )
+        self.library_cards.bind(
+            "<Configure>",
+            lambda _event: self.library_canvas.configure(
+                scrollregion=self.library_canvas.bbox("all")
+            ),
+        )
+        self.library_canvas.bind(
+            "<Configure>",
+            lambda event: self.library_canvas.itemconfigure(
+                self.library_cards_window,
+                width=event.width,
+            ),
+        )
+        self.library_canvas.bind(
+            "<MouseWheel>",
+            lambda event: self.library_canvas.yview_scroll(
+                int(-event.delta / 120),
+                "units",
+            ),
+        )
+        self.library_selected_path_value: str | None = None
+        self.library_preview_images: dict[str, ImageTk.PhotoImage] = {}
+
+        footer = ttk.Frame(parent)
+        footer.grid(row=2, column=0, sticky="ew", pady=(10, 0))
+        footer.columnconfigure(0, weight=1)
+        self.library_selection_status = ttk.Label(
+            footer,
+            text="选择一个资产包查看详情或应用到职业皮肤。",
+            style="Muted.TLabel",
+            anchor="w",
+        )
+        self.library_selection_status.grid(row=0, column=0, sticky="ew")
+
+        # Keep lifecycle actions in their own fixed row. Package names, ids and
+        # workspace paths are user-controlled and must never compete with or
+        # push destructive actions outside the window.
+        library_actions = ttk.Frame(footer)
+        library_actions.grid(row=1, column=0, sticky="ew", pady=(8, 0))
+        self.library_apply_button = ttk.Button(
+            library_actions,
+            text="应用到…",
+            command=self._library_apply_to_targets,
+            state="disabled",
+        )
+        self.library_apply_button.pack(side="left")
+        self.library_edit_button = ttk.Button(
+            library_actions,
+            text="编辑内容",
+            command=self._library_edit,
+            state="disabled",
+        )
+        self.library_edit_button.pack(side="left", padx=(8, 0))
+        self.library_folder_button = ttk.Button(
+            library_actions,
+            text="打开文件夹",
+            command=self._library_open_folder,
+            state="disabled",
+        )
+        self.library_folder_button.pack(side="left", padx=(8, 0))
+        self.library_delete_button = ttk.Button(
+            library_actions,
+            text="删除资产包",
+            style="Danger.TButton",
+            command=self._library_delete,
+            state="disabled",
+        )
+        self.library_delete_button.pack(side="left", padx=(8, 0))
+        ttk.Button(
+            library_actions,
+            text="刷新",
+            command=self._refresh_hub,
+        ).pack(side="left", padx=(8, 0))
+
+    def _build_deployment_plan(self, parent: ttk.Frame) -> None:
+        parent.columnconfigure(0, weight=1)
+        parent.rowconfigure(1, weight=1)
+        hint = ttk.Label(
+            parent,
+            text=(
+                "每个被替换皮肤只能启用一个资产包。点击勾叉启停；"
+                "点击资产包单元格打开带预览图的选择器。键盘可用空格启停、F4 选择。"
+            ),
+            style="Muted.TLabel",
+        )
+        hint.grid(row=0, column=0, sticky="w", pady=(0, 10))
+
+        columns = ("hero", "skin", "pack", "version", "state")
+        table_group = ttk.LabelFrame(parent, text="按目标组织的部署方案", padding=10)
         table_group.grid(row=1, column=0, sticky="nsew")
         self.hub_tree = ttk.Treeview(
             table_group,
@@ -510,14 +771,14 @@ class ModManagerStudio:
             "skin": "被替换皮肤",
             "pack": "资产包（点击选择）",
             "version": "版本",
-            "path": "来源工作区",
+            "state": "部署状态",
         }
         widths = {
             "hero": 120,
             "skin": 260,
             "pack": 280,
             "version": 80,
-            "path": 460,
+            "state": 120,
         }
         self.hub_tree.heading("#0", text="启用")
         self.hub_tree.column("#0", width=82, minwidth=82, stretch=False, anchor="center")
@@ -526,7 +787,7 @@ class ModManagerStudio:
             self.hub_tree.column(
                 column,
                 width=widths[column],
-                stretch=column == "path",
+                stretch=column == "pack",
             )
         hub_vertical = ttk.Scrollbar(
             table_group,
@@ -579,13 +840,13 @@ class ModManagerStudio:
         deployment_actions.pack(side="right", fill="x", padx=(12, 0))
         ttk.Button(
             workspace_actions,
-            text="打开资产导入管理器",
+            text="编辑所选资产包",
             command=self._hub_open,
         ).pack(side="left")
         ttk.Button(
             workspace_actions,
-            text="添加现有工作区…",
-            command=self._hub_add,
+            text="转到资产包库",
+            command=lambda: self.main_pages.select(self.library_page),
         ).pack(side="left", padx=(8, 0))
         ttk.Button(
             deployment_actions,
@@ -611,23 +872,31 @@ class ModManagerStudio:
         actions.pack(fill="x", side="bottom", pady=(18, 0))
         self.deploy_button = ttk.Button(
             actions,
-            text="保存并加入控制中台",
+            text="保存到资产包库",
             style="Accent.TButton",
             command=self._import_current_to_hub,
         )
         self.deploy_button.pack(fill="x", pady=(0, 8))
         ttk.Button(
             actions,
-            text="返回皮肤控制中台",
-            command=lambda: self.main_pages.select(0),
+            text="清空全部素材",
+            style="Danger.TButton",
+            command=self._clear_loaded_skin,
+        ).pack(fill="x", pady=(0, 8))
+        ttk.Button(
+            actions,
+            text="返回资产包库",
+            command=lambda: self.main_pages.select(self.library_page),
         ).pack(fill="x")
 
-        sections = ttk.Notebook(parent)
+        sections = ttk.Frame(parent)
         sections.pack(fill="both", expand=True)
+        # Legacy target widgets remain alive for importing target-bound 1.1.2
+        # packs and original-asset comparison, but target is no longer an
+        # editable property of a reusable library pack.
         target_panel = ttk.Frame(sections, padding=12)
         pack_panel = ttk.Frame(sections, padding=12)
-        sections.add(target_panel, text="目标与游戏")
-        sections.add(pack_panel, text="资产包")
+        pack_panel.pack(fill="both", expand=True)
 
         ttk.Label(
             target_panel,
@@ -688,9 +957,18 @@ class ModManagerStudio:
         ttk.Separator(target_panel).pack(fill="x", pady=(0, 16))
         ttk.Label(
             pack_panel,
-            text="待导入资产包",
+            text="资产包内容",
             font=("Microsoft YaHei UI", 13, "bold"),
         ).pack(anchor="w")
+        ttk.Label(
+            pack_panel,
+            text=(
+                "资产包只保存素材，不绑定职业。保存后可在部署页把同一个"
+                "资产包应用到一个或多个职业皮肤。"
+            ),
+            style="Muted.TLabel",
+            wraplength=275,
+        ).pack(anchor="w", pady=(4, 8))
 
         self.pack_id_var = tk.StringVar()
         self.pack_name_var = tk.StringVar()
@@ -1120,9 +1398,12 @@ class ModManagerStudio:
         self.pack_version_var.set(state["pack"]["version"])
         target = state["target"]
         hero = next(
-            item
-            for item in self.catalog["heroes"]
-            if item["id"] == target["hero"]
+            (
+                item
+                for item in self.catalog["heroes"]
+                if item["id"] == target.get("hero")
+            ),
+            self.catalog["heroes"][0],
         )
         self.hero_var.set(hero["display_name"])
         self._set_skin_options(hero, target["skin"])
@@ -1173,7 +1454,6 @@ class ModManagerStudio:
                 text=f"已验证适配器：{selected.get('adapter_id')}",
                 foreground=COLORS["accent"],
             )
-            self.deploy_button.configure(state="normal")
         else:
             status = selected.get("deployment_status")
             message = (
@@ -1185,7 +1465,9 @@ class ModManagerStudio:
                 text=message,
                 foreground=COLORS["warning"],
             )
-            self.deploy_button.configure(state="disabled")
+        # This button saves reusable content to the library. Adapter support is
+        # checked later against each deployment assignment, not while editing.
+        self.deploy_button.configure(state="normal")
 
     def _hero_changed(self, _event=None) -> None:
         self._set_skin_options(self._selected_hero())
@@ -1218,15 +1500,10 @@ class ModManagerStudio:
 
     def _metadata_changed(self) -> None:
         try:
-            hero = self._selected_hero()
-            skin = self._selected_skin()
-            self.workspace.set_metadata(
+            self.workspace.set_pack_metadata(
                 pack_id=self.pack_id_var.get(),
                 name=self.pack_name_var.get(),
                 version=self.pack_version_var.get(),
-                hero=hero["id"],
-                skin=skin["id"],
-                skin_name_contains=skin["name_contains"],
             )
             self.managed_workspaces.setdefault(
                 str(self.workspace.directory.resolve()),
@@ -1249,123 +1526,702 @@ class ModManagerStudio:
     def _refresh_hub(self) -> None:
         if not hasattr(self, "hub_tree"):
             return
+        if WORKSPACES_ROOT.is_dir():
+            for state_file in WORKSPACES_ROOT.glob("*/studio.json"):
+                path = str(state_file.parent.resolve())
+                self.managed_workspaces.setdefault(path, False)
         selected = self.hub_tree.selection()
         selected_target_key = None
         if selected and hasattr(self, "hub_rows"):
             selected_target_key = (
                 self.hub_rows.get(selected[0]) or {}
             ).get("target_key")
-        selected_path = (
-            self.hub_tree.set(selected[0], "path") if selected else None
-        )
         self._close_hub_pack_editor()
         for item in self.hub_tree.get_children():
             self.hub_tree.delete(item)
         self.hub_paths: dict[str, str] = {}
         self.hub_rows: dict[str, dict] = {}
         self.hub_pack_choices: dict[str, dict[str, str]] = {}
-        grouped: dict[str, list[dict]] = {}
-        for path_text, enabled in sorted(self.managed_workspaces.items()):
+        pack_records: list[dict] = []
+        for path_text in sorted(self.managed_workspaces):
             path = Path(path_text)
             try:
                 workspace = StudioWorkspace.load(path)
             except Exception:
                 continue
-            state = workspace.state
-            target = state.get("target") or {}
-            pack = state.get("pack") or {}
-            hero = str(target.get("hero") or "")
-            skin = str(target.get("skin") or "")
-            target_key = self._hub_target_key(hero, skin)
-            grouped.setdefault(target_key, []).append(
-                {
-                    "path": path_text,
-                    "enabled": enabled,
-                    "hero": hero,
-                    "skin": skin,
-                    "pack": pack,
+            pack = workspace.state.get("pack") or {}
+            pack_records.append({"path": path_text, "pack": pack})
+        try:
+            diagnostics = self.workspace.diagnostics()
+        except Exception:
+            diagnostics = {"installed": False, "components": {}}
+        installed_by_target = {}
+        for installed_pack in (
+            (diagnostics.get("components") or {}).get("packs") or []
+        ):
+            installed_target = installed_pack.get("target") or {}
+            installed_by_target[
+                self._hub_target_key(
+                    str(installed_target.get("hero") or ""),
+                    str(installed_target.get("skin") or ""),
+                )
+            ] = installed_pack
+        index = 0
+        for hero in self.catalog["heroes"]:
+            for skin in hero.get("skins") or []:
+                if skin.get("deployment_status") not in (None, "supported"):
+                    continue
+                target_key = self._hub_target_key(hero["id"], skin["id"])
+                assignment = self.deployment_assignments.get(target_key) or {}
+                selected_pack_path = str(assignment.get("pack_path") or "")
+                if selected_pack_path and not Path(selected_pack_path).is_dir():
+                    self.deployment_assignments.pop(target_key, None)
+                    selected_pack_path = ""
+                    assignment = {}
+                choices: dict[str, str] = {"不替换（使用原版）": ""}
+                record_by_path = {record["path"]: record for record in pack_records}
+                for record in pack_records:
+                    candidate = record["pack"]
+                    candidate_name = str(
+                        candidate.get("name")
+                        or candidate.get("id")
+                        or "未命名资产包"
+                    )
+                    candidate_version = str(candidate.get("version") or "")
+                    label = (
+                        f"{candidate_name} · v{candidate_version}"
+                        if candidate_version
+                        else candidate_name
+                    )
+                    if label in choices:
+                        label += f" · {Path(record['path']).name}"
+                    choices[label] = record["path"]
+                selected_record = record_by_path.get(selected_pack_path)
+                pack = selected_record["pack"] if selected_record else {}
+                pack_name = str(
+                    pack.get("name") or pack.get("id") or "不替换（使用原版）"
+                )
+                version = str(pack.get("version") or "")
+                selected_label = next(
+                    (
+                        label
+                        for label, value in choices.items()
+                        if value == selected_pack_path
+                    ),
+                    "不替换（使用原版）",
+                )
+                enabled = bool(assignment.get("enabled")) and bool(
+                    selected_pack_path
+                )
+                target = {
+                    "game": "the-bazaar",
+                    "hero": hero["id"],
+                    "skin": skin["id"],
+                    "skin_name_contains": skin["name_contains"],
                 }
+                expected_runtime_id = (
+                    materialized_pack_id(str(pack.get("id") or ""), target)
+                    if pack.get("id")
+                    else ""
+                )
+                state = deployment_state(
+                    enabled=enabled,
+                    selected_pack_id=str(pack.get("id") or ""),
+                    selected_version=version,
+                    expected_runtime_id=expected_runtime_id,
+                    installed=installed_by_target.get(target_key),
+                )
+                iid = f"target-{index}"
+                index += 1
+                self.hub_paths[iid] = selected_pack_path
+                self.hub_pack_choices[iid] = choices
+                self.hub_rows[iid] = {
+                    "target_key": target_key,
+                    "target": target,
+                    "selected_path": selected_pack_path,
+                    "pack_display": selected_label,
+                }
+                self.hub_tree.insert(
+                    "",
+                    "end",
+                    iid=iid,
+                    text="",
+                    image=(
+                        self.hub_enabled_icon
+                        if enabled
+                        else self.hub_disabled_icon
+                    ),
+                    values=(
+                        hero["display_name"],
+                        self._hub_skin_label(hero["id"], skin["id"]),
+                        f"▼  {pack_name}",
+                        version,
+                        state,
+                    ),
+                )
+                if selected_target_key == target_key:
+                    self.hub_tree.selection_set(iid)
+        self._refresh_library()
+
+    def _refresh_library(self) -> None:
+        if not hasattr(self, "library_cards"):
+            return
+        for child in self.library_cards.winfo_children():
+            child.destroy()
+        self.library_rows: dict[str, dict] = {}
+        self.library_card_widgets: dict[str, list[tk.Widget]] = {}
+        self.library_preview_images.clear()
+
+        query = self.library_query.get().strip().casefold()
+        try:
+            diagnostics = self.workspace.diagnostics()
+        except Exception:
+            diagnostics = {"installed": False, "components": {}}
+        deployed_packs = (
+            (diagnostics.get("components") or {}).get("packs") or []
+        )
+        deployed_ids = {
+            str(pack.get("id") or "") for pack in deployed_packs
+        }
+        deployed_source_ids = {
+            str((pack.get("source_pack") or {}).get("id") or "")
+            for pack in deployed_packs
+            if isinstance(pack.get("source_pack"), dict)
+        }
+
+        valid_count = 0
+        enabled_count = 0
+        shown_count = 0
+        self.root.update_idletasks()
+        available = max(
+            self.library_canvas.winfo_width(),
+            self.root.winfo_width() - 100,
+        )
+        columns = max(2, available // 220)
+        for _index, (path_text, _legacy_enabled) in enumerate(
+            sorted(self.managed_workspaces.items())
+        ):
+            path = Path(path_text)
+            try:
+                workspace = StudioWorkspace.load(path)
+                pack = workspace.state.get("pack") or {}
+                pack_id = str(pack.get("id") or "")
+                name = str(pack.get("name") or pack_id or path.name)
+                version = str(pack.get("version") or "")
+                visuals = len(workspace.state.get("visual_slots") or {})
+                audio = workspace.audio_manifest() or {}
+                audio_routes = sum(
+                    1
+                    for route in audio.get("routes") or []
+                    if route.get("variants")
+                )
+                animation = len(
+                    (workspace.state.get("animation") or {}).get("files") or []
+                )
+                contents = (
+                    f"图像 {visuals} · 音频 {audio_routes} · 动画 {animation}"
+                )
+                is_deployed = any(
+                    deployed_id == pack_id
+                    or deployed_id.startswith(pack_id + ".for.")
+                    for deployed_id in deployed_ids
+                ) or pack_id in deployed_source_ids
+                assignments = [
+                    record
+                    for record in self.deployment_assignments.values()
+                    if record.get("pack_path") == path_text
+                ]
+                enabled_assignments = sum(
+                    1 for record in assignments if record.get("enabled")
+                )
+                valid = True
+                valid_count += 1
+                enabled_count += enabled_assignments
+                searchable = " ".join(
+                    (name, pack_id, version, path_text)
+                ).casefold()
+                if query and query not in searchable:
+                    continue
+                cover_path = self._library_cover_path(workspace)
+                error_text = ""
+            except Exception as error:
+                name = path.name
+                pack_id = ""
+                version = ""
+                contents = "无法读取"
+                valid = False
+                is_deployed = False
+                assignments = []
+                enabled_assignments = 0
+                cover_path = None
+                if query and query not in path_text.casefold():
+                    continue
+                error_text = str(error)
+            self.library_rows[path_text] = {
+                "path": path_text,
+                "name": name,
+                "pack_id": pack_id,
+                "version": version,
+                "contents": contents,
+                "valid": valid,
+                "deployed": is_deployed,
+                "assignment_count": len(assignments),
+                "enabled_count": enabled_assignments,
+                "error": error_text if not valid else "",
+            }
+            self._build_library_card(
+                path_text,
+                cover_path,
+                row=shown_count // columns,
+                column=shown_count % columns,
+            )
+            shown_count += 1
+
+        deployed_count = len(deployed_ids) if diagnostics.get("installed") else 0
+        self.hub_summary.configure(
+            text=(
+                f"本地 {valid_count} 个资产包 · 启用 {enabled_count} 个"
+                f" · 已部署 {deployed_count} 个"
+            )
+        )
+        if shown_count == 0:
+            self.library_selection_status.configure(
+                text="当前筛选条件下没有资产包。"
+            )
+        if self.library_selected_path_value not in self.library_rows:
+            self.library_selected_path_value = None
+        self._library_selected()
+
+    @staticmethod
+    def _library_cover_path(workspace: StudioWorkspace) -> Path | None:
+        preferred = (
+            "store_image",
+            "collection_list",
+            "hero_select",
+            "portrait_gameplay",
+            "standing_overlay",
+        )
+        for slot in preferred:
+            path = workspace.visual_path(slot)
+            if path:
+                return path
+        for slot in sorted(workspace.state.get("visual_slots") or {}):
+            path = workspace.visual_path(slot)
+            if path:
+                return path
+        return None
+
+    def _build_library_card(
+        self,
+        path_text: str,
+        cover_path: Path | None,
+        *,
+        row: int,
+        column: int,
+    ) -> None:
+        record = self.library_rows[path_text]
+        selected = path_text == self.library_selected_path_value
+        background = COLORS["accent_dark"] if selected else COLORS["panel"]
+        card = tk.Frame(
+            self.library_cards,
+            bg=background,
+            highlightthickness=2,
+            highlightbackground=(
+                COLORS["accent"] if selected else COLORS["line"]
+            ),
+            width=202,
+            height=238,
+            cursor="hand2",
+        )
+        card.grid(row=row, column=column, padx=7, pady=7, sticky="n")
+        card.grid_propagate(False)
+        if cover_path:
+            try:
+                with Image.open(cover_path) as source:
+                    preview = compose_image_preview(source, (178, 142), 12)
+            except OSError:
+                preview = Image.new("RGBA", (178, 142), COLORS["empty"])
+        else:
+            preview = Image.new("RGBA", (178, 142), COLORS["empty"])
+            draw = ImageDraw.Draw(preview)
+            draw.rectangle((55, 38, 123, 104), outline=COLORS["muted"], width=3)
+            draw.line((55, 104, 86, 72, 105, 91, 123, 66), fill=COLORS["muted"], width=3)
+        photo = ImageTk.PhotoImage(preview)
+        self.library_preview_images[path_text] = photo
+        image = tk.Label(card, image=photo, bg=background, bd=0)
+        image.pack(padx=10, pady=(10, 5))
+        title = tk.Label(
+            card,
+            text=ellipsize(record["name"], 42),
+            bg=background,
+            fg=COLORS["text"],
+            font=("Microsoft YaHei UI", 10, "bold"),
+            wraplength=178,
+        )
+        title.pack(fill="x", padx=10)
+        meta = tk.Label(
+            card,
+            text=(
+                f"v{record['version']} · {record['contents']}\n"
+                f"已应用 {record['assignment_count']} 个目标"
+            ),
+            bg=background,
+            fg=COLORS["muted"],
+            font=("Microsoft YaHei UI", 8),
+            wraplength=180,
+        )
+        meta.pack(fill="x", padx=10, pady=(3, 6))
+        widgets = [card, image, title, meta]
+        for widget in widgets:
+            widget.bind(
+                "<Button-1>",
+                lambda _event, value=path_text: self._library_choose(value),
+            )
+            widget.bind(
+                "<Double-1>",
+                lambda _event, value=path_text: (
+                    self._library_choose(value),
+                    self._library_edit(),
+                ),
+            )
+            widget.bind(
+                "<MouseWheel>",
+                lambda event: self.library_canvas.yview_scroll(
+                    int(-event.delta / 120),
+                    "units",
+                ),
+            )
+        self.library_card_widgets[path_text] = widgets
+
+    def _library_choose(self, path_text: str) -> None:
+        self.library_selected_path_value = path_text
+        for candidate_path, widgets in self.library_card_widgets.items():
+            selected = candidate_path == path_text
+            background = (
+                COLORS["accent_dark"] if selected else COLORS["panel"]
+            )
+            card = widgets[0]
+            card.configure(
+                bg=background,
+                highlightbackground=(
+                    COLORS["accent"] if selected else COLORS["line"]
+                ),
+            )
+            for widget in widgets[1:]:
+                widget.configure(bg=background)
+        self._library_selected()
+
+    def _library_selected_path(self) -> Path | None:
+        value = self.library_selected_path_value
+        return Path(value) if value and value in self.library_rows else None
+
+    def _library_selected(self, _event=None) -> None:
+        value = self.library_selected_path_value
+        row = self.library_rows.get(value) if value else None
+        valid = bool(row and row["valid"])
+        state = "normal" if valid else "disabled"
+        self.library_apply_button.configure(state=state)
+        self.library_edit_button.configure(state=state)
+        self.library_folder_button.configure(
+            state="normal" if row else "disabled"
+        )
+        if row and valid:
+            path = Path(row["path"]).resolve()
+            try:
+                path.relative_to(WORKSPACES_ROOT.resolve())
+                delete_text = "删除本地资产包"
+            except ValueError:
+                delete_text = "移出资产包库"
+            self.library_delete_button.configure(
+                state="normal",
+                text=delete_text,
+            )
+        else:
+            self.library_delete_button.configure(
+                state="disabled",
+                text="删除资产包",
+            )
+        if not row:
+            self.library_selection_status.configure(
+                text="选择一个资产包查看详情或应用到职业皮肤。",
+                foreground=COLORS["muted"],
+            )
+        elif valid:
+            self.library_selection_status.configure(
+                text=(
+                    f"{ellipsize(row['name'], 48)} · "
+                    f"{ellipsize(row['pack_id'], 56)} · "
+                    f"v{ellipsize(row['version'], 20)} · {row['contents']}"
+                ),
+                foreground=COLORS["text"],
+            )
+        else:
+            self.library_selection_status.configure(
+                text=f"工作区无法读取：{row['error']}",
+                foreground=COLORS["danger"],
             )
 
-        current_path = str(self.workspace.directory.resolve())
-        for index, (target_key, records) in enumerate(sorted(grouped.items())):
-            paths = {record["path"] for record in records}
-            enabled_records = [record for record in records if record["enabled"]]
-            selected_pack_path = self.hub_selections.get(target_key)
-            if enabled_records:
-                selected_pack_path = enabled_records[0]["path"]
-            elif selected_pack_path not in paths:
-                selected_pack_path = (
-                    current_path if current_path in paths else records[0]["path"]
+    def _open_workspace_in_editor(self, path: Path) -> None:
+        self.workspace = StudioWorkspace.load(path)
+        self._load_workspace_into_ui()
+        self._refresh_all()
+        self.main_pages.select(self.editor_page)
+        self._write_log(f"已从资产包库打开：{path}")
+
+    def _library_edit(self) -> None:
+        path = self._library_selected_path()
+        if path is None:
+            return
+        try:
+            self._open_workspace_in_editor(path)
+        except Exception as error:
+            self._show_error("无法编辑资产包", error)
+
+    def _library_open_folder(self) -> None:
+        path = self._library_selected_path()
+        if path is not None and path.is_dir():
+            os.startfile(path)
+
+    def _library_apply_to_targets(self) -> None:
+        path = self._library_selected_path()
+        if path is None:
+            return
+        path_text = str(path.resolve())
+        row = self.library_rows.get(path_text) or {}
+        window = tk.Toplevel(self.root)
+        window.title(f"应用资产包 · {row.get('name', path.name)}")
+        window.configure(bg=COLORS["panel"])
+        window.transient(self.root)
+        window.grab_set()
+        body = ttk.Frame(window, padding=18)
+        body.pack(fill="both", expand=True)
+        ttk.Label(
+            body,
+            text="选择这个资产包要替换的职业皮肤",
+            font=("Microsoft YaHei UI", 14, "bold"),
+        ).pack(anchor="w")
+        ttk.Label(
+            body,
+            text=(
+                "同一资产包可以应用到多个目标；这里只修改部署映射，"
+                "不会改写资产包内容。"
+            ),
+            style="Muted.TLabel",
+        ).pack(anchor="w", pady=(4, 14))
+        variables: dict[str, tk.BooleanVar] = {}
+        choices_container = ttk.Frame(body)
+        choices_container.pack(fill="both", expand=True)
+        choices_canvas = tk.Canvas(
+            choices_container,
+            bg=COLORS["panel"],
+            highlightthickness=0,
+        )
+        choices_scrollbar = ttk.Scrollbar(
+            choices_container,
+            orient="vertical",
+            command=choices_canvas.yview,
+        )
+        choices = ttk.Frame(choices_canvas)
+        choices_window = choices_canvas.create_window(
+            (0, 0),
+            window=choices,
+            anchor="nw",
+        )
+        choices.bind(
+            "<Configure>",
+            lambda _event: choices_canvas.configure(
+                scrollregion=choices_canvas.bbox("all")
+            ),
+        )
+        choices_canvas.bind(
+            "<Configure>",
+            lambda event: choices_canvas.itemconfigure(
+                choices_window,
+                width=event.width,
+            ),
+        )
+        choices_canvas.configure(yscrollcommand=choices_scrollbar.set)
+        choices_canvas.pack(side="left", fill="both", expand=True)
+        choices_scrollbar.pack(side="right", fill="y")
+        for hero in self.catalog["heroes"]:
+            for skin_index, skin in enumerate(hero.get("skins") or []):
+                if skin.get("deployment_status") not in (None, "supported"):
+                    continue
+                target_key = self._hub_target_key(hero["id"], skin["id"])
+                assignment = self.deployment_assignments.get(target_key) or {}
+                variable = tk.BooleanVar(
+                    value=assignment.get("pack_path") == path_text
                 )
-            self.hub_selections[target_key] = selected_pack_path
-            selected_record = next(
-                record
-                for record in records
-                if record["path"] == selected_pack_path
-            )
-            pack = selected_record["pack"]
-            pack_name = str(pack.get("name") or pack.get("id") or "未命名资产包")
-            version = str(pack.get("version") or "")
-            pack_display = pack_name
-            iid = f"target-{index}"
-            self.hub_paths[iid] = selected_pack_path
-            choices: dict[str, str] = {}
-            for record in records:
-                candidate_pack = record["pack"]
-                candidate_name = str(
-                    candidate_pack.get("name")
-                    or candidate_pack.get("id")
-                    or "未命名资产包"
+                variables[target_key] = variable
+                skin_label = str(skin.get("display_name") or skin["id"])
+                if skin_index == 0:
+                    skin_label = f"默认皮肤（{skin['id']}）"
+                choice = ttk.Checkbutton(
+                    choices,
+                    text=f"{hero['display_name']} · {skin_label}",
+                    variable=variable,
                 )
-                candidate_version = str(candidate_pack.get("version") or "")
-                label = (
-                    f"{candidate_name} · {candidate_version}"
-                    if candidate_version
-                    else candidate_name
-                )
-                if label in choices:
-                    label = f"{label} · {Path(record['path']).name}"
-                choices[label] = record["path"]
-            self.hub_pack_choices[iid] = choices
-            selected_choice_label = next(
-                label
-                for label, path in choices.items()
-                if path == selected_pack_path
-            )
-            enabled = bool(self.managed_workspaces.get(selected_pack_path, False))
-            self.hub_rows[iid] = {
-                "target_key": target_key,
-                "paths": sorted(paths),
-                "selected_path": selected_pack_path,
-                "pack_display": selected_choice_label,
-            }
-            self.hub_tree.insert(
-                "",
-                "end",
-                iid=iid,
-                text="",
-                image=(
-                    self.hub_enabled_icon
-                    if enabled
-                    else self.hub_disabled_icon
-                ),
-                values=(
-                    selected_record["hero"],
-                    self._hub_skin_label(
-                        selected_record["hero"],
-                        selected_record["skin"],
+                choice.pack(anchor="w", pady=4)
+                choice.bind(
+                    "<MouseWheel>",
+                    lambda event: choices_canvas.yview_scroll(
+                        int(-event.delta / 120),
+                        "units",
                     ),
-                    f"▼  {pack_name}",
-                    version,
-                    selected_pack_path,
-                ),
+                )
+
+        def save() -> None:
+            for target_key, variable in variables.items():
+                current = self.deployment_assignments.get(target_key) or {}
+                if variable.get():
+                    self.deployment_assignments[target_key] = {
+                        "pack_path": path_text,
+                        # Enablement belongs to the target assignment. Replacing
+                        # its selected pack must not silently disable the row.
+                        "enabled": bool(current.get("enabled")),
+                    }
+                elif current.get("pack_path") == path_text:
+                    self.deployment_assignments.pop(target_key, None)
+            self._remember_workspace()
+            self._refresh_hub()
+            window.destroy()
+            self.main_pages.select(0)
+
+        actions = ttk.Frame(body)
+        actions.pack(fill="x", pady=(16, 0))
+        ttk.Button(
+            actions,
+            text="取消",
+            command=window.destroy,
+        ).pack(side="right")
+        ttk.Button(
+            actions,
+            text="保存并转到部署",
+            style="Accent.TButton",
+            command=save,
+        ).pack(side="right", padx=(0, 8))
+        window.update_idletasks()
+        x = max(0, self.root.winfo_rootx() + 120)
+        y = max(0, self.root.winfo_rooty() + 80)
+        window.geometry(f"520x600+{x}+{y}")
+
+    def _library_import_zip(self) -> None:
+        selected = filedialog.askopenfilename(
+            parent=self.root,
+            title="导入完整资产包 ZIP",
+            filetypes=[("资产包 ZIP", "*.zip"), ("所有文件", "*.*")],
+        )
+        if not selected:
+            return
+        archive = Path(selected)
+        created = False
+        workspace: StudioWorkspace | None = None
+        try:
+            pack_id, pack_name = complete_pack_identity(archive)
+            safe_id = default_project(pack_id)["pack"]["id"]
+            destination = (WORKSPACES_ROOT / safe_id).resolve()
+            if destination.is_dir():
+                if not messagebox.askyesno(
+                    "替换已有资产包",
+                    (
+                        f"本地已经存在资产包“{pack_name}”。\n\n"
+                        f"{destination}\n\n"
+                        "继续会用 ZIP 内容替换该工作区。"
+                    ),
+                    parent=self.root,
+                ):
+                    return
+                workspace = StudioWorkspace.load(destination)
+            else:
+                workspace = StudioWorkspace.create(pack_id)
+                created = True
+            summary = workspace.import_zip(archive)
+            if summary.kind != "complete_pack":
+                raise ValueError("请选择包含 mod.json 的完整资产包 ZIP。")
+            key = str(workspace.directory.resolve())
+            self.managed_workspaces[key] = False
+            self.workspace = workspace
+            self._remember_workspace()
+            self._load_workspace_into_ui()
+            self._refresh_all()
+            self.main_pages.select(self.library_page)
+            self._write_log(f"已导入资产包：{pack_name} · {archive}")
+            self.library_selected_path_value = key
+            self._refresh_library()
+        except Exception as error:
+            if created and workspace is not None and workspace.directory.is_dir():
+                shutil.rmtree(workspace.directory)
+            self._show_error("无法导入资产包", error)
+
+    def _library_delete(self) -> None:
+        value = self.library_selected_path_value
+        row = self.library_rows.get(value) if value else None
+        if not row or not row.get("valid"):
+            return
+        path = Path(row["path"]).resolve()
+        if row.get("deployed"):
+            messagebox.showwarning(
+                "无法删除已部署资产包",
+                "请先取消部署，再删除这个资产包。",
+                parent=self.root,
             )
-            if (
-                selected_target_key == target_key
-                or selected_path == selected_pack_path
-            ):
-                self.hub_tree.selection_set(iid)
+            return
+        try:
+            path.relative_to(WORKSPACES_ROOT.resolve())
+            delete_files = True
+        except ValueError:
+            delete_files = False
+        title = "永久删除资产包" if delete_files else "移出资产包库"
+        detail = (
+            "此操作不会进入回收站，是否继续？"
+            if delete_files
+            else "只会取消管理，不会删除该目录中的文件。是否继续？"
+        )
+        if not messagebox.askyesno(
+            title,
+            f"“{row['name']}”\n\n{path}\n\n{detail}",
+            icon="warning",
+            parent=self.root,
+        ):
+            return
+        try:
+            current = self.workspace.directory.resolve() == path
+            self.managed_workspaces.pop(str(path), None)
+            self.deployment_assignments = {
+                key: value
+                for key, value in self.deployment_assignments.items()
+                if Path(str(value.get("pack_path") or "")).resolve() != path
+            }
+            self.library_selected_path_value = None
+            if delete_files and path.is_dir():
+                shutil.rmtree(path)
+            if current:
+                replacement_workspace = None
+                for candidate in self.managed_workspaces:
+                    if not Path(candidate).is_dir():
+                        continue
+                    try:
+                        replacement_workspace = StudioWorkspace.load(
+                            Path(candidate)
+                        )
+                        break
+                    except Exception:
+                        continue
+                if replacement_workspace is not None:
+                    self.workspace = replacement_workspace
+                else:
+                    self.workspace = StudioWorkspace.create("local.new.skin")
+                    self.managed_workspaces[
+                        str(self.workspace.directory.resolve())
+                    ] = False
+                self._load_workspace_into_ui()
+            self._remember_workspace()
+            self._refresh_all()
+            self.main_pages.select(self.library_page)
+            action = "删除本地资产包" if delete_files else "移出资产包库"
+            self._write_log(f"已{action}：{path}")
+        except Exception as error:
+            self._show_error("无法删除资产包", error)
 
     @staticmethod
     def _hub_target_key(hero: str, skin: str) -> str:
@@ -1378,8 +2234,12 @@ class ModManagerStudio:
             skins = hero_record.get("skins") or []
             for index, skin_record in enumerate(skins):
                 if skin_record["id"] == skin:
-                    suffix = "（默认皮肤）" if index == 0 else ""
-                    return f"{skin}{suffix}"
+                    if index == 0:
+                        return f"默认皮肤（{skin}）"
+                    display = str(skin_record.get("display_name") or "").strip()
+                    if not display or "Ä" in display:
+                        display = skin
+                    return f"{display}（{skin}）"
         return skin
 
     def _build_hub_status_icons(self) -> None:
@@ -1427,34 +2287,163 @@ class ModManagerStudio:
         if not choices:
             return
         self._close_hub_pack_editor()
-        bbox = self.hub_tree.bbox(iid, "pack")
-        if not bbox:
+        row = self.hub_rows.get(iid)
+        if not row:
             return
-        x, y, width, height = bbox
-        row = self.hub_rows[iid]
-        variable = tk.StringVar(value=row["pack_display"])
-        editor = ttk.Combobox(
-            self.hub_tree,
-            textvariable=variable,
-            values=list(choices),
-            state="readonly",
+        window = tk.Toplevel(self.root)
+        window.title("选择资产包")
+        window.configure(bg=COLORS["panel"])
+        window.transient(self.root)
+        window.grab_set()
+        window.geometry(
+            f"760x600+{max(0, self.root.winfo_rootx() + 140)}"
+            f"+{max(0, self.root.winfo_rooty() + 70)}"
         )
-        editor.place(x=x, y=y, width=width, height=height)
-        editor.bind(
-            "<<ComboboxSelected>>",
-            lambda _event: self._hub_pack_selected(iid, variable.get()),
-        )
-        editor.bind(
+        self.hub_pack_editor = window
+        window.bind(
             "<Escape>",
             lambda _event: self._close_hub_pack_editor(restore_focus=True),
         )
-        self.hub_pack_editor = editor
-        editor.focus_set()
-        editor.event_generate(
-            "<Button-1>",
-            x=max(1, width - 8),
-            y=max(1, height // 2),
+
+        heading = ttk.Frame(window, padding=(18, 16, 18, 10))
+        heading.pack(fill="x")
+        ttk.Label(
+            heading,
+            text="选择要应用的资产包",
+            font=("Microsoft YaHei UI", 15, "bold"),
+        ).pack(anchor="w")
+        target = row["target"]
+        ttk.Label(
+            heading,
+            text=(
+                f"目标：{target['hero']} · "
+                f"{self._hub_skin_label(target['hero'], target['skin'])}。"
+                "选择只修改部署方案，不改写资产包。"
+            ),
+            style="Muted.TLabel",
+        ).pack(anchor="w", pady=(4, 0))
+
+        original = ttk.Frame(window, padding=(18, 0, 18, 10))
+        original.pack(fill="x")
+        original_label = "不替换（使用原版）"
+        ttk.Button(
+            original,
+            text=(
+                "✓ 使用游戏原版"
+                if not row.get("selected_path")
+                else "使用游戏原版"
+            ),
+            command=lambda: self._hub_pack_selected(iid, original_label),
+        ).pack(fill="x")
+
+        body = ttk.Frame(window, padding=(18, 0, 18, 16))
+        body.pack(fill="both", expand=True)
+        canvas = tk.Canvas(
+            body,
+            bg=COLORS["panel_alt"],
+            highlightthickness=0,
         )
+        scrollbar = ttk.Scrollbar(body, orient="vertical", command=canvas.yview)
+        cards = tk.Frame(canvas, bg=COLORS["panel_alt"])
+        cards_window = canvas.create_window((0, 0), window=cards, anchor="nw")
+        cards.bind(
+            "<Configure>",
+            lambda _event: canvas.configure(scrollregion=canvas.bbox("all")),
+        )
+        canvas.bind(
+            "<Configure>",
+            lambda event: canvas.itemconfigure(cards_window, width=event.width),
+        )
+        canvas.configure(yscrollcommand=scrollbar.set)
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+        window.bind(
+            "<MouseWheel>",
+            lambda event: canvas.yview_scroll(
+                int(-event.delta / 120),
+                "units",
+            ),
+        )
+        window._preview_images = []  # type: ignore[attr-defined]
+
+        pack_choices = [
+            (label, path_text)
+            for label, path_text in choices.items()
+            if path_text
+        ]
+        for index, (label, path_text) in enumerate(pack_choices):
+            try:
+                workspace = StudioWorkspace.load(Path(path_text))
+                pack = workspace.state.get("pack") or {}
+                name = str(pack.get("name") or pack.get("id") or label)
+                version = str(pack.get("version") or "")
+                visual_count = len(workspace.state.get("visual_slots") or {})
+                cover_path = self._library_cover_path(workspace)
+                if cover_path:
+                    with Image.open(cover_path) as source:
+                        preview = compose_image_preview(source, (154, 112), 10)
+                else:
+                    preview = Image.new("RGBA", (154, 112), COLORS["empty"])
+            except Exception:
+                name = label
+                version = ""
+                visual_count = 0
+                preview = Image.new("RGBA", (154, 112), COLORS["empty"])
+            photo = ImageTk.PhotoImage(preview)
+            window._preview_images.append(photo)  # type: ignore[attr-defined]
+            selected = path_text == row.get("selected_path")
+            card = tk.Frame(
+                cards,
+                bg=COLORS["accent_dark"] if selected else COLORS["panel"],
+                highlightthickness=2,
+                highlightbackground=(
+                    COLORS["accent"] if selected else COLORS["line"]
+                ),
+                width=214,
+                height=194,
+            )
+            card.grid(
+                row=index // 3,
+                column=index % 3,
+                padx=7,
+                pady=7,
+                sticky="n",
+            )
+            card.grid_propagate(False)
+            background = COLORS["accent_dark"] if selected else COLORS["panel"]
+            tk.Label(card, image=photo, bg=background).pack(pady=(9, 4))
+            tk.Label(
+                card,
+                text=ellipsize(name, 42),
+                bg=background,
+                fg=COLORS["text"],
+                font=("Microsoft YaHei UI", 9, "bold"),
+                wraplength=190,
+            ).pack(fill="x", padx=8)
+            tk.Label(
+                card,
+                text=f"v{version} · 图像 {visual_count}",
+                bg=background,
+                fg=COLORS["muted"],
+                font=("Microsoft YaHei UI", 8),
+            ).pack(fill="x", padx=8, pady=(2, 4))
+            ttk.Button(
+                card,
+                text="当前选择" if selected else "选择",
+                command=lambda selected_label=label: self._hub_pack_selected(
+                    iid,
+                    selected_label,
+                ),
+            ).pack()
+        if not pack_choices:
+            tk.Label(
+                cards,
+                text="资产包库为空。请先导入或制作资产包。",
+                bg=COLORS["panel_alt"],
+                fg=COLORS["muted"],
+                pady=40,
+            ).pack(fill="x")
+        window.focus_set()
 
     def _hub_open_selected_pack(self) -> None:
         selected = self.hub_tree.selection()
@@ -1478,17 +2467,18 @@ class ModManagerStudio:
     def _hub_pack_selected(self, iid: str, label: str) -> None:
         selected_path = (self.hub_pack_choices.get(iid) or {}).get(label)
         row = self.hub_rows.get(iid)
-        if not selected_path or not row:
+        if selected_path is None or not row:
             self._close_hub_pack_editor()
             return
-        was_enabled = any(
-            self.managed_workspaces.get(path, False)
-            for path in row["paths"]
-        )
-        for path in row["paths"]:
-            self.managed_workspaces[path] = False
-        self.managed_workspaces[selected_path] = was_enabled
-        self.hub_selections[row["target_key"]] = selected_path
+        target_key = row["target_key"]
+        current = self.deployment_assignments.get(target_key) or {}
+        if selected_path:
+            self.deployment_assignments[target_key] = {
+                "pack_path": selected_path,
+                "enabled": bool(current.get("enabled")),
+            }
+        else:
+            self.deployment_assignments.pop(target_key, None)
         self._remember_workspace()
         self._refresh_hub()
 
@@ -1500,18 +2490,15 @@ class ModManagerStudio:
         return Path(value) if value else None
 
     def _hub_toggle(self) -> None:
-        path = self._hub_selected_path()
-        if path is None:
-            return
-        key = str(path.resolve())
         selected = self.hub_tree.selection()
         row = self.hub_rows.get(selected[0]) if selected else None
-        enable = not self.managed_workspaces.get(key, False)
-        if row:
-            for candidate in row["paths"]:
-                self.managed_workspaces[candidate] = False
-            self.hub_selections[row["target_key"]] = key
-        self.managed_workspaces[key] = enable
+        if not row or not row.get("selected_path"):
+            if selected:
+                self._open_hub_pack_editor(selected[0])
+            return
+        target_key = row["target_key"]
+        assignment = self.deployment_assignments[target_key]
+        assignment["enabled"] = not bool(assignment.get("enabled"))
         self._remember_workspace()
         self._refresh_hub()
 
@@ -1539,26 +2526,25 @@ class ModManagerStudio:
         try:
             workspace = StudioWorkspace.load(Path(path))
             key = str(workspace.directory.resolve())
-            self.managed_workspaces[key] = True
+            self.managed_workspaces[key] = False
             self._remember_workspace()
             self._refresh_hub()
+            self.main_pages.select(self.library_page)
+            self.library_selected_path_value = key
+            self._refresh_library()
         except Exception as error:
             self._show_error("无法添加工作区", error)
 
     def _import_current_to_hub(self) -> None:
         self._metadata_changed()
         path = str(self.workspace.directory.resolve())
-        target = self.workspace.state.get("target") or {}
-        target_key = self._hub_target_key(
-            str(target.get("hero") or ""),
-            str(target.get("skin") or ""),
-        )
         self.managed_workspaces.setdefault(path, False)
-        self.hub_selections[target_key] = path
         self._remember_workspace()
         self._refresh_hub()
-        self.main_pages.select(0)
-        self._write_log(f"资产包已加入控制中台：{path}")
+        self.library_selected_path_value = path
+        self.main_pages.select(self.library_page)
+        self._refresh_library()
+        self._write_log(f"资产包已保存到资产包库：{path}")
 
     def _refresh_visuals(self) -> None:
         for slot in self.catalog["visual_slots"]:
@@ -1702,6 +2688,8 @@ class ModManagerStudio:
                 foreground=COLORS["warning"],
             )
             self.play_button.configure(state="disabled")
+        if hasattr(self, "library_cards"):
+            self._refresh_library()
 
     def _locate_game(self) -> None:
         selected = filedialog.askdirectory(
@@ -2147,16 +3135,23 @@ class ModManagerStudio:
     def _deploy_all(self) -> None:
         if self.busy:
             return
-        self._metadata_changed()
-        workspaces: list[StudioWorkspace] = []
+        assignments: list[tuple[StudioWorkspace, dict]] = []
         invalid: list[str] = []
-        for path_text, enabled in self.managed_workspaces.items():
-            if not enabled:
+        targets = {
+            row["target_key"]: row["target"]
+            for row in self.hub_rows.values()
+        }
+        for target_key, record in self.deployment_assignments.items():
+            if not record.get("enabled"):
                 continue
+            path_text = str(record.get("pack_path") or "")
             try:
-                workspaces.append(StudioWorkspace.load(Path(path_text)))
+                target = targets[target_key]
+                assignments.append(
+                    (StudioWorkspace.load(Path(path_text)), target)
+                )
             except Exception as error:
-                invalid.append(f"{path_text}: {error}")
+                invalid.append(f"{target_key} · {path_text}: {error}")
         if invalid:
             messagebox.showerror(
                 "工作区不可用",
@@ -2164,26 +3159,26 @@ class ModManagerStudio:
                 parent=self.root,
             )
             return
-        if not workspaces:
+        if not assignments:
             messagebox.showinfo(
                 "没有启用的皮肤",
-                "请先在控制中台启用至少一个职业皮肤。",
+                "请先为职业皮肤选择资产包，并点击左侧状态图标启用。",
                 parent=self.root,
             )
             return
         if not messagebox.askyesno(
             "部署多职业皮肤",
             (
-                f"将同时部署 {len(workspaces)} 个已启用皮肤。\n\n"
-                "继续前请关闭 The Bazaar。相同英雄/皮肤只能启用一个工作区。"
+                f"将按照当前部署方案生成并部署 {len(assignments)} 个皮肤。\n\n"
+                "继续前请关闭 The Bazaar。资产包本身不会被修改。"
             ),
             parent=self.root,
         ):
             return
         self._run_background(
             "正在部署全部已启用皮肤…",
-            lambda: StudioWorkspace.deploy_many(
-                workspaces,
+            lambda: StudioWorkspace.deploy_assignments(
+                assignments,
                 self.game_dir_override,
             ),
             lambda result: self._operation_complete(
@@ -2508,7 +3503,21 @@ def main() -> int:
                     return 8
             return 7
         return 0 if not deployed else 9
-    ModManagerStudio().run()
+    # 1.2 keeps the proven authoring/deployment backend above for migration and
+    # command-line smoke tests, while the interactive shell is rebuilt around
+    # deployment mappings, skin/asset libraries and embedded authoring.
+    from bazaar_skin_manager_ui_v12 import SkinManagerV12
+
+    app = SkinManagerV12()
+    if "--self-test-v12-ui" in sys.argv:
+        try:
+            app.self_test_layout()
+            return 0
+        except Exception:
+            return 10
+        finally:
+            app.root.destroy()
+    app.run()
     return 0
 
 

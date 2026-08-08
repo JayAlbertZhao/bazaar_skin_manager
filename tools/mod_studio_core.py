@@ -132,6 +132,23 @@ def _safe_pack_id(value: str) -> str:
     return value
 
 
+def materialized_pack_id(source_pack_id: str, target: dict) -> str:
+    """Return a stable runtime id while preserving the target suffix.
+
+    Source package ids may already use the full 96-character allowance.  The
+    target identity must not be truncated away, otherwise assigning one source
+    package to two professions can produce colliding runtime package ids.
+    """
+    source = _safe_pack_id(source_pack_id)
+    adapter = _adapter_for_target(target)
+    suffix = f".for.{_slug(f'{adapter.hero}-{adapter.skin}').casefold()}"
+    source_budget = 96 - len(suffix)
+    if source_budget < 1:
+        raise ValueError("Deployment target identity is too long for a pack id.")
+    trimmed = source[:source_budget].rstrip(".-_") or "skin"
+    return _safe_pack_id(trimmed + suffix)
+
+
 def _safe_extract(archive: Path, destination: Path) -> None:
     """Extract a ZIP without traversal, absolute paths, or oversized payloads."""
     total = 0
@@ -183,6 +200,15 @@ def _visual_template_map(target: dict) -> dict[str, dict]:
     return {
         replacement["slot"]: replacement
         for replacement in manifest["visual_replacements"]
+    }
+
+
+def _all_visual_slot_ids() -> set[str]:
+    return {
+        str(replacement["slot"])
+        for adapter in adapter_registry().records
+        for replacement in adapter.payload.get("visual_replacements") or []
+        if replacement.get("slot")
     }
 
 
@@ -332,6 +358,8 @@ class StudioWorkspace:
             # otherwise deploy would silently replace the imported manifest
             # with a provenance-stripped variant.
             state["authoring"] = deepcopy(manifest["authoring"])
+        if manifest.get("source_pack") is not None:
+            state["source_pack"] = deepcopy(manifest["source_pack"])
         return state
 
     @property
@@ -362,17 +390,32 @@ class StudioWorkspace:
         skin: str,
         skin_name_contains: str,
     ) -> None:
-        new_id = _safe_pack_id(pack_id)
-        self.state["pack"] = {
-            "id": new_id,
-            "name": name.strip() or "Custom Skin",
-            "version": version.strip() or "0.1.0",
-        }
+        self.set_pack_metadata(
+            pack_id=pack_id,
+            name=name,
+            version=version,
+        )
         self.state["target"] = {
             "game": "the-bazaar",
             "hero": hero,
             "skin": skin,
             "skin_name_contains": skin_name_contains,
+        }
+        self.save()
+
+    def set_pack_metadata(
+        self,
+        *,
+        pack_id: str,
+        name: str,
+        version: str,
+    ) -> None:
+        """Edit reusable package identity without changing deployment target."""
+        new_id = _safe_pack_id(pack_id)
+        self.state["pack"] = {
+            "id": new_id,
+            "name": name.strip() or "Custom Skin",
+            "version": version.strip() or "0.1.0",
         }
         self.save()
 
@@ -384,7 +427,7 @@ class StudioWorkspace:
         chroma_color: str | None = None,
         tolerance: int = 28,
     ) -> Path:
-        if slot not in _visual_template_map(self.state["target"]):
+        if slot not in _all_visual_slot_ids():
             raise ValueError(f"Unknown visual slot: {slot}")
         source = source.resolve()
         if source.suffix.casefold() not in SUPPORTED_IMAGE_EXTENSIONS:
@@ -410,7 +453,7 @@ class StudioWorkspace:
         chroma_color: str | None = None,
         tolerance: int = 28,
     ) -> Path:
-        if slot not in _visual_template_map(self.state["target"]):
+        if slot not in _all_visual_slot_ids():
             raise ValueError(f"Unknown visual slot: {slot}")
         output = image.convert("RGBA")
         if chroma_color:
@@ -706,7 +749,10 @@ class StudioWorkspace:
             )
         elif len(voice_manifests) > 1:
             raise ValueError("Audio package contains multiple mak-voice-assets.json files.")
-        slot_ids = set(_visual_template_map(self.state["target"]))
+        # Loose reusable packs are content collections, not target bindings.
+        # Accept every known logical slot here; deployment later intersects the
+        # collection with the selected target adapter.
+        slot_ids = _all_visual_slot_ids()
         route_catalog = self.audio_route_catalog()
         route_by_slug = {
             _slug(route["logical_slot"]).casefold(): route["logical_slot"]
@@ -942,7 +988,12 @@ class StudioWorkspace:
             path = self.directory / relative
             if not path.is_file():
                 continue
-            template = deepcopy(visual_templates[slot])
+            template = visual_templates.get(slot)
+            if template is None:
+                # Asset packs are reusable content collections. A deployment
+                # target consumes only the slots declared by its adapter.
+                continue
+            template = deepcopy(template)
             template["file"] = relative
             replacements.append(template)
 
@@ -961,6 +1012,8 @@ class StudioWorkspace:
         }
         if self.state.get("authoring"):
             manifest["authoring"] = deepcopy(self.state["authoring"])
+        if self.state.get("source_pack"):
+            manifest["source_pack"] = deepcopy(self.state["source_pack"])
         audio = self.audio_manifest()
         if audio and any(route.get("variants") for route in audio.get("routes", [])):
             manifest["audio_manifest"] = self.state["audio_manifest"]
@@ -977,6 +1030,25 @@ class StudioWorkspace:
         for replacement in manifest.get("visual_replacements") or []:
             if replacement.get("file"):
                 relatives.add(str(replacement["file"]))
+        # Deterministic generator packs keep their editable source material in
+        # the workspace. Include those files in the portable pack whenever
+        # they exist; older imported packs may carry provenance records without
+        # the corresponding payload, so missing legacy sources remain optional.
+        authoring_inputs = ((manifest.get("authoring") or {}).get("inputs") or {})
+        for record in authoring_inputs.values():
+            relative = str((record or {}).get("workspace_file") or "").strip()
+            if not relative:
+                continue
+            normalized = relative.replace("\\", "/")
+            candidate = (self.directory / normalized).resolve()
+            try:
+                candidate.relative_to(self.directory)
+            except ValueError as error:
+                raise ValueError(
+                    f"Pack authoring input escapes the workspace: {relative}"
+                ) from error
+            if candidate.is_file():
+                relatives.add(normalized)
         audio_relative = manifest.get("audio_manifest")
         if audio_relative:
             relatives.add(str(audio_relative))
@@ -1055,6 +1127,55 @@ class StudioWorkspace:
 
     def deploy(self, game_dir: Path | None = None) -> dict:
         return self.deploy_many([self], game_dir)
+
+    @staticmethod
+    def deploy_assignments(
+        assignments: list[tuple["StudioWorkspace", dict]],
+        game_dir: Path | None = None,
+    ) -> dict:
+        """Materialize reusable packs for target-specific verified adapters."""
+        if not assignments:
+            raise ValueError("Select at least one deployment assignment.")
+        with tempfile.TemporaryDirectory() as temp:
+            materialized: list[StudioWorkspace] = []
+            for index, (source, target) in enumerate(assignments):
+                _adapter_for_target(target)
+                destination = Path(temp) / f"assignment-{index:02d}"
+                shutil.copytree(source.directory, destination)
+                workspace = StudioWorkspace.load(destination)
+                source_pack = deepcopy(source.state.get("pack") or {})
+                source_target = source.state.get("target") or {}
+                workspace.state["pack"] = {
+                    "id": materialized_pack_id(
+                        str(source_pack.get("id") or "imported.skin"),
+                        target,
+                    ),
+                    "name": str(
+                        source_pack.get("name") or source_pack.get("id") or "Skin"
+                    ),
+                    "version": str(source_pack.get("version") or "0.1.0"),
+                }
+                workspace.state["source_pack"] = source_pack
+                workspace.state["target"] = deepcopy(target)
+                if str(source_target.get("hero") or "").casefold() != str(
+                    target.get("hero") or ""
+                ).casefold():
+                    # Current audio manifests carry hero-specific FMOD routes.
+                    # Cross-profession assignments remain visual-only until a
+                    # route-independent source audio schema is available.
+                    workspace.state["audio_manifest"] = None
+                    # Animation sources are also authored against a specific
+                    # profession skeleton.  Cross-profession reuse is static
+                    # visual-only until the Spine component materializes a
+                    # verified target-specific request.
+                    workspace.state["animation"] = {
+                        "mode": "none",
+                        "files": [],
+                        "runtime_ready": False,
+                    }
+                workspace.save()
+                materialized.append(workspace)
+            return StudioWorkspace.deploy_many(materialized, game_dir)
 
     @staticmethod
     def deploy_many(

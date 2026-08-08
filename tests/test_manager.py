@@ -615,7 +615,7 @@ class ManagerTests(unittest.TestCase):
             )
             self.assertFalse(Path(catalog_patch["backup"]).exists())
 
-    def test_uninstall_does_not_overwrite_a_steam_updated_bundle(self) -> None:
+    def test_uninstall_preserves_transaction_when_a_bundle_changed(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             pack, game, runtime = self._native_patch_fixture(root)
@@ -645,9 +645,17 @@ class ManagerTests(unittest.TestCase):
                 )
                 backup = Path(record["native_patches"][0]["backup"])
                 target.write_bytes(b"steam-updated-bundle")
-                manager.uninstall()
+                with self.assertRaisesRegex(
+                    RuntimeError,
+                    "Cannot safely cancel deployment",
+                ):
+                    manager.uninstall()
             self.assertEqual(target.read_bytes(), b"steam-updated-bundle")
-            self.assertFalse(backup.exists())
+            self.assertTrue(backup.exists())
+            self.assertTrue(
+                (local / "BazaarSkinManager" / "TheBazaar" / "manager" /
+                 "install-manifest.json").is_file()
+            )
 
     def test_install_preserves_unrelated_bepinex_plugins(self) -> None:
         with tempfile.TemporaryDirectory() as temp:

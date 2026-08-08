@@ -1,5 +1,5 @@
 param(
-    [string]$Version = "1.1.2"
+    [string]$Version = "1.2.10"
 )
 
 $ErrorActionPreference = "Stop"
@@ -7,10 +7,6 @@ $root = [IO.Path]::GetFullPath((Split-Path -Parent $MyInvocation.MyCommand.Path)
 $dist = Join-Path $root "dist"
 $manager = Join-Path $dist "manager\TheBazaarModManager.exe"
 $managerMetadata = Join-Path $dist "manager\manager-build.json"
-$assetGenerator = Join-Path $dist "asset-generator\TheBazaarAssetGenerator.exe"
-$assetGeneratorMetadata = Join-Path $dist "asset-generator\asset-generator-build.json"
-$spineManager = Join-Path $dist "spine-manager\TheBazaarSpineManager.exe"
-$spineManagerMetadata = Join-Path $dist "spine-manager\spine-manager-build.json"
 $quickStart = Join-Path $root "docs\portable-quick-start.txt"
 $staging = Join-Path $dist "manager-portable-staging"
 $archive = Join-Path $dist "TheBazaarModManager-Portable-$Version.zip"
@@ -20,7 +16,7 @@ if (-not $resolvedStaging.StartsWith($root, [StringComparison]::OrdinalIgnoreCas
     throw "Unsafe staging path: $resolvedStaging"
 }
 
-foreach ($required in @($manager, $managerMetadata, $assetGenerator, $assetGeneratorMetadata, $spineManager, $spineManagerMetadata, $quickStart)) {
+foreach ($required in @($manager, $managerMetadata, $quickStart)) {
     if (-not (Test-Path -LiteralPath $required)) {
         throw "Required portable-package input is missing: $required"
     }
@@ -33,10 +29,6 @@ New-Item -ItemType Directory -Force -Path $staging | Out-Null
 
 Copy-Item -LiteralPath $manager -Destination $staging
 Copy-Item -LiteralPath $managerMetadata -Destination $staging
-Copy-Item -LiteralPath $assetGenerator -Destination $staging
-Copy-Item -LiteralPath $assetGeneratorMetadata -Destination $staging
-Copy-Item -LiteralPath $spineManager -Destination $staging
-Copy-Item -LiteralPath $spineManagerMetadata -Destination $staging
 Copy-Item -LiteralPath $quickStart -Destination (Join-Path $staging "README.txt")
 
 $files = Get-ChildItem -LiteralPath $staging -File -Recurse |

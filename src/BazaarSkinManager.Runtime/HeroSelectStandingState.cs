@@ -52,12 +52,13 @@ namespace BazaarSkinManager.TheBazaar
                 Plugin.PackForSkin(loadedAsset);
             FieldInfo targetGraphicField = pack == null
                 ? null
-                : AccessTools.Field(_displayType, pack.TargetHeroCode());
+                : FindFieldQuietly(_displayType, pack.TargetHeroCode());
             Graphic targetGraphic = targetGraphicField == null
                 ? null
                 : targetGraphicField.GetValue(display) as Graphic;
             GameObject skinEditActiveSkin =
-                _skinEditActiveSkinField.GetValue(display) as GameObject;
+                VisualOwnership.SkinEditGameObject(
+                    _skinEditActiveSkinField.GetValue(display));
             bool displayActive = component != null &&
                 component.gameObject.activeInHierarchy;
             bool supportedCentralDisplay =
@@ -357,7 +358,8 @@ namespace BazaarSkinManager.TheBazaar
             {
                 RemoveOtherGraphicOverlays(display, null);
                 GameObject skinEditActiveSkin =
-                    _skinEditActiveSkinField.GetValue(display) as GameObject;
+                    VisualOwnership.SkinEditGameObject(
+                        _skinEditActiveSkinField.GetValue(display));
                 StandingOverlay.RemoveFromWorld(skinEditActiveSkin);
             }
         }
@@ -434,7 +436,7 @@ namespace BazaarSkinManager.TheBazaar
         {
             foreach (RuntimePack pack in Plugin.ActivePacks)
             {
-                FieldInfo field = AccessTools.Field(
+                FieldInfo field = FindFieldQuietly(
                     _displayType,
                     pack.TargetHeroCode());
                 UnityEngine.Object value = field == null
@@ -454,7 +456,7 @@ namespace BazaarSkinManager.TheBazaar
         {
             foreach (RuntimePack pack in Plugin.ActivePacks)
             {
-                FieldInfo field = AccessTools.Field(
+                FieldInfo field = FindFieldQuietly(
                     _displayType,
                     pack.TargetHeroCode());
                 Graphic graphic = field == null
@@ -465,6 +467,31 @@ namespace BazaarSkinManager.TheBazaar
                     StandingOverlay.RemoveFromGraphic(graphic);
                 }
             }
+        }
+
+        private static FieldInfo FindFieldQuietly(Type type, string name)
+        {
+            // HeroSelectDisplay no longer exposes one Graphic field per hero
+            // on current builds. Harmony's AccessTools.Field logs a warning
+            // for each intentionally absent fallback field on every periodic
+            // reconciliation. Walk the hierarchy without warning so a real
+            // runtime failure remains visible in the log.
+            for (Type current = type;
+                current != null;
+                current = current.BaseType)
+            {
+                FieldInfo field = current.GetField(
+                    name,
+                    BindingFlags.Instance |
+                    BindingFlags.Public |
+                    BindingFlags.NonPublic |
+                    BindingFlags.DeclaredOnly);
+                if (field != null)
+                {
+                    return field;
+                }
+            }
+            return null;
         }
 
         private static string TargetLoaderName(RuntimePack pack)

@@ -2,7 +2,7 @@
   "schema_version": 1,
   "id": "pygmalien-default",
   "adapter_version": 2,
-  "supported_builds": ["24001960"],
+  "supported_builds": ["24001960", "24570932"],
   "target": {
     "game": "the-bazaar",
     "hero": "Pygmalien",
@@ -15,28 +15,28 @@
     {"slot": "portrait_small", "match_mode": "exact", "match_names": ["Skin_PYG_01a_Portrait"]},
     {
       "slot": "store_image",
-      "deployment": {"mode": "preload_unity_texture2d", "target": "TheBazaar_Data/StreamingAssets/aa/StandaloneWindows64/skin_pyg_01_assets_all.bundle", "asset_name": "Skin_PYG_01a_StoreImage", "unity_version": "6000.3.11f1", "target_size": [2048, 2048], "supported_original_sha256": ["54ac0543578db051af6cadf39388f00be7ac26511ae39740ad72cffba1006c8c"]},
+      "deployment": {"mode": "preload_unity_texture2d", "target": "TheBazaar_Data/StreamingAssets/aa/StandaloneWindows64/skin_pyg_01_assets_all.bundle", "asset_name": "Skin_PYG_01a_StoreImage", "unity_version": "6000.3.11f1", "target_size": [2048, 2048], "supported_original_sha256": ["54ac0543578db051af6cadf39388f00be7ac26511ae39740ad72cffba1006c8c", "f38b853bb9b081217d410c23dab1e802aaecc16dbef972e68214a748de5887ab"]},
       "match_names": ["Skin_PYG_01a_StoreImage"]
     },
     {
       "slot": "marketplace_list",
-      "deployment": {"mode": "preload_unity_texture2d", "target": "TheBazaar_Data/StreamingAssets/aa/StandaloneWindows64/skin_pyg_01_assets_all.bundle", "asset_name": "Skin_PYG_01a_StoreImage", "unity_version": "6000.3.11f1", "target_size": [2048, 2048], "supported_original_sha256": ["54ac0543578db051af6cadf39388f00be7ac26511ae39740ad72cffba1006c8c"]},
+      "deployment": {"mode": "preload_unity_texture2d", "target": "TheBazaar_Data/StreamingAssets/aa/StandaloneWindows64/skin_pyg_01_assets_all.bundle", "asset_name": "Skin_PYG_01a_StoreImage", "unity_version": "6000.3.11f1", "target_size": [2048, 2048], "supported_original_sha256": ["54ac0543578db051af6cadf39388f00be7ac26511ae39740ad72cffba1006c8c", "f38b853bb9b081217d410c23dab1e802aaecc16dbef972e68214a748de5887ab"]},
       "match_names": ["Skin_PYG_01a_StoreImage"]
     },
     {
       "slot": "marketplace_details",
-      "deployment": {"mode": "preload_unity_texture2d", "target": "TheBazaar_Data/StreamingAssets/aa/StandaloneWindows64/skin_pyg_01_assets_all.bundle", "asset_name": "Skin_PYG_01a_StoreImage", "unity_version": "6000.3.11f1", "target_size": [2048, 2048], "supported_original_sha256": ["54ac0543578db051af6cadf39388f00be7ac26511ae39740ad72cffba1006c8c"]},
+      "deployment": {"mode": "preload_unity_texture2d", "target": "TheBazaar_Data/StreamingAssets/aa/StandaloneWindows64/skin_pyg_01_assets_all.bundle", "asset_name": "Skin_PYG_01a_StoreImage", "unity_version": "6000.3.11f1", "target_size": [2048, 2048], "supported_original_sha256": ["54ac0543578db051af6cadf39388f00be7ac26511ae39740ad72cffba1006c8c", "f38b853bb9b081217d410c23dab1e802aaecc16dbef972e68214a748de5887ab"]},
       "match_names": ["Skin_PYG_01a_StoreImage"]
     },
     {
       "slot": "collection_list",
-      "deployment": {"mode": "preload_unity_texture2d", "target": "TheBazaar_Data/StreamingAssets/aa/StandaloneWindows64/skin_pyg_01_assets_all.bundle", "asset_name": "Skin_PYG_01a_PreviewCollection_TUI", "unity_version": "6000.3.11f1", "target_size": [512, 512], "supported_original_sha256": ["54ac0543578db051af6cadf39388f00be7ac26511ae39740ad72cffba1006c8c"]},
+      "deployment": {"mode": "preload_unity_texture2d", "target": "TheBazaar_Data/StreamingAssets/aa/StandaloneWindows64/skin_pyg_01_assets_all.bundle", "asset_name": "Skin_PYG_01a_PreviewCollection_TUI", "unity_version": "6000.3.11f1", "target_size": [512, 512], "supported_original_sha256": ["54ac0543578db051af6cadf39388f00be7ac26511ae39740ad72cffba1006c8c", "f38b853bb9b081217d410c23dab1e802aaecc16dbef972e68214a748de5887ab"]},
       "match_names": ["Skin_PYG_01a_PreviewCollection_TUI"]
     },
     {"slot": "collection_details", "direct_only": true, "match_mode": "exact", "match_names": ["Skin_PYG_01a_Base_P", "Skin_PYG_01a_P"]},
     {
       "slot": "daily_weekly",
-      "deployment": {"mode": "preload_unity_texture2d", "target": "TheBazaar_Data/StreamingAssets/aa/StandaloneWindows64/skin_pyg_01_assets_all.bundle", "asset_name": "Skin_PYG_01a_PreviewCollection_TUI", "unity_version": "6000.3.11f1", "target_size": [512, 512], "supported_original_sha256": ["54ac0543578db051af6cadf39388f00be7ac26511ae39740ad72cffba1006c8c"]},
+      "deployment": {"mode": "preload_unity_texture2d", "target": "TheBazaar_Data/StreamingAssets/aa/StandaloneWindows64/skin_pyg_01_assets_all.bundle", "asset_name": "Skin_PYG_01a_PreviewCollection_TUI", "unity_version": "6000.3.11f1", "target_size": [512, 512], "supported_original_sha256": ["54ac0543578db051af6cadf39388f00be7ac26511ae39740ad72cffba1006c8c", "f38b853bb9b081217d410c23dab1e802aaecc16dbef972e68214a748de5887ab"]},
       "match_names": ["Skin_PYG_01a_PreviewCollection_TUI"]
     },
     {
