@@ -65,6 +65,13 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 New-Item -ItemType Directory -Force -Path $output, $work, $spec | Out-Null
+$managerAssets = Join-Path $root "manager\assets"
+$managerAssetArguments = @()
+if (Test-Path -LiteralPath $managerAssets -PathType Container) {
+    $managerAssetArguments = @("--add-data", "$managerAssets;manager\assets")
+} else {
+    Write-Warning "Game-derived manager previews are absent; building without optional preview assets."
+}
 
 & $python -m PyInstaller `
     --noconfirm `
@@ -83,7 +90,7 @@ New-Item -ItemType Directory -Force -Path $output, $work, $spec | Out-Null
     --add-binary "$fmodDll;fmod_toolkit\libfmod\Windows\x64" `
     --add-data "$root\manager\hero-catalog.json;manager" `
     --add-data "$root\manager\adapters;manager\adapters" `
-    --add-data "$root\manager\assets;manager\assets" `
+    $managerAssetArguments `
     --add-data "$runtime;dist\runtime" `
     --add-data "$runtimeMetadata;dist\runtime" `
     --add-data "$root\tools\unity_bundle_texture_patch.py;tools" `

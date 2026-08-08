@@ -310,7 +310,8 @@ def import_spine_package(source: Path, workspace: Path = WORKSPACE_ROOT) -> Spin
     source = source.resolve()
     if not source.exists():
         raise FileNotFoundError(source)
-    staging = workspace.with_name(workspace.name + ".staging")
+    workspace = workspace.resolve()
+    staging = workspace.with_name(workspace.name + ".staging").resolve()
     shutil.rmtree(staging, ignore_errors=True)
     staging.mkdir(parents=True, exist_ok=True)
     if source.is_file() and source.suffix.casefold() == ".zip":

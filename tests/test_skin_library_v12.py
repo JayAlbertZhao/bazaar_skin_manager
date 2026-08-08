@@ -30,7 +30,7 @@ class FirstClassAssetLibraryTests(unittest.TestCase):
         with wave.open(str(path), "wb") as stream:
             stream.setnchannels(1)
             stream.setsampwidth(2)
-            stream.setframerate(48000)
+            stream.setframerate(22050)
             stream.writeframes(b"\0\0" * 480)
 
     def test_image_import_is_content_addressed_and_deduplicated(self) -> None:
@@ -217,6 +217,8 @@ class ManagerV12SurfaceTests(unittest.TestCase):
             / "hero-select-gold"
             / "sources"
         )
+        if not sources.is_dir():
+            self.skipTest("game-derived target previews are not stored in public source")
         expected = {
             f"{str(hero['id']).casefold()}.png"
             for hero in catalog["heroes"]

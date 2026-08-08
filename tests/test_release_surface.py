@@ -124,7 +124,9 @@ class ReleaseSurfaceTests(unittest.TestCase):
         self.assertIn("FMOD runtime required by UnityPy is missing", build)
         self.assertIn("--self-test-release-runtime", build)
         self.assertIn("Frozen release runtime self-test failed", build)
-        self.assertIn("manager\\assets;manager\\assets", build)
+        self.assertIn('$managerAssets = Join-Path $root "manager\\assets"', build)
+        self.assertIn("$managerAssetArguments", build)
+        self.assertIn("building without optional preview assets", build)
         self.assertIn("--self-test-v12-ui", build)
         self.assertIn("Frozen 1.2 UI self-test failed", build)
         self.assertLess(
