@@ -98,7 +98,7 @@ def main() -> int:
         )
     )
     parser.add_argument("log", type=Path)
-    parser.add_argument("--runtime-version", default="1.3.0")
+    parser.add_argument("--runtime-version", default="1.3.1")
     args = parser.parse_args()
 
     if not args.log.is_file():

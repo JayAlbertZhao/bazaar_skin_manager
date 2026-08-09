@@ -324,6 +324,30 @@ class ManagerV12SurfaceTests(unittest.TestCase):
         manager.generator.edit_workspace.assert_called_once_with(workspace)
         manager._show_error.assert_not_called()
 
+    def test_generated_draft_becomes_the_shared_manual_workspace(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            workspace = StudioWorkspace.create(
+                "local.dooley.shared-draft",
+                root=Path(temporary),
+                hero="Dooley",
+                skin="Skin_DOO_01/A",
+            )
+            manager = SkinManagerV12.__new__(SkinManagerV12)
+            manager.workspaces = {}
+            manager.manual_slot_editor = mock.Mock()
+            manager._save_settings = mock.Mock()
+            result = mock.Mock(generated_workspace=str(workspace.directory))
+
+            manager._generator_draft_generated(None, result)
+
+            cached = manager.workspaces[str(workspace.directory)]
+            self.assertIs(manager.active_creation_workspace, cached)
+            self.assertEqual(str(workspace.directory), manager.selected_pack_path)
+            manager.manual_slot_editor.continue_from_automatic_workspace.assert_called_once_with(
+                cached
+            )
+            manager._save_settings.assert_called_once_with()
+
     def test_ui_exposes_exact_five_primary_pages_and_visual_mapping(self) -> None:
         source = (ROOT / "tools" / "bazaar_skin_manager_ui_v12.py").read_text(
             encoding="utf-8"

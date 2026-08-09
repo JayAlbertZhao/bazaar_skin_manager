@@ -333,6 +333,7 @@ class SkinManagerV12:
         self.busy = False
         self.selected_pack_path: str | None = None
         self.selected_asset_id: str | None = None
+        self.active_creation_workspace: StudioWorkspace | None = None
         self.spine_files: list[Path] = []
         self._configure_style()
         self._load_library_state()
@@ -1108,6 +1109,7 @@ class SkinManagerV12:
         self.generator = AssetGeneratorUI(
             automatic_page,
             on_import=self._generator_import_complete,
+            on_generated=self._generator_draft_generated,
             on_material_import=self._generator_material_imported,
             on_choose_asset=self._generator_choose_asset,
         )
@@ -1117,6 +1119,29 @@ class SkinManagerV12:
             on_import=self._manual_slot_import_complete,
             on_choose_asset=self._manual_slot_choose_asset,
         )
+        self.creation_modes.bind("<<NotebookTabChanged>>", self._creation_mode_changed)
+
+    def _creation_mode_changed(self, _event: tk.Event | None = None) -> None:
+        if self.creation_modes.index(self.creation_modes.select()) != 1:
+            return
+        workspace = self.active_creation_workspace
+        if workspace is None or self.manual_slot_editor.editing_workspace is workspace:
+            return
+        try:
+            self.manual_slot_editor.edit_workspace(workspace)
+        except Exception as error:
+            self._show_error("无法接续逐槽位草稿", error)
+
+    def _generator_draft_generated(self, _profile, result) -> None:
+        if not result.generated_workspace:
+            return
+        workspace = StudioWorkspace.load(Path(result.generated_workspace))
+        path = str(workspace.directory)
+        self.workspaces[path] = workspace
+        self.active_creation_workspace = workspace
+        self.selected_pack_path = path
+        self._save_settings()
+        self.manual_slot_editor.continue_from_automatic_workspace(workspace)
 
     def _manual_slot_choose_asset(self) -> Path | None:
         records = [
@@ -1146,6 +1171,7 @@ class SkinManagerV12:
     def _manual_slot_import_complete(self, workspace: StudioWorkspace) -> None:
         path = str(workspace.directory)
         self.workspaces[path] = workspace
+        self.active_creation_workspace = workspace
         self.asset_library.register_workspace(workspace)
         self.selected_pack_path = path
         self._save_settings()
@@ -1209,14 +1235,19 @@ class SkinManagerV12:
             self._show_error("复制失败", error)
 
     def _generator_import_complete(self, _profile, result) -> None:
-        if not result.output_zip:
-            raise ValueError("生成器没有返回皮肤包 ZIP。")
-        workspace = self._import_pack_archive(Path(result.output_zip), replace_existing=True)
+        if not result.generated_workspace:
+            raise ValueError("生成器没有返回共享草稿工作区。")
+        workspace = StudioWorkspace.load(Path(result.generated_workspace))
+        path = str(workspace.directory)
+        self.workspaces[path] = workspace
+        self.active_creation_workspace = workspace
         self.asset_library.register_workspace(workspace)
-        self.selected_pack_path = str(workspace.directory)
-        self.pages.select(self.management_page)
-        self.management_tabs.select(self.pack_tab)
-        self._refresh_pack_gallery()
+        self.selected_pack_path = path
+        self._save_settings()
+        self.manual_slot_editor.continue_from_automatic_workspace(workspace)
+        self.pages.select(self.creation_page)
+        self.creation_modes.select(1)
+        self._refresh_everything()
 
     # ---------- animation import ----------
 
@@ -1421,6 +1452,7 @@ class SkinManagerV12:
         if not workspace:
             return
         try:
+            self.active_creation_workspace = workspace
             self.pages.select(self.creation_page)
             self.root.update_idletasks()
             authoring = (getattr(workspace, "state", {}) or {}).get("authoring") or {}

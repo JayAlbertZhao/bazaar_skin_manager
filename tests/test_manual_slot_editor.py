@@ -19,7 +19,10 @@ from manual_slot_editor import (  # noqa: E402
     SlotState,
     _fit_layer,
     _resolved_output,
+    automatic_draft_slot_states,
 )
+from asset_generator_core import profile_for_workspace_edit  # noqa: E402
+from mod_studio_core import StudioWorkspace  # noqa: E402
 
 
 class ManualSlotEditorTests(unittest.TestCase):
@@ -139,11 +142,165 @@ class ManualSlotEditorTests(unittest.TestCase):
                 ).is_file()
             )
 
-    def test_v13_creation_surface_has_two_authoring_modes(self) -> None:
+    def test_automatic_outputs_and_inputs_seed_the_same_per_slot_cache(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            workspace = StudioWorkspace.create(
+                "local.dooley.shared-cache",
+                root=root,
+                hero="Dooley",
+                skin="Skin_DOO_01/A",
+            )
+            inputs = workspace.directory / "authoring" / "inputs"
+            inputs.mkdir(parents=True)
+            character = inputs / "character.png"
+            background = inputs / "background.png"
+            Image.new("RGBA", (32, 64), (220, 20, 30, 255)).save(character)
+            Image.new("RGBA", (64, 64), (10, 20, 40, 255)).save(background)
+            workspace.import_pil_image(
+                "portrait_gameplay", Image.new("RGBA", (64, 64), (255, 0, 0, 128))
+            )
+            workspace.import_pil_image(
+                "portrait_background", Image.new("RGBA", (64, 64), (0, 0, 80, 255))
+            )
+            workspace.import_pil_image(
+                "store_image", Image.new("RGBA", (64, 64), (20, 80, 30, 255))
+            )
+            workspace.state["authoring"] = {
+                "inputs": {
+                    "character": {"workspace_file": "authoring/inputs/character.png"},
+                    "background": {"workspace_file": "authoring/inputs/background.png"},
+                }
+            }
+            workspace.save()
+
+            states = automatic_draft_slot_states(
+                workspace,
+                ("portrait_gameplay", "portrait_background", "store_image"),
+                {"portrait_gameplay", "store_image"},
+            )
+
+            self.assertEqual("layered", states["portrait_gameplay"].mode)
+            self.assertEqual(
+                workspace.visual_path("portrait_gameplay"),
+                Path(states["portrait_gameplay"].character.path),
+            )
+            self.assertEqual(
+                workspace.visual_path("store_image"),
+                Path(states["store_image"].direct.path),
+            )
+            self.assertEqual(character, Path(states["store_image"].character.path))
+            self.assertEqual(background, Path(states["store_image"].background.path))
+
+    def test_automatic_profile_can_reopen_after_per_slot_authoring(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            workspace = StudioWorkspace.create(
+                "local.dooley.round-trip",
+                root=root / "workspaces",
+                hero="Dooley",
+                skin="Skin_DOO_01/A",
+            )
+            source = workspace.directory / "authoring" / "inputs" / "character.png"
+            source.parent.mkdir(parents=True)
+            Image.new("RGBA", (40, 80), (255, 30, 40, 255)).save(source)
+            workspace.state["authoring"] = {
+                "mode": "manual_slots",
+                "inputs": {
+                    "character": {"workspace_file": "authoring/inputs/character.png"}
+                },
+                "manual_slots": {},
+                "automatic_draft": {
+                    "generator": {"adapter_id": "dooley-default"},
+                    "inputs": {
+                        "character": {
+                            "workspace_file": "authoring/inputs/character.png",
+                            "origin": "user_supplied",
+                            "aigc": False,
+                        }
+                    },
+                    "adjustments": {"character_scale": 1.25},
+                },
+            }
+            workspace.save()
+
+            profile = profile_for_workspace_edit(
+                workspace,
+                profile_path=root / "profile.json",
+                badge_template_root=root / "badges",
+                workspace_root=root / "workspaces",
+                output_zip=root / "out.zip",
+            )
+
+            self.assertTrue(profile.character.is_file())
+            self.assertEqual(1.25, profile.character_scale)
+
+    def test_per_slot_save_reuses_generated_workspace_without_losing_pixels(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            workspace = StudioWorkspace.create(
+                "local.dooley.in-place",
+                root=root,
+                name="In-place draft",
+                version="1.3.1",
+                hero="Dooley",
+                skin="Skin_DOO_01/A",
+            )
+            workspace.import_pil_image(
+                "store_image", Image.new("RGBA", (64, 64), (70, 140, 210, 255))
+            )
+            workspace.state["authoring"] = {
+                "generator": {"adapter_id": "dooley-default"},
+                "inputs": {},
+            }
+            workspace.save()
+            generated = workspace.visual_path("store_image")
+
+            editor = ManualSlotEditor.__new__(ManualSlotEditor)
+            editor.current_slot = ""
+            editor.current_layer = "direct"
+            editor._loading_controls = False
+            editor.editing_workspace = workspace
+            editor.automatic_authoring = {
+                "generator": {"adapter_id": "dooley-default"},
+                "inputs": {},
+            }
+            editor.pack_id = "local.dooley.in-place"
+            editor.name_var = mock.Mock(get=mock.Mock(return_value="In-place draft"))
+            editor.version_var = mock.Mock(get=mock.Mock(return_value="1.3.1"))
+            editor.slot_names = {"store_image": "Store image"}
+            editor.slot_sizes = {"store_image": (64, 64)}
+            editor.slot_states = {
+                "store_image": SlotState(
+                    mode="direct", direct=LayerState(str(generated))
+                )
+            }
+            editor.status_var = mock.Mock()
+            editor._adapter = lambda: SimpleNamespace(
+                hero="Dooley",
+                skin="Skin_DOO_01/A",
+                skin_name_contains="Default",
+            )
+
+            result = editor.build_workspace()
+
+            with Image.open(result.visual_path("store_image")) as rendered:
+                self.assertEqual((0, 0, 64, 64), rendered.convert("RGBA").getbbox())
+            self.assertIn("automatic_draft", result.state["authoring"])
+            self.assertIn(
+                "authoring\\manual_inputs\\store_image\\direct.png",
+                editor.slot_states["store_image"].direct.path,
+            )
+
+    def test_v131_creation_modes_share_the_manager_workspace_cache(self) -> None:
         source = (ROOT / "tools" / "bazaar_skin_manager_ui_v12.py").read_text(encoding="utf-8")
+        generator = (ROOT / "tools" / "asset_generator_ui.py").read_text(encoding="utf-8")
         self.assertIn('self.creation_modes.add(automatic_page, text="自动生成模式")', source)
         self.assertIn('self.creation_modes.add(manual_page, text="逐槽位模式")', source)
         self.assertIn('get("mode") == "manual_slots"', source)
+        self.assertIn("on_generated=self._generator_draft_generated", source)
+        self.assertIn("self.manual_slot_editor.continue_from_automatic_workspace", source)
+        self.assertIn("WORKSPACES_ROOT if self.embedded", generator)
 
 
 if __name__ == "__main__":

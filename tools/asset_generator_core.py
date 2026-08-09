@@ -40,7 +40,7 @@ from skin_pack_builder import (
 PROFILE_SCHEMA = 1
 AUTHORING_RECIPE_ID = "deterministic-raster-v1"
 AUTHORING_RECIPE_VERSION = 2
-ASSET_GENERATOR_VERSION = "1.3.0"
+ASSET_GENERATOR_VERSION = "1.3.1"
 ProgressCallback = Callable[[str, str], None]
 
 
@@ -129,7 +129,10 @@ def profile_for_workspace_edit(
     state = workspace.state
     pack = state.get("pack") or {}
     target = state.get("target") or {}
-    authoring = state.get("authoring") or {}
+    root_authoring = state.get("authoring") or {}
+    authoring = root_authoring
+    if root_authoring.get("mode") == "manual_slots":
+        authoring = root_authoring.get("automatic_draft") or root_authoring
     generator = authoring.get("generator") or {}
 
     adapter_id = str(generator.get("adapter_id") or "").strip()

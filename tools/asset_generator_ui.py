@@ -29,7 +29,7 @@ from asset_generator_core import (
     run_pipeline,
 )
 from bazaar_skin_manager import manager_root
-from mod_studio_core import PROJECT_ROOT, StudioWorkspace
+from mod_studio_core import PROJECT_ROOT, WORKSPACES_ROOT, StudioWorkspace
 from mod_studio_core import remove_color_screen
 from skin_pack_builder import derive_small_icon_file
 
@@ -105,6 +105,7 @@ class AssetGeneratorUI:
         parent: tk.Misc | None = None,
         *,
         on_import: Callable[[GeneratorProfile, PipelineResult], None] | None = None,
+        on_generated: Callable[[GeneratorProfile, PipelineResult], None] | None = None,
         on_material_import: Callable[[str, Path], None] | None = None,
         on_choose_asset: Callable[[str], Path | None] | None = None,
     ) -> None:
@@ -112,6 +113,7 @@ class AssetGeneratorUI:
         self.root = parent.winfo_toplevel() if parent is not None else RootClass()
         self.host = parent if parent is not None else self.root
         self.on_import = on_import
+        self.on_generated = on_generated
         self.on_material_import = on_material_import
         self.on_choose_asset = on_choose_asset
         self.pending_embedded_action: str | None = None
@@ -935,7 +937,11 @@ class AssetGeneratorUI:
             small_icon=inputs / "small-icon-not-provided",
             input_metadata=metadata,
             badge_template_root=self._ensure_local_badge_assets(),
-            workspace_root=USER_PROJECT_ROOT / "workspaces",
+            workspace_root=(
+                WORKSPACES_ROOT
+                if self.embedded
+                else USER_PROJECT_ROOT / "workspaces"
+            ),
             output_zip=default_output_directory() / "Dooley-Custom-0.1.0.zip",
             game_dir=None,
             small_icon_source=None,
@@ -969,7 +975,11 @@ class AssetGeneratorUI:
             workspace,
             profile_path=USER_PROFILE,
             badge_template_root=self._ensure_local_badge_assets(),
-            workspace_root=USER_PROJECT_ROOT / "generated-workspaces",
+            workspace_root=(
+                WORKSPACES_ROOT
+                if self.embedded
+                else USER_PROJECT_ROOT / "generated-workspaces"
+            ),
             output_zip=USER_PROJECT_ROOT / "exports" / f"{pack_id}-{version}.zip",
             game_dir=self.profile.game_dir if self.profile is not None else None,
             input_search_roots=(
@@ -1012,6 +1022,12 @@ class AssetGeneratorUI:
         return profile
 
     def _populate_profile(self, profile: GeneratorProfile) -> None:
+        if (
+            self.embedded
+            and profile.workspace_root.resolve() != WORKSPACES_ROOT.resolve()
+        ):
+            profile = replace(profile, workspace_root=WORKSPACES_ROOT.resolve())
+            profile.save()
         if not profile.badge_template_root.is_dir():
             profile = replace(
                 profile,
@@ -1716,7 +1732,11 @@ class AssetGeneratorUI:
             small_icon_source=optional_image_path("small_icon_source"),
             input_metadata=Path(self.vars["metadata"].get()).resolve(),
             badge_template_root=Path(self.vars["badge_root"].get()).resolve(),
-            workspace_root=Path(self.vars["workspace_root"].get()).resolve(),
+            workspace_root=(
+                WORKSPACES_ROOT.resolve()
+                if self.embedded
+                else Path(self.vars["workspace_root"].get()).resolve()
+            ),
             output_zip=Path(self.vars["output_zip"].get()).resolve(),
             game_dir=(
                 Path(self.vars["game_dir"].get()).resolve()
@@ -1788,7 +1808,7 @@ class AssetGeneratorUI:
             )
             self.vars["output_zip"].set(str(output))
             self.vars["workspace_root"].set(
-                str(USER_PROJECT_ROOT / "generated-workspaces")
+                str(WORKSPACES_ROOT)
             )
             self.pending_embedded_action = "import"
             self._start(("generate",))
@@ -1843,6 +1863,12 @@ class AssetGeneratorUI:
             self._refresh_previews(workspace)
         action = self.pending_embedded_action
         self.pending_embedded_action = None
+        if self.embedded and self.on_generated is not None and result.generated_workspace:
+            try:
+                self.on_generated(self._profile_from_form(validate=False), result)
+            except Exception as error:
+                messagebox.showerror("无法接续生成草稿", str(error), parent=self.root)
+                return
         if self.embedded and action == "import" and self.on_import is not None:
             try:
                 self.on_import(self._profile_from_form(validate=False), result)

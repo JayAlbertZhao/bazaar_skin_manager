@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+from copy import deepcopy
 from dataclasses import dataclass, field
 from pathlib import Path
 import shutil
@@ -141,6 +142,46 @@ def _fit_layer(
     return canvas
 
 
+def automatic_draft_slot_states(
+    workspace: StudioWorkspace,
+    slots: list[str] | tuple[str, ...] | set[str],
+    background_slots: set[str],
+) -> dict[str, SlotState]:
+    """Map generated outputs and archived inputs into one per-slot draft cache."""
+
+    states = {slot: SlotState() for slot in slots}
+    authoring_inputs = ((workspace.state.get("authoring") or {}).get("inputs") or {})
+
+    def input_path(input_name: str) -> str:
+        relative = str(
+            (authoring_inputs.get(input_name) or {}).get("workspace_file") or ""
+        ).strip()
+        if not relative:
+            return ""
+        candidate = (workspace.directory / relative).resolve()
+        return str(candidate) if candidate.is_file() else ""
+
+    shared_background = input_path("background")
+    shared_character = input_path("character")
+    for slot, state in states.items():
+        generated = workspace.visual_path(slot)
+        if generated is not None:
+            state.direct.path = str(generated)
+        if slot in background_slots:
+            state.background.path = shared_background
+            state.character.path = shared_character
+
+    portrait = states.get(PORTRAIT_PAIR_SLOT)
+    portrait_foreground = workspace.visual_path(PORTRAIT_PAIR_SLOT)
+    portrait_background = workspace.visual_path(PORTRAIT_BACKGROUND_SLOT)
+    if portrait is not None and portrait_foreground is not None:
+        portrait.character.path = str(portrait_foreground)
+        if portrait_background is not None:
+            portrait.background.path = str(portrait_background)
+            portrait.mode = "layered"
+    return states
+
+
 class ManualSlotEditor:
     """Create complete packs by supplying each logical image slot manually."""
 
@@ -173,6 +214,7 @@ class ManualSlotEditor:
         self.current_slot = ""
         self.current_layer = "direct"
         self.editing_workspace: StudioWorkspace | None = None
+        self.automatic_authoring: dict = {}
         self.pack_id = ""
         self.preview_photo: ImageTk.PhotoImage | None = None
         self.preview_scale = 1.0
@@ -435,6 +477,7 @@ class ManualSlotEditor:
 
     def new_project(self) -> None:
         self.editing_workspace = None
+        self.automatic_authoring = {}
         self.current_slot = ""
         self.current_layer = "direct"
         default = self.adapters[0]
@@ -450,7 +493,8 @@ class ManualSlotEditor:
     def edit_workspace(self, workspace: StudioWorkspace) -> None:
         authoring = workspace.state.get("authoring") or {}
         if authoring.get("mode") != "manual_slots":
-            raise ValueError("该皮肤不是逐槽位模式项目。")
+            self.continue_from_automatic_workspace(workspace)
+            return
         target = workspace.state.get("target") or {}
         label = next(
             (
@@ -464,6 +508,7 @@ class ManualSlotEditor:
         if not label:
             raise ValueError("该皮肤的目标不再具有可编辑适配器。")
         self.editing_workspace = workspace
+        self.automatic_authoring = deepcopy(authoring.get("automatic_draft") or {})
         self.target_var.set(label)
         pack = workspace.state.get("pack") or {}
         self.pack_id = str(pack.get("id") or workspace.directory.name)
@@ -476,6 +521,58 @@ class ManualSlotEditor:
         }
         self._apply_target_contracts(select_first=True)
         self.status_var.set(f"正在编辑：{self.name_var.get()}；保存后覆盖同名皮肤包")
+
+    def continue_from_automatic_workspace(self, workspace: StudioWorkspace) -> None:
+        """Use one generated workspace as the editable per-slot draft cache."""
+
+        authoring = workspace.state.get("authoring") or {}
+        if authoring.get("mode") == "manual_slots":
+            self.edit_workspace(workspace)
+            return
+        target = workspace.state.get("target") or {}
+        label = next(
+            (
+                text
+                for text, adapter_id in self.adapter_labels.items()
+                if self.adapter_by_id[adapter_id].hero == target.get("hero")
+                and self.adapter_by_id[adapter_id].skin == target.get("skin")
+            ),
+            "",
+        )
+        if not label:
+            raise ValueError("自动草稿的目标不再具有可编辑适配器。")
+
+        self.editing_workspace = workspace
+        self.automatic_authoring = deepcopy(authoring)
+        self.current_slot = ""
+        self.current_layer = "direct"
+        self.target_var.set(label)
+        pack = workspace.state.get("pack") or {}
+        self.pack_id = str(pack.get("id") or workspace.directory.name)
+        self.name_var.set(str(pack.get("name") or self.pack_id))
+        self.version_var.set(str(pack.get("version") or "0.1.0"))
+        self.slot_states = {slot: SlotState() for slot in self.slot_names}
+        self._apply_target_contracts(select_first=False)
+
+        self.slot_states = automatic_draft_slot_states(
+            workspace,
+            tuple(self.slot_states),
+            self.background_slots,
+        )
+
+        for slot in self.slot_tree.get_children():
+            self._refresh_slot_status(slot)
+        configured = next(
+            (slot for slot, state in self.slot_states.items() if state.has_input()),
+            next(iter(self.slot_states), ""),
+        )
+        if configured:
+            self.slot_tree.selection_set(configured)
+            self.slot_tree.focus(configured)
+            self._load_slot(configured)
+        self.status_var.set(
+            f"已接续自动草稿：{self.name_var.get()}；逐槽位调整将复用同一工作区缓存"
+        )
 
     def _apply_target_contracts(self, *, select_first: bool = False) -> None:
         self._commit_controls()
@@ -837,7 +934,9 @@ class ManualSlotEditor:
             skin=adapter.skin,
             skin_name_contains=adapter.skin_name_contains,
         )
-        author_inputs: dict[str, dict] = {}
+        author_inputs: dict[str, dict] = deepcopy(
+            (getattr(self, "automatic_authoring", {}).get("inputs") or {})
+        )
         manual_slots: dict[str, dict] = {}
         for slot, state in self.slot_states.items():
             if not state.has_input():
@@ -849,6 +948,7 @@ class ManualSlotEditor:
                     workspace, slot, layer_id, layer.path
                 )
                 if relative:
+                    layer.path = str((workspace.directory / relative).resolve())
                     record[layer_id] = layer.to_dict(relative)
                     author_inputs[f"{slot}.{layer_id}"] = {
                         "workspace_file": relative,
@@ -873,12 +973,16 @@ class ManualSlotEditor:
         ):
             workspace.import_pil_image(PORTRAIT_BACKGROUND_SLOT, paired_background)
 
-        workspace.state["authoring"] = {
+        manual_authoring = {
             "schema": MANUAL_AUTHORING_SCHEMA,
             "mode": "manual_slots",
             "inputs": author_inputs,
             "manual_slots": manual_slots,
         }
+        automatic_authoring = getattr(self, "automatic_authoring", {})
+        if automatic_authoring:
+            manual_authoring["automatic_draft"] = deepcopy(automatic_authoring)
+        workspace.state["authoring"] = manual_authoring
         workspace.state.setdefault("library_assets", {"inputs": {}, "visual_slots": {}, "audio": {}, "animation": None})
         workspace.state["library_assets"]["inputs"] = {}
         workspace.save()
