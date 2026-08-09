@@ -53,7 +53,7 @@ class ReleaseSurfaceTests(unittest.TestCase):
         workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text(
             encoding="utf-8"
         )
-        self.assertIn('default: "1.2.10"', workflow)
+        self.assertIn('default: "1.3.0"', workflow)
         self.assertIn('if ($tag.EndsWith("-experimental"))', workflow)
         self.assertNotIn("v1.0.0-experimental", workflow)
         self.assertNotIn("1.0.0 (experimental)", workflow)
@@ -76,7 +76,7 @@ class ReleaseSurfaceTests(unittest.TestCase):
                 encoding="utf-8-sig"
             )
         )
-        self.assertEqual(metadata["version"], "1.2.10")
+        self.assertEqual(metadata["version"], "1.3.0")
         self.assertEqual(metadata["bytes"], runtime.stat().st_size)
         self.assertEqual(
             metadata["sha256"], hashlib.sha256(runtime.read_bytes()).hexdigest()
@@ -128,7 +128,7 @@ class ReleaseSurfaceTests(unittest.TestCase):
         self.assertIn("$managerAssetArguments", build)
         self.assertIn("building without optional preview assets", build)
         self.assertIn("--self-test-v12-ui", build)
-        self.assertIn("Frozen 1.2 UI self-test failed", build)
+        self.assertIn("Frozen integrated UI self-test failed", build)
         self.assertLess(
             build.index("dist\\runtime\\BazaarSkinManager.Runtime.dll"),
             build.index("manager\\runtime\\BazaarSkinManager.Runtime.dll"),

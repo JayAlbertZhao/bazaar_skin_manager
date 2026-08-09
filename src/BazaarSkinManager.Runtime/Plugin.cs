@@ -12,7 +12,7 @@ namespace BazaarSkinManager.TheBazaar
     {
         public const string PluginGuid = "bazaar-skin-manager.the-bazaar.runtime";
         public const string PluginName = "The Bazaar Skin Manager Runtime";
-        public const string PluginVersion = "1.2.10";
+        public const string PluginVersion = "1.3.0";
 
         internal static RuntimePack ActivePack;
         internal static List<RuntimePack> ActivePacks = new List<RuntimePack>();

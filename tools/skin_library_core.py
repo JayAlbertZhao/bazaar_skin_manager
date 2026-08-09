@@ -330,6 +330,14 @@ class AssetLibrary:
             "small_icon_source": "icon_source",
         }
         authoring_inputs = ((state.get("authoring") or {}).get("inputs") or {})
+        if (state.get("authoring") or {}).get("mode") == "manual_slots":
+            for key in authoring_inputs:
+                layer = str(key).rsplit(".", 1)[-1]
+                input_types[str(key)] = {
+                    "background": "background",
+                    "character": "character_source",
+                    "direct": "other_image",
+                }.get(layer, "other_image")
         for key, asset_type in input_types.items():
             if references["inputs"].get(key):
                 continue

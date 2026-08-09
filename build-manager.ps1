@@ -1,5 +1,5 @@
 param(
-    [string]$Version = "1.2.10"
+    [string]$Version = "1.3.0"
 )
 
 $ErrorActionPreference = "Stop"
@@ -123,7 +123,7 @@ try {
         -PassThru `
         -WindowStyle Hidden
     if ($uiSelfTest.ExitCode -ne 0) {
-        throw "Frozen 1.2 UI self-test failed with exit code $($uiSelfTest.ExitCode)"
+        throw "Frozen integrated UI self-test failed with exit code $($uiSelfTest.ExitCode)"
     }
 } finally {
     $env:LOCALAPPDATA = $previousLocalAppData

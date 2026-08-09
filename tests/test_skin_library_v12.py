@@ -81,6 +81,44 @@ class FirstClassAssetLibraryTests(unittest.TestCase):
             self.assertIn("hero_icon_small", references["visual_slots"])
             self.assertEqual(len(library.assets), 2)
 
+    def test_workspace_migration_records_each_manual_slot_source(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            workspace = StudioWorkspace.create("manual.skin", root=root / "packs")
+            inputs = workspace.directory / "authoring" / "manual_inputs" / "store_image"
+            inputs.mkdir(parents=True)
+            background = inputs / "background.png"
+            character = inputs / "character.png"
+            Image.new("RGBA", (64, 64), (5, 10, 20, 255)).save(background)
+            Image.new("RGBA", (32, 64), (200, 100, 50, 255)).save(character)
+            workspace.state["authoring"] = {
+                "mode": "manual_slots",
+                "inputs": {
+                    "store_image.background": {
+                        "workspace_file": "authoring/manual_inputs/store_image/background.png"
+                    },
+                    "store_image.character": {
+                        "workspace_file": "authoring/manual_inputs/store_image/character.png"
+                    },
+                },
+            }
+            workspace.save()
+            library = AssetLibrary(root / "library")
+
+            library.register_workspace(workspace)
+
+            references = workspace.state["library_assets"]["inputs"]
+            self.assertEqual(
+                {"store_image.background", "store_image.character"}, set(references)
+            )
+            self.assertEqual(
+                "background", library.assets[references["store_image.background"]]["type"]
+            )
+            self.assertEqual(
+                "character_source",
+                library.assets[references["store_image.character"]]["type"],
+            )
+
     def test_workspace_migration_groups_audio_route_as_first_class_asset(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

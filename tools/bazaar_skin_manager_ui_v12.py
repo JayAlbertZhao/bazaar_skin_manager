@@ -24,6 +24,7 @@ from tkinter import filedialog, messagebox, ttk
 from PIL import Image, ImageDraw, ImageGrab, ImageTk
 
 from asset_generator_ui import AssetGeneratorUI
+from manual_slot_editor import ManualSlotEditor
 from bazaar_skin_manager import (
     MANAGER_VERSION,
     atomic_copy_tree,
@@ -1098,12 +1099,59 @@ class SkinManagerV12:
     # ---------- creation ----------
 
     def _build_creation_page(self) -> None:
+        self.creation_modes = ttk.Notebook(self.creation_page)
+        self.creation_modes.pack(fill="both", expand=True)
+        automatic_page = ttk.Frame(self.creation_modes)
+        manual_page = ttk.Frame(self.creation_modes)
+        self.creation_modes.add(automatic_page, text="自动生成模式")
+        self.creation_modes.add(manual_page, text="逐槽位模式")
         self.generator = AssetGeneratorUI(
-            self.creation_page,
+            automatic_page,
             on_import=self._generator_import_complete,
             on_material_import=self._generator_material_imported,
             on_choose_asset=self._generator_choose_asset,
         )
+        self.manual_slot_editor = ManualSlotEditor(
+            manual_page,
+            catalog=self.catalog,
+            on_import=self._manual_slot_import_complete,
+            on_choose_asset=self._manual_slot_choose_asset,
+        )
+
+    def _manual_slot_choose_asset(self) -> Path | None:
+        records = [
+            record
+            for record in self.asset_library.assets.values()
+            if record.get("type")
+            in {
+                "character_source",
+                "background",
+                "small_icon",
+                "icon_source",
+                "derived_image",
+                "other_image",
+            }
+            and self.asset_library.preview_path(record) is not None
+        ]
+        if not records:
+            messagebox.showinfo(
+                "没有可用一级素材",
+                "请先导入图像素材，或使用槽位旁的“导入…”按钮。",
+                parent=self.root,
+            )
+            return None
+        choice = AssetChoiceDialog(self, self.root, "从一级素材选择", records).show()
+        return self.asset_library.preview_path(choice) if choice else None
+
+    def _manual_slot_import_complete(self, workspace: StudioWorkspace) -> None:
+        path = str(workspace.directory)
+        self.workspaces[path] = workspace
+        self.asset_library.register_workspace(workspace)
+        self.selected_pack_path = path
+        self._save_settings()
+        self.pages.select(self.management_page)
+        self.management_tabs.select(self.pack_tab)
+        self._refresh_everything()
 
     def _generator_choose_asset(self, key: str) -> Path | None:
         accepted = {
@@ -1375,7 +1423,15 @@ class SkinManagerV12:
         try:
             self.pages.select(self.creation_page)
             self.root.update_idletasks()
-            self.generator.edit_workspace(workspace)
+            authoring = (getattr(workspace, "state", {}) or {}).get("authoring") or {}
+            if authoring.get("mode") == "manual_slots":
+                if hasattr(self, "creation_modes"):
+                    self.creation_modes.select(1)
+                self.manual_slot_editor.edit_workspace(workspace)
+            else:
+                if hasattr(self, "creation_modes"):
+                    self.creation_modes.select(0)
+                self.generator.edit_workspace(workspace)
         except Exception as error:
             self._show_error("无法编辑皮肤包", error)
 
@@ -1699,6 +1755,13 @@ class SkinManagerV12:
         actual = [self.pages.tab(index, "text") for index in range(self.pages.index("end"))]
         if actual != expected:
             raise RuntimeError(f"一级导航错误：{actual}")
+        creation_modes = [
+            self.creation_modes.tab(index, "text")
+            for index in range(self.creation_modes.index("end"))
+        ]
+        if creation_modes != ["自动生成模式", "逐槽位模式"]:
+            raise RuntimeError(f"皮肤制作模式错误：{creation_modes}")
+        self.manual_slot_editor.self_test()
 
     def run(self) -> None:
         self.root.mainloop()

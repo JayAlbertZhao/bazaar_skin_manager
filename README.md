@@ -43,6 +43,10 @@ files goes through its verified, reversible deployment transaction.
 - Detects Steam installations across registered and conventional library paths.
 - Imports complete visual-and-audio ZIP packs.
 - Supports individual image and audio slot editing.
+- Provides automatic generation and a separate per-slot authoring mode.
+- Lets each visual slot keep independent image, position, and scale settings;
+  background-capable slots can compose separately adjustable background and
+  character layers.
 - Leaves unfilled slots on the original game assets.
 - Supports PNG, JPEG, WebP, BMP, WAV, MP3, FLAC, Ogg, M4A, AAC, and Opus input.
 - Converts supported audio through `ffmpeg` when available.
@@ -178,13 +182,13 @@ Build the runtime and manager:
 
 ```powershell
 .\build.ps1 -Configuration Release
-.\build.ps1 -Version 1.2.10
-.\build-manager.ps1 -Version 1.2.10
-.\build-asset-generator.ps1 -Version 1.2.10
-.\build-spine-manager.ps1 -Version 1.2.10
-.\build-installer.ps1 -Version 1.2.10
-.\package-manager-portable.ps1 -Version 1.2.10
-.\package-asset-generator-portable.ps1 -Version 1.2.10
+.\build.ps1 -Version 1.3.0
+.\build-manager.ps1 -Version 1.3.0
+.\build-asset-generator.ps1 -Version 1.3.0
+.\build-spine-manager.ps1 -Version 1.3.0
+.\build-installer.ps1 -Version 1.3.0
+.\package-manager-portable.ps1 -Version 1.3.0
+.\package-asset-generator-portable.ps1 -Version 1.3.0
 ```
 
 Useful source commands:
@@ -200,11 +204,10 @@ python tools\asset_generator_core.py --profile C:\path\to\generator-profile.json
 
 ## Release policy
 
-GitHub releases contain the two public software components. CI packages:
+GitHub releases contain the integrated manager in two distribution formats. CI packages:
 
 - the Skin Manager per-user installer;
 - the Skin Manager portable ZIP;
-- the Asset Generator portable ZIP;
 - SHA-256 metadata for every artifact.
 
 No skin pack is attached to a GitHub release or embedded in the installer.
