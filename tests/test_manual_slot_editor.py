@@ -300,7 +300,11 @@ class ManualSlotEditorTests(unittest.TestCase):
         self.assertIn('get("mode") == "manual_slots"', source)
         self.assertIn("on_generated=self._generator_draft_generated", source)
         self.assertIn("self.manual_slot_editor.continue_from_automatic_workspace", source)
-        self.assertIn("WORKSPACES_ROOT if self.embedded", generator)
+        self.assertRegex(
+            generator,
+            r"workspace_root=\(\s*WORKSPACES_ROOT\.resolve\(\)\s*"
+            r"if self\.embedded\s*else",
+        )
 
 
 if __name__ == "__main__":
