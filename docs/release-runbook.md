@@ -1,5 +1,30 @@
 # Release runbook
 
+## Version and completion policy
+
+Every completed feature must advance the application version after acceptance
+tests pass:
+
+- a small compatible update increments the patch version;
+- a substantial feature update increments the minor version;
+- a complete architectural rewrite increments the major version.
+
+A version is not complete when only source code or local binaries exist. The
+same release operation must also:
+
+1. update every manager, runtime, installer, packaging, test, and changelog
+   version surface;
+2. publish the accepted source commit and immutable version tag to GitHub;
+3. publish both the Setup EXE and portable ZIP, with SHA-256 sidecars, in the
+   GitHub Release;
+4. retain locally accessible copies of both published binary artifacts for
+   handoff;
+5. upgrade the maintainer's installed copy, launch that installed executable,
+   verify that its window reports the new version, and close it cleanly.
+
+Do not create the release tag before the test, build, and local packaging gates
+have passed.
+
 ## What GitHub publishes
 
 A version tag such as `v1.0.0` produces:
@@ -38,8 +63,11 @@ any separate channel.
    artifact, and creates or updates the GitHub Release with the matching
    version section from `CHANGELOG.md`. A missing changelog section fails the
    release instead of publishing an empty release page.
-7. Download the published installer, compare its SHA-256, and test it on a
-   clean Windows user account before announcing it.
+7. Download both published binaries and compare their SHA-256 sidecars.
+8. Upgrade the local installed copy with the published installer, open it,
+   verify its displayed version, and close it cleanly before announcing the
+   release. A clean Windows user-account test remains required for major
+   releases and installer changes.
 
 For Authenticode signing, configure repository secrets
 `WINDOWS_SIGNING_CERT_BASE64` and `WINDOWS_SIGNING_CERT_PASSWORD`. The workflow
