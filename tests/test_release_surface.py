@@ -53,7 +53,7 @@ class ReleaseSurfaceTests(unittest.TestCase):
         workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text(
             encoding="utf-8"
         )
-        self.assertIn('default: "1.4.0"', workflow)
+        self.assertIn('default: "1.4.1"', workflow)
         self.assertIn('if ($tag.EndsWith("-experimental"))', workflow)
         self.assertNotIn("v1.0.0-experimental", workflow)
         self.assertNotIn("1.0.0 (experimental)", workflow)
@@ -76,7 +76,7 @@ class ReleaseSurfaceTests(unittest.TestCase):
                 encoding="utf-8-sig"
             )
         )
-        self.assertEqual(metadata["version"], "1.4.0")
+        self.assertEqual(metadata["version"], "1.4.1")
         self.assertEqual(metadata["bytes"], runtime.stat().st_size)
         self.assertEqual(
             metadata["sha256"], hashlib.sha256(runtime.read_bytes()).hexdigest()
@@ -115,6 +115,20 @@ class ReleaseSurfaceTests(unittest.TestCase):
         self.assertIn('function InstalledVersion(var Version: String)', installer)
         self.assertIn("RegQueryStringValue(", installer)
         self.assertIn("Setup will upgrade it in place", installer)
+
+    def test_installer_removes_integrated_legacy_helper_executables(self) -> None:
+        installer = (
+            ROOT / "installer" / "TheBazaarModManager.iss"
+        ).read_text(encoding="utf-8")
+        self.assertIn("[InstallDelete]", installer)
+        self.assertIn(
+            'Type: files; Name: "{app}\\TheBazaarAssetGenerator.exe"',
+            installer,
+        )
+        self.assertIn(
+            'Type: files; Name: "{app}\\TheBazaarSpineManager.exe"',
+            installer,
+        )
 
     def test_manager_build_bundles_and_checks_the_fmod_runtime(self) -> None:
         build = (ROOT / "build-manager.ps1").read_text(encoding="utf-8")
@@ -172,7 +186,10 @@ class ReleaseSurfaceTests(unittest.TestCase):
         self.assertIn("def _launch_asset_generator(self)", ui)
         self.assertIn('"<Control-Key-g>"', ui)
         self.assertIn('executable_dir.parent', ui)
-        self.assertNotIn("TheBazaarAssetGenerator.exe", installer)
+        self.assertNotIn(
+            'Source: "{#SourceRoot}\\dist\\manager\\TheBazaarAssetGenerator.exe"',
+            installer,
+        )
         self.assertNotIn("TheBazaarAssetGenerator.exe", portable)
 
     def test_manager_integrates_spine_manager_component(self) -> None:
@@ -188,7 +205,10 @@ class ReleaseSurfaceTests(unittest.TestCase):
         self.assertIn('text="Spine 动画管理器"', ui)
         self.assertIn("def _launch_spine_manager(self)", ui)
         self.assertIn('"<Control-Key-p>"', ui)
-        self.assertNotIn("TheBazaarSpineManager.exe", installer)
+        self.assertNotIn(
+            'Source: "{#SourceRoot}\\dist\\manager\\TheBazaarSpineManager.exe"',
+            installer,
+        )
         self.assertNotIn("TheBazaarSpineManager.exe", portable)
 
     def test_manager_pages_separate_deployment_library_and_editor(self) -> None:

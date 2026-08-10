@@ -188,13 +188,13 @@ Build the runtime and manager:
 
 ```powershell
 .\build.ps1 -Configuration Release
-.\build.ps1 -Version 1.4.0
-.\build-manager.ps1 -Version 1.4.0
-.\build-asset-generator.ps1 -Version 1.4.0
-.\build-spine-manager.ps1 -Version 1.4.0
-.\build-installer.ps1 -Version 1.4.0
-.\package-manager-portable.ps1 -Version 1.4.0
-.\package-asset-generator-portable.ps1 -Version 1.4.0
+.\build.ps1 -Version 1.4.1
+.\build-manager.ps1 -Version 1.4.1
+.\build-asset-generator.ps1 -Version 1.4.1
+.\build-spine-manager.ps1 -Version 1.4.1
+.\build-installer.ps1 -Version 1.4.1
+.\package-manager-portable.ps1 -Version 1.4.1
+.\package-asset-generator-portable.ps1 -Version 1.4.1
 ```
 
 Useful source commands:
