@@ -14,12 +14,15 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
 
 from manual_slot_editor import (  # noqa: E402
+    BADGE_TEMPLATE_ROOT,
     LayerState,
     ManualSlotEditor,
     SlotState,
     _fit_layer,
     _resolved_output,
     automatic_draft_slot_states,
+    portrait_frame_preview_overlay,
+    render_layered_badge,
 )
 from asset_generator_core import GeneratorProfile, profile_for_workspace_edit  # noqa: E402
 from asset_generator_ui import AssetGeneratorUI  # noqa: E402
@@ -223,6 +226,87 @@ class ManualSlotEditorTests(unittest.TestCase):
             )
             self.assertEqual(character, Path(states["store_image"].character.path))
             self.assertEqual(background, Path(states["store_image"].background.path))
+
+    def test_automatic_badge_seed_exposes_source_character_layer(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            workspace = StudioWorkspace.create(
+                "local.dooley.badge-cache",
+                root=root,
+                hero="Dooley",
+                skin="Skin_DOO_01/A",
+            )
+            source = workspace.directory / "authoring" / "inputs" / "character.png"
+            source.parent.mkdir(parents=True)
+            Image.new("RGBA", (32, 64), (220, 20, 30, 255)).save(source)
+            workspace.import_pil_image(
+                "hero_select", Image.new("RGBA", (256, 256), (80, 40, 20, 255))
+            )
+            workspace.state["authoring"] = {
+                "inputs": {"character": {"workspace_file": "authoring/inputs/character.png"}}
+            }
+            workspace.save()
+
+            states = automatic_draft_slot_states(
+                workspace,
+                ("hero_select",),
+                set(),
+                {"hero_select"},
+            )
+
+            self.assertEqual("layered", states["hero_select"].mode)
+            self.assertEqual(source, Path(states["hero_select"].character.path))
+            self.assertEqual("", states["hero_select"].background.path)
+            self.assertEqual(
+                workspace.visual_path("hero_select"),
+                Path(states["hero_select"].direct.path),
+            )
+
+    def test_layered_badge_moves_only_character_inside_native_frame(self) -> None:
+        recipe = {
+            "renderer": "layered_badge",
+            "template": {"directory": "badge-templates/hero-select-gold"},
+            "character_crop": [0.0, 0.0, 1.0, 1.0],
+            "target_alpha_bounds": [80, 5, 432, 455],
+            "size": [256, 256],
+        }
+        character = Image.new("RGBA", (100, 200), (0, 0, 0, 0))
+        for y in range(20, 200):
+            for x in range(20, 80):
+                character.putpixel((x, y), (230, 30, 50, 255))
+
+        centered = render_layered_badge(
+            character,
+            output_recipe=recipe,
+            layer=LayerState(scale=1.0),
+            template_root=BADGE_TEMPLATE_ROOT,
+        )
+        moved = render_layered_badge(
+            character,
+            output_recipe=recipe,
+            layer=LayerState(x=18, y=-9, scale=0.8),
+            template_root=BADGE_TEMPLATE_ROOT,
+        )
+
+        self.assertEqual((256, 256), centered.size)
+        self.assertNotEqual(centered.tobytes(), moved.tobytes())
+        # An immutable frame pixel remains identical while the internal art moves.
+        self.assertEqual(centered.getpixel((128, 247)), moved.getpixel((128, 247)))
+
+    def test_portrait_preview_frame_is_open_on_top_and_occludes_three_sides(self) -> None:
+        overlay = portrait_frame_preview_overlay(
+            (100, 100),
+            {
+                "reference_size": [100, 100],
+                "inner_bounds": [10, 0, 90, 90],
+                "bottom_corner_radius": 4,
+            },
+        )
+
+        self.assertEqual(0, overlay.getpixel((50, 0))[3])
+        self.assertGreater(overlay.getpixel((5, 50))[3], 0)
+        self.assertGreater(overlay.getpixel((95, 50))[3], 0)
+        self.assertGreater(overlay.getpixel((50, 95))[3], 0)
 
     def test_automatic_profile_can_reopen_after_per_slot_authoring(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

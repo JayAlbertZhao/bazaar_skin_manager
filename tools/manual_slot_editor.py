@@ -12,10 +12,17 @@ import uuid
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
-from PIL import Image, ImageTk
+from PIL import Image, ImageDraw, ImageTk
 
 from asset_generator_core import authoring_adapters
-from mod_studio_core import SUPPORTED_IMAGE_EXTENSIONS, WORKSPACES_ROOT, StudioWorkspace
+from badge_pipeline import compose_badge
+from mod_studio_core import (
+    PROJECT_ROOT,
+    SUPPORTED_IMAGE_EXTENSIONS,
+    WORKSPACES_ROOT,
+    StudioWorkspace,
+)
+from skin_pack_builder import _load_badge_template, apply_declared_clip_mask
 
 
 COLORS = {
@@ -32,6 +39,10 @@ COLORS = {
 MANUAL_AUTHORING_SCHEMA = "bazaar-manual-slots/v1"
 PORTRAIT_PAIR_SLOT = "portrait_gameplay"
 PORTRAIT_BACKGROUND_SLOT = "portrait_background"
+PORTRAIT_PREVIEW_SLOTS = {PORTRAIT_PAIR_SLOT, "portrait_small"}
+HERO_SELECT_SLOT = "hero_select"
+STANDING_SLOT = "standing_overlay"
+BADGE_TEMPLATE_ROOT = PROJECT_ROOT / "manager" / "assets"
 LAYER_LABELS = {"direct": "成品图", "background": "背景", "character": "人物"}
 LAYER_IDS = {value: key for key, value in LAYER_LABELS.items()}
 
@@ -146,6 +157,7 @@ def automatic_draft_slot_states(
     workspace: StudioWorkspace,
     slots: list[str] | tuple[str, ...] | set[str],
     background_slots: set[str],
+    template_slots: set[str] | None = None,
 ) -> dict[str, SlotState]:
     """Map generated outputs and archived inputs into one per-slot draft cache."""
 
@@ -163,6 +175,7 @@ def automatic_draft_slot_states(
 
     shared_background = input_path("background")
     shared_character = input_path("character")
+    template_slots = set(template_slots or ())
     for slot, state in states.items():
         generated = workspace.visual_path(slot)
         if generated is not None:
@@ -170,6 +183,12 @@ def automatic_draft_slot_states(
         if slot in background_slots:
             state.background.path = shared_background
             state.character.path = shared_character
+        if slot in template_slots and shared_character:
+            # Template-driven slots keep the generated bitmap as their direct
+            # fallback, but expose the archived source character as the
+            # editable internal layer.
+            state.character.path = shared_character
+            state.mode = "layered"
 
     portrait = states.get(PORTRAIT_PAIR_SLOT)
     portrait_foreground = workspace.visual_path(PORTRAIT_PAIR_SLOT)
@@ -180,6 +199,106 @@ def automatic_draft_slot_states(
             portrait.background.path = str(portrait_background)
             portrait.mode = "layered"
     return states
+
+
+def render_layered_badge(
+    source: Image.Image,
+    *,
+    output_recipe: dict,
+    layer: LayerState,
+    template_root: Path = BADGE_TEMPLATE_ROOT,
+) -> Image.Image:
+    """Render a badge while keeping its authored frame layers immutable."""
+
+    template_images, _metadata = _load_badge_template(
+        output_recipe["template"], template_root=template_root
+    )
+    crop = output_recipe.get("character_crop", [0.0, 0.0, 1.0, 1.0])
+    crop_box = (
+        round(float(crop[0]) * source.width),
+        round(float(crop[1]) * source.height),
+        round(float(crop[2]) * source.width),
+        round(float(crop[3]) * source.height),
+    )
+    character = source.convert("RGBA").crop(crop_box)
+    declared = tuple(int(value) for value in output_recipe["target_alpha_bounds"])
+    anchor = tuple(float(value) for value in output_recipe.get("anchor", [0.5, 1.0]))
+    factor = max(0.25, min(4.0, float(layer.scale)))
+    left, top, right, bottom = declared
+    width = right - left
+    height = bottom - top
+    anchor_x = left + width * anchor[0]
+    anchor_y = top + height * anchor[1]
+    scaled_width = width * factor
+    scaled_height = height * factor
+    bounds = (
+        round(anchor_x - scaled_width * anchor[0]),
+        round(anchor_y - scaled_height * anchor[1]),
+        round(anchor_x + scaled_width * (1.0 - anchor[0])),
+        round(anchor_y + scaled_height * (1.0 - anchor[1])),
+    )
+    output_size = tuple(int(value) for value in output_recipe["size"])
+    template_size = template_images["base"].size
+    dx = round(int(layer.x) * template_size[0] / output_size[0])
+    dy = round(int(layer.y) * template_size[1] / output_size[1])
+    shifted = (
+        bounds[0] + dx,
+        bounds[1] + dy,
+        bounds[2] + dx,
+        bounds[3] + dy,
+    )
+    return compose_badge(
+        character,
+        base=template_images["base"],
+        frame_upper=template_images["frame_upper"],
+        frame_lower=template_images["frame_lower"],
+        frame_lower_occlusion=template_images["frame_lower_occlusion"],
+        target_bounds=shifted,
+        output_size=output_size,
+    )
+
+
+def portrait_frame_preview_overlay(size: tuple[int, int], declaration: dict) -> Image.Image:
+    """Draw the native three-sided portrait occlusion above the preview art.
+
+    The game owns the final animated frame.  This deterministic overlay uses
+    the same verified inner edge and layer order without baking game UI pixels
+    into the exported portrait textures.
+    """
+
+    reference = tuple(int(value) for value in declaration.get("reference_size", size))
+    bounds = tuple(int(value) for value in declaration.get("inner_bounds", ()))
+    if len(reference) != 2 or len(bounds) != 4:
+        return Image.new("RGBA", size, (0, 0, 0, 0))
+    sx = size[0] / reference[0]
+    sy = size[1] / reference[1]
+    left = round(bounds[0] * sx)
+    right = round(bounds[2] * sx)
+    bottom = round(bounds[3] * sy)
+    radius = max(1, round(int(declaration.get("bottom_corner_radius", 0)) * min(sx, sy)))
+    overlay = Image.new("RGBA", size, (0, 0, 0, 0))
+    draw = ImageDraw.Draw(overlay)
+    panel = (54, 31, 19, 232)
+    dark_edge = (43, 23, 13, 255)
+    gold = (224, 174, 65, 255)
+    highlight = (255, 224, 132, 230)
+    draw.rectangle((0, 0, left - 1, size[1]), fill=panel)
+    draw.rectangle((right + 1, 0, size[0], size[1]), fill=panel)
+    draw.rectangle((0, bottom + 1, size[0], size[1]), fill=panel)
+    # Only left, bottom and right are door panels.  The top deliberately stays
+    # open so hair, hats and props can cross the frame just as they do in-game.
+    inner_path = [
+        (left, 0),
+        (left, bottom - radius),
+        (left + radius, bottom),
+        (right - radius, bottom),
+        (right, bottom - radius),
+        (right, 0),
+    ]
+    draw.line(inner_path, fill=dark_edge, width=max(5, round(9 * min(sx, sy))), joint="curve")
+    draw.line(inner_path, fill=gold, width=max(3, round(6 * min(sx, sy))), joint="curve")
+    draw.line(inner_path, fill=highlight, width=max(1, round(2 * min(sx, sy))), joint="curve")
+    return overlay
 
 
 class ManualSlotEditor:
@@ -211,6 +330,8 @@ class ManualSlotEditor:
         self.slot_states: dict[str, SlotState] = {}
         self.slot_sizes: dict[str, tuple[int, int]] = {}
         self.background_slots: set[str] = set()
+        self.template_slots: set[str] = set()
+        self.output_recipes: dict[str, dict] = {}
         self.current_slot = ""
         self.current_layer = "direct"
         self.editing_workspace: StudioWorkspace | None = None
@@ -459,14 +580,19 @@ class ManualSlotEditor:
         recipe = record.payload.get("authoring_recipe") or {}
         sizes: dict[str, tuple[int, int]] = {}
         background_slots: set[str] = {PORTRAIT_PAIR_SLOT}
+        self.output_recipes = {}
+        self.template_slots = set()
         for slot in self.slot_names:
             output = _resolved_output(recipe, slot)
+            self.output_recipes[slot] = output
             size = output.get("size")
             if isinstance(size, list) and len(size) == 2:
                 sizes[slot] = (int(size[0]), int(size[1]))
             dependencies = {str(value) for value in output.get("depends_on") or []}
             if {"background", "character"}.issubset(dependencies):
                 background_slots.add(slot)
+            if output.get("renderer") == "layered_badge":
+                self.template_slots.add(slot)
         for replacement in record.payload.get("visual_replacements") or []:
             slot = str(replacement.get("slot") or "")
             deployment = replacement.get("deployment") or {}
@@ -558,6 +684,7 @@ class ManualSlotEditor:
             workspace,
             tuple(self.slot_states),
             self.background_slots,
+            self.template_slots,
         )
 
         for slot in self.slot_tree.get_children():
@@ -623,14 +750,20 @@ class ManualSlotEditor:
         self._commit_controls()
         self.current_slot = slot
         state = self.slot_states[slot]
-        if state.mode == "layered" and slot not in self.background_slots:
+        layered_slots = self.background_slots | self.template_slots
+        if state.mode == "layered" and slot not in layered_slots:
             state.mode = "direct"
         self.mode_var.set(state.mode)
         self.slot_title_var.set(f"{self.slot_names[slot]} · {slot}")
         size = self.slot_sizes[slot]
         self.size_var.set(f"输出 {size[0]}×{size[1]}")
         self.layered_radio.configure(
-            state="normal" if slot in self.background_slots else "disabled"
+            state="normal" if slot in layered_slots else "disabled",
+            text=(
+                "原生框 + 人物分层合成"
+                if slot in self.template_slots
+                else "背景 + 人物分层合成"
+            ),
         )
         self._show_mode_rows()
         self.current_layer = "direct" if state.mode == "direct" else "character"
@@ -639,15 +772,21 @@ class ManualSlotEditor:
 
     def _show_mode_rows(self) -> None:
         layered = self.mode_var.get() == "layered"
+        template_layered = layered and self.current_slot in self.template_slots
         for layer_id, widgets in self.path_rows.items():
-            visible = (layer_id == "direct") != layered
+            if template_layered:
+                visible = layer_id == "character"
+            else:
+                visible = (layer_id == "direct") != layered
             for widget in widgets:
                 if visible:
                     widget.grid()
                 else:
                     widget.grid_remove()
         values = (
-            (LAYER_LABELS["background"], LAYER_LABELS["character"])
+            ((LAYER_LABELS["character"],) if template_layered else (
+                LAYER_LABELS["background"], LAYER_LABELS["character"]
+            ))
             if layered
             else (LAYER_LABELS["direct"],)
         )
@@ -775,6 +914,18 @@ class ManualSlotEditor:
         with Image.open(path) as loaded:
             return loaded.convert("RGBA")
 
+    def _portrait_clip_declaration(self, slot: str) -> dict | None:
+        recipes = getattr(self, "output_recipes", {})
+        recipe = recipes.get(slot) or {}
+        for layer in recipe.get("layers") or []:
+            if layer.get("input") == "character" and layer.get("clip_mask"):
+                return dict(layer["clip_mask"])
+        if slot in PORTRAIT_PREVIEW_SLOTS and slot != PORTRAIT_PAIR_SLOT:
+            for layer in (recipes.get(PORTRAIT_PAIR_SLOT) or {}).get("layers") or []:
+                if layer.get("input") == "character" and layer.get("clip_mask"):
+                    return dict(layer["clip_mask"])
+        return None
+
     def _render_slot(self, slot: str) -> tuple[Image.Image, Image.Image | None]:
         state = self.slot_states[slot]
         size = self.slot_sizes[slot]
@@ -782,7 +933,24 @@ class ManualSlotEditor:
             source = self._open_image(state.direct.path)
             if source is None:
                 return Image.new("RGBA", size, (0, 0, 0, 0)), None
-            return _fit_layer(source, size, state.direct, fit="contain"), None
+            return _fit_layer(
+                source,
+                size,
+                state.direct,
+                fit="contain",
+                anchor_bottom=slot == STANDING_SLOT,
+            ), None
+
+        if slot in getattr(self, "template_slots", set()):
+            character_source = self._open_image(state.character.path)
+            if character_source is None:
+                return Image.new("RGBA", size, (0, 0, 0, 0)), None
+            recipe = getattr(self, "output_recipes", {}).get(slot) or {}
+            return render_layered_badge(
+                character_source,
+                output_recipe=recipe,
+                layer=state.character,
+            ), None
 
         background_source = self._open_image(state.background.path)
         character_source = self._open_image(state.character.path)
@@ -802,6 +970,9 @@ class ManualSlotEditor:
             if character_source is not None
             else Image.new("RGBA", size, (0, 0, 0, 0))
         )
+        clip = self._portrait_clip_declaration(slot)
+        if clip:
+            character = apply_declared_clip_mask(character, clip)
         if slot == PORTRAIT_PAIR_SLOT:
             return character, background if background_source is not None else None
         composite = background.copy()
@@ -825,6 +996,12 @@ class ManualSlotEditor:
                 "RGBA", foreground.size, (0, 0, 0, 0)
             )
             source.alpha_composite(foreground)
+            if self.current_slot in PORTRAIT_PREVIEW_SLOTS:
+                clip = self._portrait_clip_declaration(self.current_slot)
+                if clip:
+                    source.alpha_composite(
+                        portrait_frame_preview_overlay(source.size, clip)
+                    )
         except Exception as error:
             canvas.create_text(
                 width // 2,

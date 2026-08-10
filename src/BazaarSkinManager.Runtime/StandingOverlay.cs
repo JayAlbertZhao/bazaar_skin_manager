@@ -372,14 +372,30 @@ namespace BazaarSkinManager.TheBazaar
                         scale,
                         scale);
 
-                    // The native Spine pivot sits substantially above the
-                    // geometric bounds center used by the flat replacement.
-                    // Apply the measured PvP/new-day composition offset in
-                    // screen space so it remains stable across resolutions.
+                    // Match the projected lower edge instead of applying the
+                    // old fixed 17%-of-screen lift.  SkinEdit placements use
+                    // hero-specific pivots, so a constant center offset can
+                    // leave a replacement visibly higher than the native art
+                    // even when both projected heights match.
+                    float nativeBottom;
+                    float nativeTop;
+                    float replacementBottom;
+                    float replacementTop;
+                    ProjectedVerticalBounds(
+                        renderCamera,
+                        bounds,
+                        out nativeBottom,
+                        out nativeTop);
+                    ProjectedVerticalBounds(
+                        renderCamera,
+                        spriteRenderer.bounds,
+                        out replacementBottom,
+                        out replacementTop);
                     Vector3 projectedCenter =
                         renderCamera.WorldToScreenPoint(transform.position);
                     Vector3 shiftedCenter = projectedCenter;
-                    shiftedCenter.y += renderCamera.pixelHeight * 0.17f;
+                    float bottomOffset = nativeBottom - replacementBottom;
+                    shiftedCenter.y += bottomOffset;
                     Vector3 worldOffset =
                         renderCamera.ScreenToWorldPoint(shiftedCenter) -
                         renderCamera.ScreenToWorldPoint(projectedCenter);
@@ -391,8 +407,12 @@ namespace BazaarSkinManager.TheBazaar
                         targetScreenHeight.ToString("F2") +
                         " replacementUnitHeight=" +
                         replacementScreenHeight.ToString("F2") + " scale=" +
-                        scale.ToString("F3") + " screenYOffset=" +
-                        (renderCamera.pixelHeight * 0.17f).ToString("F2") +
+                        scale.ToString("F3") + " nativeBottom=" +
+                        nativeBottom.ToString("F2") +
+                        " replacementBottom=" +
+                        replacementBottom.ToString("F2") +
+                        " bottomScreenOffset=" +
+                        bottomOffset.ToString("F2") +
                         " mirrorCompensated=" + mirroredParent + ".");
                 }
                 else
@@ -521,6 +541,23 @@ namespace BazaarSkinManager.TheBazaar
             Bounds bounds,
             out float height)
         {
+            float minY;
+            float maxY;
+            bool projected = ProjectedVerticalBounds(
+                camera,
+                bounds,
+                out minY,
+                out maxY);
+            height = projected ? maxY - minY : 0f;
+            return projected && height > 0f;
+        }
+
+        private static bool ProjectedVerticalBounds(
+            Camera camera,
+            Bounds bounds,
+            out float minY,
+            out float maxY)
+        {
             Vector3 min = bounds.min;
             Vector3 max = bounds.max;
             Vector3[] corners =
@@ -534,8 +571,8 @@ namespace BazaarSkinManager.TheBazaar
                 new Vector3(max.x, max.y, min.z),
                 new Vector3(max.x, max.y, max.z)
             };
-            float minY = float.PositiveInfinity;
-            float maxY = float.NegativeInfinity;
+            minY = float.PositiveInfinity;
+            maxY = float.NegativeInfinity;
             int visibleCorners = 0;
             foreach (Vector3 corner in corners)
             {
@@ -548,8 +585,13 @@ namespace BazaarSkinManager.TheBazaar
                 minY = Math.Min(minY, screen.y);
                 maxY = Math.Max(maxY, screen.y);
             }
-            height = visibleCorners == 0 ? 0f : maxY - minY;
-            return visibleCorners > 0 && height > 0f;
+            if (visibleCorners == 0)
+            {
+                minY = 0f;
+                maxY = 0f;
+                return false;
+            }
+            return maxY > minY;
         }
     }
 }

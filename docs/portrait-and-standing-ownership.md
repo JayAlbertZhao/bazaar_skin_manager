@@ -44,6 +44,13 @@ visible object.
   fields/assets as one atomic replacement. Encounter slots are now applied
   independently, so an omitted optional background retains the native
   background without suppressing the configured foreground portrait.
+- The 2026-08-11 log still loaded runtime `1.2.10` while the Manager window
+  reported `1.3.2`. Its local/opponent portrait decisions were safe, but the
+  flat PvP/new-day branch reported a fixed `screenYOffset=367.20` at 2160p.
+  That constant came from the historical pivot correction and did not prove
+  that the replacement and native lower edges coincided. Runtime `1.3.3`
+  retains the stable camera, parent, mirror and height-fit logic, then measures
+  both projected bounds and aligns their lower screen edges directly.
 
 ## Authoritative routing matrix
 
@@ -77,6 +84,10 @@ visible object.
 7. Non-PvP placements may also carry a 120-frame bounded attacher. It waits for
    an active renderer with non-zero bounds and disables itself after attach or
    timeout.
+8. Flat XZ placements are billboarded through the owning render camera, scaled
+   to the native projected height (with the existing viewport cap), and shifted
+   only by `nativeBottom - replacementBottom`. Logs record both bottoms and the
+   applied delta; no resolution-proportional vertical constant remains.
 
 ## Portrait lifecycle
 
@@ -94,6 +105,16 @@ slots. A pack that configures only `portrait_gameplay` replaces only
 animated portrait reference is cleared only when a foreground portrait is
 actually configured, because that native route otherwise takes precedence
 over the generated static sprite.
+
+Authoring mirrors this runtime stack without flattening it. The background is
+drawn first, the transparent character is clipped against the verified inner
+edge on the left, bottom and right, and a frame/occlusion preview is drawn last;
+the top stays open. The preview frame is never exported into
+`portrait_gameplay`, because the game supplies its actual animated UI frame.
+The hero-select image is different: its gold badge is a preloaded texture and
+must be exported as a deterministic composition in the order base, upper
+frame, character, lower-frame knockout, lower frame. Per-slot editing may move
+or scale only the internal character while those template layers remain fixed.
 
 `LoadPortrait(bool)` is a different API used by non-match preview surfaces in
 build `24570932`. It is allowed only from the explicitly verified preview
@@ -147,5 +168,5 @@ failure marker:
 ```powershell
 .\.venv-manager\Scripts\python.exe tools\verify_portrait_routing_log.py `
   'D:\SteamLibrary\steamapps\common\The Bazaar\BepInEx\LogOutput.log' `
-  --runtime-version 1.3.2
+  --runtime-version 1.3.3
 ```
