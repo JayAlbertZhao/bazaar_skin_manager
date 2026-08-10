@@ -21,11 +21,43 @@ from manual_slot_editor import (  # noqa: E402
     _resolved_output,
     automatic_draft_slot_states,
 )
-from asset_generator_core import profile_for_workspace_edit  # noqa: E402
+from asset_generator_core import GeneratorProfile, profile_for_workspace_edit  # noqa: E402
+from asset_generator_ui import AssetGeneratorUI  # noqa: E402
 from mod_studio_core import StudioWorkspace  # noqa: E402
 
 
 class ManualSlotEditorTests(unittest.TestCase):
+    def test_automatic_draft_fingerprint_changes_with_live_form_values(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            character = root / "character.png"
+            Image.new("RGBA", (64, 64), (255, 0, 0, 255)).save(character)
+            profile = GeneratorProfile(
+                profile_path=root / "profile.json",
+                adapter_id="dooley-default",
+                pack_id="local.dooley.fingerprint",
+                name="Draft",
+                version="0.1.0",
+                character=character,
+                background=root / "background-not-provided",
+                small_icon=root / "small-icon-not-provided",
+                input_metadata=root / "metadata.json",
+                badge_template_root=root / "badges",
+                workspace_root=root / "workspaces",
+                output_zip=root / "draft.zip",
+            )
+
+            original = AssetGeneratorUI.draft_fingerprint(profile)
+            moved = AssetGeneratorUI.draft_fingerprint(
+                profile.__class__(**{**profile.__dict__, "character_offset_x": 12})
+            )
+            renamed = AssetGeneratorUI.draft_fingerprint(
+                profile.__class__(**{**profile.__dict__, "name": "Renamed draft"})
+            )
+
+            self.assertNotEqual(original, moved)
+            self.assertNotEqual(original, renamed)
+
     def test_every_layer_keeps_independent_transform(self) -> None:
         state = SlotState(mode="layered")
         state.background = LayerState("background.png", x=-12, y=9, scale=1.35)
@@ -242,7 +274,7 @@ class ManualSlotEditorTests(unittest.TestCase):
                 "local.dooley.in-place",
                 root=root,
                 name="In-place draft",
-                version="1.3.1",
+                version="1.3.2",
                 hero="Dooley",
                 skin="Skin_DOO_01/A",
             )
@@ -267,7 +299,7 @@ class ManualSlotEditorTests(unittest.TestCase):
             }
             editor.pack_id = "local.dooley.in-place"
             editor.name_var = mock.Mock(get=mock.Mock(return_value="In-place draft"))
-            editor.version_var = mock.Mock(get=mock.Mock(return_value="1.3.1"))
+            editor.version_var = mock.Mock(get=mock.Mock(return_value="1.3.2"))
             editor.slot_names = {"store_image": "Store image"}
             editor.slot_sizes = {"store_image": (64, 64)}
             editor.slot_states = {
@@ -292,14 +324,17 @@ class ManualSlotEditorTests(unittest.TestCase):
                 editor.slot_states["store_image"].direct.path,
             )
 
-    def test_v131_creation_modes_share_the_manager_workspace_cache(self) -> None:
+    def test_v132_creation_modes_switch_live_and_share_the_manager_cache(self) -> None:
         source = (ROOT / "tools" / "bazaar_skin_manager_ui_v12.py").read_text(encoding="utf-8")
         generator = (ROOT / "tools" / "asset_generator_ui.py").read_text(encoding="utf-8")
-        self.assertIn('self.creation_modes.add(automatic_page, text="自动生成模式")', source)
+        self.assertIn('self.creation_modes.add(automatic_page, text="默认 / 草稿模式")', source)
         self.assertIn('self.creation_modes.add(manual_page, text="逐槽位模式")', source)
         self.assertIn('get("mode") == "manual_slots"', source)
         self.assertIn("on_generated=self._generator_draft_generated", source)
         self.assertIn("self.manual_slot_editor.continue_from_automatic_workspace", source)
+        self.assertIn("generate_shared_draft", generator)
+        self.assertIn('self.pending_embedded_action = "mode-switch"', generator)
+        self.assertIn("if self.embedded:", generator)
         self.assertRegex(
             generator,
             r"workspace_root=\(\s*WORKSPACES_ROOT\.resolve\(\)\s*"

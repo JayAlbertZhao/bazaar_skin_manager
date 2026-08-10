@@ -15,7 +15,7 @@ class PortraitRoutingLogVerifierTests(unittest.TestCase):
     def test_complete_local_and_opponent_route_passes(self) -> None:
         text = "\n".join(
             [
-                "Loading [The Bazaar Skin Manager Runtime 1.3.1]",
+                "Loading [The Bazaar Skin Manager Runtime 1.3.2]",
                 "Portrait route: slot=portrait_gameplay+portrait_background "
                 "pack=local.pyg skin=Skin_PYG_01/A owner=local "
                 "callSite=SkinAssetDataSO.GenerateEncounterData action=applied",
@@ -28,7 +28,7 @@ class PortraitRoutingLogVerifierTests(unittest.TestCase):
                 "Attached visible-frame SkinEdit placement EndOfDayScreen:",
             ]
         )
-        result = VERIFIER.verify_log(text, "1.3.1")
+        result = VERIFIER.verify_log(text, "1.3.2")
         self.assertTrue(result["passed"])
         self.assertEqual([], result["incomplete"])
 
@@ -38,18 +38,18 @@ class PortraitRoutingLogVerifierTests(unittest.TestCase):
             "skin=Skin_VAN_01/A owner=opponent "
             "callSite=SkinAssetDataSO.GenerateEncounterData action=applied"
         )
-        result = VERIFIER.verify_log(text, "1.3.1")
+        result = VERIFIER.verify_log(text, "1.3.2")
         self.assertFalse(result["passed"])
         self.assertEqual(1, len(result["unsafe_applied_routes"]))
 
     def test_unknown_owner_is_retained_but_run_remains_incomplete(self) -> None:
         text = (
-            "Loading [The Bazaar Skin Manager Runtime 1.3.1]\n"
+            "Loading [The Bazaar Skin Manager Runtime 1.3.2]\n"
             "Portrait route: slot=portrait_gameplay pack=local.van "
             "skin=Skin_VAN_01/A owner=unknown "
             "callSite=SkinAssetDataSO.GenerateEncounterData action=retained"
         )
-        result = VERIFIER.verify_log(text, "1.3.1")
+        result = VERIFIER.verify_log(text, "1.3.2")
         self.assertFalse(result["passed"])
         self.assertTrue(result["checks"]["no_unsafe_portrait_apply"])
         self.assertFalse(result["checks"]["opponent_board_portrait_retained"])
@@ -57,7 +57,7 @@ class PortraitRoutingLogVerifierTests(unittest.TestCase):
     def test_mount_failure_marker_is_a_hard_failure(self) -> None:
         result = VERIFIER.verify_log(
             "No active camera could project the XZ SkinEdit overlay",
-            "1.3.1",
+            "1.3.2",
         )
         self.assertFalse(result["passed"])
         self.assertEqual(1, len(result["runtime_errors"]))

@@ -147,5 +147,5 @@ failure marker:
 ```powershell
 .\.venv-manager\Scripts\python.exe tools\verify_portrait_routing_log.py `
   'D:\SteamLibrary\steamapps\common\The Bazaar\BepInEx\LogOutput.log' `
-  --runtime-version 1.3.1
+  --runtime-version 1.3.2
 ```

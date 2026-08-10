@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import queue
 import shutil
@@ -106,6 +107,7 @@ class AssetGeneratorUI:
         *,
         on_import: Callable[[GeneratorProfile, PipelineResult], None] | None = None,
         on_generated: Callable[[GeneratorProfile, PipelineResult], None] | None = None,
+        on_generation_failed: Callable[[str], None] | None = None,
         on_material_import: Callable[[str, Path], None] | None = None,
         on_choose_asset: Callable[[str], Path | None] | None = None,
     ) -> None:
@@ -114,6 +116,7 @@ class AssetGeneratorUI:
         self.host = parent if parent is not None else self.root
         self.on_import = on_import
         self.on_generated = on_generated
+        self.on_generation_failed = on_generation_failed
         self.on_material_import = on_material_import
         self.on_choose_asset = on_choose_asset
         self.pending_embedded_action: str | None = None
@@ -1021,6 +1024,75 @@ class AssetGeneratorUI:
         )
         return profile
 
+    @staticmethod
+    def draft_fingerprint(profile: GeneratorProfile) -> str:
+        """Identify every automatic-mode value that can change a draft."""
+
+        def input_record(path: Path | None) -> dict | None:
+            if path is None:
+                return None
+            resolved = path.resolve()
+            record: dict[str, object] = {"path": str(resolved)}
+            if resolved.is_file():
+                stat = resolved.stat()
+                record.update({"bytes": stat.st_size, "mtime_ns": stat.st_mtime_ns})
+            return record
+
+        payload = {
+            "adapter_id": profile.adapter_id,
+            "pack_id": profile.pack_id,
+            "name": profile.name,
+            "version": profile.version,
+            "inputs": {
+                "character": input_record(profile.character),
+                "background": input_record(profile.background),
+                "small_icon": input_record(profile.small_icon),
+                "small_icon_source": input_record(profile.small_icon_source),
+                "metadata": input_record(profile.input_metadata),
+            },
+            "character": {
+                "x": profile.character_offset_x,
+                "y": profile.character_offset_y,
+                "scale": profile.character_scale,
+            },
+            "background": {
+                "x": profile.background_offset_x,
+                "y": profile.background_offset_y,
+                "scale": profile.background_scale,
+            },
+            "output_offsets": profile.output_offsets,
+            "small_icon_mode": profile.small_icon_mode,
+        }
+        encoded = json.dumps(
+            payload,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+        return hashlib.sha256(encoded).hexdigest()
+
+    def current_draft_fingerprint(self) -> str:
+        return self.draft_fingerprint(self._profile_from_form(validate=False))
+
+    def has_draft_source(self) -> bool:
+        try:
+            return self._profile_from_form(validate=False).character.is_file()
+        except Exception:
+            return False
+
+    def generate_shared_draft(self) -> bool:
+        """Materialize the live form for a mode switch without publishing it."""
+
+        if not self.embedded:
+            raise RuntimeError("共享草稿切换只能在皮肤管理器内使用。")
+        self.pending_embedded_action = "mode-switch"
+        started = self._start(("generate",), clean_override=False)
+        if not started:
+            self.pending_embedded_action = None
+        else:
+            self.status_var.set("正在把当前默认草稿同步到逐槽位模式…")
+        return started
+
     def _populate_profile(self, profile: GeneratorProfile) -> None:
         if (
             self.embedded
@@ -1760,23 +1832,33 @@ class AssetGeneratorUI:
             profile.validate()
         return profile
 
-    def _start(self, stages: tuple[str, ...]) -> None:
+    def _start(
+        self,
+        stages: tuple[str, ...],
+        *,
+        clean_override: bool | None = None,
+    ) -> bool:
         if self.busy:
-            return
+            return False
         try:
             profile = self._profile_from_form()
         except Exception as error:
             messagebox.showerror("配置无效", str(error), parent=self.root)
-            return
+            return False
         if "deploy" in stages and not messagebox.askyesno(
             "确认部署",
             "这会通过 Skin Manager 先恢复当前托管内容，再部署新资产包。继续吗？",
             parent=self.root,
         ):
-            return
+            return False
         self.busy = True
         self.profile = profile
-        clean = self.clean_var.get()
+        clean = self.clean_var.get() if clean_override is None else clean_override
+        if self.embedded:
+            # This directory is the shared cache for both authoring modes.
+            # Rebuilding state is safe; deleting it would also delete the
+            # per-slot source files required when the user switches back.
+            clean = False
         for button in self.action_buttons:
             button.configure(state="disabled")
         self.progress.start(10)
@@ -1797,6 +1879,7 @@ class AssetGeneratorUI:
                 self.events.put(("error", traceback.format_exc()))
 
         threading.Thread(target=worker, daemon=True).start()
+        return True
 
     def _embedded_import(self) -> None:
         if self.busy:
@@ -1811,7 +1894,7 @@ class AssetGeneratorUI:
                 str(WORKSPACES_ROOT)
             )
             self.pending_embedded_action = "import"
-            self._start(("generate",))
+            self._start(("generate",), clean_override=False)
         except Exception as error:
             messagebox.showerror("无法生成皮肤", str(error), parent=self.root)
 
@@ -1834,7 +1917,7 @@ class AssetGeneratorUI:
             return
         self.vars["output_zip"].set(selected)
         self.pending_embedded_action = "export"
-        self._start(("generate",))
+        self._start(("generate",), clean_override=False)
 
     def _poll_events(self) -> None:
         try:
@@ -1863,18 +1946,24 @@ class AssetGeneratorUI:
             self._refresh_previews(workspace)
         action = self.pending_embedded_action
         self.pending_embedded_action = None
+        completed_profile = self.profile or self._profile_from_form(validate=False)
+        if result.generated_workspace:
+            self.editing_workspace_id = completed_profile.pack_id
         if self.embedded and self.on_generated is not None and result.generated_workspace:
             try:
-                self.on_generated(self._profile_from_form(validate=False), result)
+                self.on_generated(completed_profile, result)
             except Exception as error:
                 messagebox.showerror("无法接续生成草稿", str(error), parent=self.root)
                 return
         if self.embedded and action == "import" and self.on_import is not None:
             try:
-                self.on_import(self._profile_from_form(validate=False), result)
+                self.on_import(completed_profile, result)
             except Exception as error:
                 messagebox.showerror("无法加入皮肤库", str(error), parent=self.root)
                 return
+        if self.embedded and action == "mode-switch":
+            self.status_var.set("当前草稿已同步到逐槽位模式")
+            return
         message = "操作完成。"
         if self.embedded and action == "import":
             message = "皮肤已经生成并加入皮肤库。"
@@ -1886,9 +1975,12 @@ class AssetGeneratorUI:
 
     def _fail(self, details: str) -> None:
         self._set_idle()
+        self.pending_embedded_action = None
         self.status_var.set("流水线失败")
         self._append_log("error", details)
         last = details.strip().splitlines()[-1] if details.strip() else "未知错误"
+        if self.on_generation_failed is not None:
+            self.on_generation_failed(details)
         messagebox.showerror("流水线失败", last, parent=self.root)
 
     def _set_idle(self) -> None:

@@ -47,8 +47,10 @@ files goes through its verified, reversible deployment transaction.
 - Lets each visual slot keep independent image, position, and scale settings;
   background-capable slots can compose separately adjustable background and
   character layers.
-- Uses one shared Manager workspace cache for both creation modes, so an
-  automatically generated draft can continue directly into per-slot editing.
+- Uses one shared Manager workspace cache for both creation modes. Authors can
+  switch between the live default draft and per-slot editing at any time;
+  unchanged switches retain existing fine-tuning, while the default mode can
+  still publish directly to the skin library.
 - Leaves unfilled slots on the original game assets.
 - Supports PNG, JPEG, WebP, BMP, WAV, MP3, FLAC, Ogg, M4A, AAC, and Opus input.
 - Converts supported audio through `ffmpeg` when available.
@@ -184,13 +186,13 @@ Build the runtime and manager:
 
 ```powershell
 .\build.ps1 -Configuration Release
-.\build.ps1 -Version 1.3.1
-.\build-manager.ps1 -Version 1.3.1
-.\build-asset-generator.ps1 -Version 1.3.1
-.\build-spine-manager.ps1 -Version 1.3.1
-.\build-installer.ps1 -Version 1.3.1
-.\package-manager-portable.ps1 -Version 1.3.1
-.\package-asset-generator-portable.ps1 -Version 1.3.1
+.\build.ps1 -Version 1.3.2
+.\build-manager.ps1 -Version 1.3.2
+.\build-asset-generator.ps1 -Version 1.3.2
+.\build-spine-manager.ps1 -Version 1.3.2
+.\build-installer.ps1 -Version 1.3.2
+.\package-manager-portable.ps1 -Version 1.3.2
+.\package-asset-generator-portable.ps1 -Version 1.3.2
 ```
 
 Useful source commands:

@@ -216,7 +216,7 @@ class RuntimeStructureTests(unittest.TestCase):
             STANDING_STATE,
         )
 
-    def test_runtime_version_is_1_3_1(self) -> None:
+    def test_runtime_version_is_1_3_2(self) -> None:
         plugin = (
             ROOT / "src" / "BazaarSkinManager.Runtime" / "Plugin.cs"
         ).read_text(encoding="utf-8")
@@ -224,8 +224,8 @@ class RuntimeStructureTests(unittest.TestCase):
             ROOT / "src" / "BazaarSkinManager.Runtime" / "AssemblyInfo.cs"
         ).read_text(encoding="utf-8")
 
-        self.assertIn('PluginVersion = "1.3.1"', plugin)
-        self.assertIn('AssemblyVersion("1.3.1.0")', assembly)
+        self.assertIn('PluginVersion = "1.3.2"', plugin)
+        self.assertIn('AssemblyVersion("1.3.2.0")', assembly)
 
     def test_runtime_self_test_exercises_local_portrait_route(self) -> None:
         diagnostics = (

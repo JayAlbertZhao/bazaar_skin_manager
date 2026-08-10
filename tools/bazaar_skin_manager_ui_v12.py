@@ -334,6 +334,9 @@ class SkinManagerV12:
         self.selected_pack_path: str | None = None
         self.selected_asset_id: str | None = None
         self.active_creation_workspace: StudioWorkspace | None = None
+        self.active_automatic_fingerprint: str | None = None
+        self.pending_manual_mode_switch = False
+        self.creation_mode_guard = False
         self.spine_files: list[Path] = []
         self._configure_style()
         self._load_library_state()
@@ -1104,12 +1107,13 @@ class SkinManagerV12:
         self.creation_modes.pack(fill="both", expand=True)
         automatic_page = ttk.Frame(self.creation_modes)
         manual_page = ttk.Frame(self.creation_modes)
-        self.creation_modes.add(automatic_page, text="自动生成模式")
+        self.creation_modes.add(automatic_page, text="默认 / 草稿模式")
         self.creation_modes.add(manual_page, text="逐槽位模式")
         self.generator = AssetGeneratorUI(
             automatic_page,
             on_import=self._generator_import_complete,
             on_generated=self._generator_draft_generated,
+            on_generation_failed=self._generator_generation_failed,
             on_material_import=self._generator_material_imported,
             on_choose_asset=self._generator_choose_asset,
         )
@@ -1122,26 +1126,109 @@ class SkinManagerV12:
         self.creation_modes.bind("<<NotebookTabChanged>>", self._creation_mode_changed)
 
     def _creation_mode_changed(self, _event: tk.Event | None = None) -> None:
-        if self.creation_modes.index(self.creation_modes.select()) != 1:
+        if getattr(self, "creation_mode_guard", False):
+            return
+        selected = self.creation_modes.index(self.creation_modes.select())
+        if selected == 1:
+            self._enter_manual_creation_mode()
+        else:
+            self._enter_automatic_creation_mode()
+
+    def _select_creation_mode(self, index: int) -> None:
+        self.creation_mode_guard = True
+        try:
+            self.creation_modes.select(index)
+        except Exception:
+            self.creation_mode_guard = False
+            raise
+        # ttk queues <<NotebookTabChanged>>. Keep the guard through the next
+        # idle turn rather than clearing it before that virtual event arrives.
+        self.root.after_idle(
+            lambda: setattr(self, "creation_mode_guard", False)
+        )
+
+    def _enter_manual_creation_mode(self) -> None:
+        """Synchronize the live automatic form only when it has changed."""
+
+        if getattr(self.generator, "busy", False) is True:
+            self._select_creation_mode(0)
             return
         workspace = self.active_creation_workspace
-        if workspace is None or self.manual_slot_editor.editing_workspace is workspace:
+        if not self.generator.has_draft_source():
+            # Keep the original standalone per-slot workflow available. An
+            # empty default form has nothing to materialize, so the existing
+            # manual cache (or its blank new project) is already authoritative.
+            if (
+                workspace is not None
+                and self.manual_slot_editor.editing_workspace is not workspace
+            ):
+                try:
+                    self.manual_slot_editor.edit_workspace(workspace)
+                except Exception as error:
+                    self._select_creation_mode(0)
+                    self._show_error("无法接续逐槽位草稿", error)
             return
         try:
-            self.manual_slot_editor.edit_workspace(workspace)
+            fingerprint = self.generator.current_draft_fingerprint()
         except Exception as error:
-            self._show_error("无法接续逐槽位草稿", error)
+            self._select_creation_mode(0)
+            self._show_error("无法读取默认草稿", error)
+            return
+        if (
+            workspace is not None
+            and fingerprint == getattr(self, "active_automatic_fingerprint", None)
+        ):
+            if self.manual_slot_editor.editing_workspace is not workspace:
+                try:
+                    self.manual_slot_editor.edit_workspace(workspace)
+                except Exception as error:
+                    self._select_creation_mode(0)
+                    self._show_error("无法接续逐槽位草稿", error)
+            return
 
-    def _generator_draft_generated(self, _profile, result) -> None:
+        self.pending_manual_mode_switch = True
+        self._select_creation_mode(0)
+        if not self.generator.generate_shared_draft():
+            self.pending_manual_mode_switch = False
+
+    def _enter_automatic_creation_mode(self) -> None:
+        """Persist the live per-slot controls before leaving that mode."""
+
+        workspace = getattr(self.manual_slot_editor, "editing_workspace", None)
+        if workspace is None:
+            return
+        try:
+            workspace = self.manual_slot_editor.build_workspace()
+            path = str(workspace.directory)
+            self.workspaces[path] = workspace
+            self.active_creation_workspace = workspace
+            self.selected_pack_path = path
+            pack_id = str((workspace.state.get("pack") or {}).get("id") or "")
+            if (self.generator.editing_workspace_id or "").casefold() != pack_id.casefold():
+                profile = self.generator.edit_workspace(workspace)
+                self.active_automatic_fingerprint = self.generator.draft_fingerprint(profile)
+            self._save_settings()
+        except Exception as error:
+            self._select_creation_mode(1)
+            self._show_error("无法保存逐槽位草稿", error)
+
+    def _generator_draft_generated(self, profile, result) -> None:
         if not result.generated_workspace:
             return
         workspace = StudioWorkspace.load(Path(result.generated_workspace))
         path = str(workspace.directory)
         self.workspaces[path] = workspace
         self.active_creation_workspace = workspace
+        self.active_automatic_fingerprint = self.generator.draft_fingerprint(profile)
         self.selected_pack_path = path
         self._save_settings()
-        self.manual_slot_editor.continue_from_automatic_workspace(workspace)
+        if self.pending_manual_mode_switch:
+            self.pending_manual_mode_switch = False
+            self.manual_slot_editor.continue_from_automatic_workspace(workspace)
+            self._select_creation_mode(1)
+
+    def _generator_generation_failed(self, _details: str) -> None:
+        self.pending_manual_mode_switch = False
 
     def _manual_slot_choose_asset(self) -> Path | None:
         records = [
@@ -1244,9 +1331,8 @@ class SkinManagerV12:
         self.asset_library.register_workspace(workspace)
         self.selected_pack_path = path
         self._save_settings()
-        self.manual_slot_editor.continue_from_automatic_workspace(workspace)
-        self.pages.select(self.creation_page)
-        self.creation_modes.select(1)
+        self.pages.select(self.management_page)
+        self.management_tabs.select(self.pack_tab)
         self._refresh_everything()
 
     # ---------- animation import ----------
@@ -1457,13 +1543,15 @@ class SkinManagerV12:
             self.root.update_idletasks()
             authoring = (getattr(workspace, "state", {}) or {}).get("authoring") or {}
             if authoring.get("mode") == "manual_slots":
-                if hasattr(self, "creation_modes"):
-                    self.creation_modes.select(1)
+                self.active_automatic_fingerprint = None
                 self.manual_slot_editor.edit_workspace(workspace)
-            else:
                 if hasattr(self, "creation_modes"):
-                    self.creation_modes.select(0)
-                self.generator.edit_workspace(workspace)
+                    self._select_creation_mode(1)
+            else:
+                profile = self.generator.edit_workspace(workspace)
+                self.active_automatic_fingerprint = self.generator.draft_fingerprint(profile)
+                if hasattr(self, "creation_modes"):
+                    self._select_creation_mode(0)
         except Exception as error:
             self._show_error("无法编辑皮肤包", error)
 
@@ -1791,7 +1879,7 @@ class SkinManagerV12:
             self.creation_modes.tab(index, "text")
             for index in range(self.creation_modes.index("end"))
         ]
-        if creation_modes != ["自动生成模式", "逐槽位模式"]:
+        if creation_modes != ["默认 / 草稿模式", "逐槽位模式"]:
             raise RuntimeError(f"皮肤制作模式错误：{creation_modes}")
         self.manual_slot_editor.self_test()
 

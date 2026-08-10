@@ -335,17 +335,148 @@ class ManagerV12SurfaceTests(unittest.TestCase):
             manager = SkinManagerV12.__new__(SkinManagerV12)
             manager.workspaces = {}
             manager.manual_slot_editor = mock.Mock()
+            manager.generator = mock.Mock()
+            manager.generator.draft_fingerprint.return_value = "automatic-fingerprint"
+            manager.pending_manual_mode_switch = False
             manager._save_settings = mock.Mock()
             result = mock.Mock(generated_workspace=str(workspace.directory))
 
-            manager._generator_draft_generated(None, result)
+            profile = object()
+            manager._generator_draft_generated(profile, result)
 
             cached = manager.workspaces[str(workspace.directory)]
             self.assertIs(manager.active_creation_workspace, cached)
+            self.assertEqual("automatic-fingerprint", manager.active_automatic_fingerprint)
             self.assertEqual(str(workspace.directory), manager.selected_pack_path)
+            manager.generator.draft_fingerprint.assert_called_once_with(profile)
+            manager.manual_slot_editor.continue_from_automatic_workspace.assert_not_called()
+            manager._save_settings.assert_called_once_with()
+
+    def test_switching_to_manual_materializes_changed_live_draft(self) -> None:
+        manager = SkinManagerV12.__new__(SkinManagerV12)
+        manager.generator = mock.Mock()
+        manager.generator.current_draft_fingerprint.return_value = "changed"
+        manager.generator.generate_shared_draft.return_value = True
+        manager.active_creation_workspace = object()
+        manager.active_automatic_fingerprint = "previous"
+        manager.manual_slot_editor = mock.Mock()
+        manager._select_creation_mode = mock.Mock()
+        manager._show_error = mock.Mock()
+
+        manager._enter_manual_creation_mode()
+
+        self.assertTrue(manager.pending_manual_mode_switch)
+        manager._select_creation_mode.assert_called_once_with(0)
+        manager.generator.generate_shared_draft.assert_called_once_with()
+        manager.manual_slot_editor.edit_workspace.assert_not_called()
+
+    def test_switching_to_manual_reuses_unchanged_per_slot_cache(self) -> None:
+        manager = SkinManagerV12.__new__(SkinManagerV12)
+        workspace = object()
+        manager.generator = mock.Mock()
+        manager.generator.current_draft_fingerprint.return_value = "same"
+        manager.active_creation_workspace = workspace
+        manager.active_automatic_fingerprint = "same"
+        manager.manual_slot_editor = mock.Mock(editing_workspace=None)
+        manager._select_creation_mode = mock.Mock()
+        manager._show_error = mock.Mock()
+
+        manager._enter_manual_creation_mode()
+
+        manager.manual_slot_editor.edit_workspace.assert_called_once_with(workspace)
+        manager.generator.generate_shared_draft.assert_not_called()
+
+    def test_empty_default_form_keeps_standalone_manual_mode_available(self) -> None:
+        manager = SkinManagerV12.__new__(SkinManagerV12)
+        manager.generator = mock.Mock()
+        manager.generator.has_draft_source.return_value = False
+        manager.active_creation_workspace = None
+        manager.manual_slot_editor = mock.Mock(editing_workspace=None)
+        manager._select_creation_mode = mock.Mock()
+        manager._show_error = mock.Mock()
+
+        manager._enter_manual_creation_mode()
+
+        manager.generator.generate_shared_draft.assert_not_called()
+        manager._select_creation_mode.assert_not_called()
+        manager._show_error.assert_not_called()
+
+    def test_generated_mode_switch_opens_manual_but_direct_publish_does_not(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            workspace = StudioWorkspace.create(
+                "local.dooley.live-switch",
+                root=Path(temporary),
+                hero="Dooley",
+                skin="Skin_DOO_01/A",
+            )
+            manager = SkinManagerV12.__new__(SkinManagerV12)
+            manager.workspaces = {}
+            manager.manual_slot_editor = mock.Mock()
+            manager.generator = mock.Mock()
+            manager.generator.draft_fingerprint.return_value = "fingerprint"
+            manager.pending_manual_mode_switch = True
+            manager._select_creation_mode = mock.Mock()
+            manager._save_settings = mock.Mock()
+
+            manager._generator_draft_generated(
+                object(), mock.Mock(generated_workspace=str(workspace.directory))
+            )
+
+            cached = manager.active_creation_workspace
             manager.manual_slot_editor.continue_from_automatic_workspace.assert_called_once_with(
                 cached
             )
+            manager._select_creation_mode.assert_called_once_with(1)
+            self.assertFalse(manager.pending_manual_mode_switch)
+
+    def test_default_mode_publish_goes_directly_to_library_management(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            workspace = StudioWorkspace.create(
+                "local.dooley.direct-publish",
+                root=Path(temporary),
+                hero="Dooley",
+                skin="Skin_DOO_01/A",
+            )
+            manager = SkinManagerV12.__new__(SkinManagerV12)
+            manager.workspaces = {}
+            manager.asset_library = mock.Mock()
+            manager.pages = mock.Mock()
+            manager.management_page = object()
+            manager.management_tabs = mock.Mock()
+            manager.pack_tab = object()
+            manager._save_settings = mock.Mock()
+            manager._refresh_everything = mock.Mock()
+
+            manager._generator_import_complete(
+                None, mock.Mock(generated_workspace=str(workspace.directory))
+            )
+
+            manager.pages.select.assert_called_once_with(manager.management_page)
+            manager.management_tabs.select.assert_called_once_with(manager.pack_tab)
+
+    def test_leaving_manual_mode_persists_the_same_workspace_cache(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            workspace = StudioWorkspace.create(
+                "local.dooley.manual-cache",
+                root=Path(temporary),
+                hero="Dooley",
+                skin="Skin_DOO_01/A",
+            )
+            manager = SkinManagerV12.__new__(SkinManagerV12)
+            manager.workspaces = {}
+            manager.manual_slot_editor = mock.Mock(editing_workspace=workspace)
+            manager.manual_slot_editor.build_workspace.return_value = workspace
+            manager.generator = mock.Mock(editing_workspace_id="local.dooley.manual-cache")
+            manager._save_settings = mock.Mock()
+            manager._select_creation_mode = mock.Mock()
+            manager._show_error = mock.Mock()
+
+            manager._enter_automatic_creation_mode()
+
+            manager.manual_slot_editor.build_workspace.assert_called_once_with()
+            self.assertIs(manager.active_creation_workspace, workspace)
+            self.assertIs(manager.workspaces[str(workspace.directory)], workspace)
+            manager.generator.edit_workspace.assert_not_called()
             manager._save_settings.assert_called_once_with()
 
     def test_ui_exposes_exact_five_primary_pages_and_visual_mapping(self) -> None:
