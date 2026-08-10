@@ -14,8 +14,9 @@ from tkinter import filedialog, messagebox, ttk
 
 from PIL import Image, ImageDraw, ImageTk
 
-from asset_generator_core import authoring_adapters
+from asset_generator_core import authoring_adapters, ensure_local_badge_assets
 from badge_pipeline import compose_badge
+from bazaar_skin_manager import manager_root
 from mod_studio_core import (
     PROJECT_ROOT,
     SUPPORTED_IMAGE_EXTENSIONS,
@@ -332,6 +333,10 @@ class ManualSlotEditor:
         self.background_slots: set[str] = set()
         self.template_slots: set[str] = set()
         self.output_recipes: dict[str, dict] = {}
+        self.badge_template_root = ensure_local_badge_assets(
+            manager_root() / "asset-generator" / "current" / "resources" / "manager-assets",
+            source_root=BADGE_TEMPLATE_ROOT,
+        )
         self.current_slot = ""
         self.current_layer = "direct"
         self.editing_workspace: StudioWorkspace | None = None
@@ -950,6 +955,9 @@ class ManualSlotEditor:
                 character_source,
                 output_recipe=recipe,
                 layer=state.character,
+                template_root=getattr(
+                    self, "badge_template_root", BADGE_TEMPLATE_ROOT
+                ),
             ), None
 
         background_source = self._open_image(state.background.path)

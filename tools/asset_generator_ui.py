@@ -25,6 +25,7 @@ from asset_generator_core import (
     LivePreviewRenderer,
     PipelineResult,
     authoring_adapters,
+    ensure_local_badge_assets,
     profile_for_workspace_edit,
     retarget_automatic_pack_id,
     run_pipeline,
@@ -958,9 +959,14 @@ class AssetGeneratorUI:
     def _ensure_local_badge_assets(self) -> Path:
         source = PROJECT_ROOT / "manager" / "assets"
         destination = USER_PROJECT_ROOT / "resources" / "manager-assets"
-        if source.is_dir():
-            shutil.copytree(source, destination, dirs_exist_ok=True)
-        return destination
+        game_dir = None
+        if self.profile is not None and self.profile.game_dir is not None:
+            game_dir = self.profile.game_dir
+        return ensure_local_badge_assets(
+            destination,
+            source_root=source,
+            game_dir=game_dir,
+        )
 
     def edit_workspace(self, workspace: StudioWorkspace) -> GeneratorProfile:
         """Load one library pack as the active creation project."""

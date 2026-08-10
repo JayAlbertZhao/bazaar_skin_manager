@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 import sys
 import tempfile
 import unittest
@@ -14,7 +16,6 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
 
 from manual_slot_editor import (  # noqa: E402
-    BADGE_TEMPLATE_ROOT,
     LayerState,
     ManualSlotEditor,
     SlotState,
@@ -24,12 +25,86 @@ from manual_slot_editor import (  # noqa: E402
     portrait_frame_preview_overlay,
     render_layered_badge,
 )
-from asset_generator_core import GeneratorProfile, profile_for_workspace_edit  # noqa: E402
+from asset_generator_core import (  # noqa: E402
+    GeneratorProfile,
+    ensure_local_badge_assets,
+    profile_for_workspace_edit,
+)
 from asset_generator_ui import AssetGeneratorUI  # noqa: E402
 from mod_studio_core import StudioWorkspace  # noqa: E402
 
 
 class ManualSlotEditorTests(unittest.TestCase):
+    @staticmethod
+    def _create_badge_template(root: Path) -> Path:
+        directory = root / "badge-templates" / "hero-select-gold"
+        directory.mkdir(parents=True)
+        layers = {
+            "base": Image.new("RGBA", (512, 512), (70, 35, 15, 255)),
+            "frame_upper": Image.new("RGBA", (512, 512), (0, 0, 0, 0)),
+            "frame_lower": Image.new("RGBA", (512, 512), (0, 0, 0, 0)),
+            "frame_lower_occlusion": Image.new("RGBA", (512, 512), (0, 0, 0, 255)),
+        }
+        layers["frame_upper"].paste((245, 195, 70, 255), (0, 0, 512, 12))
+        layers["frame_lower"].paste((245, 195, 70, 255), (0, 480, 512, 512))
+        layers["frame_lower_occlusion"].paste(
+            (255, 255, 255, 255), (0, 480, 512, 512)
+        )
+        outputs = {}
+        for name, image in layers.items():
+            path = directory / f"{name}.png"
+            image.save(path)
+            outputs[name] = {
+                "file": path.name,
+                "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+            }
+        (directory / "template.json").write_text(
+            json.dumps(
+                {
+                    "schema_version": 2,
+                    "aigc": False,
+                    "colour_inference": False,
+                    "size": [512, 512],
+                    "layer_order_back_to_front": [
+                        "base",
+                        "frame_upper",
+                        "character",
+                        "frame_lower",
+                    ],
+                    "outputs": outputs,
+                }
+            ),
+            encoding="utf-8",
+        )
+        return root
+
+    def test_public_build_extracts_missing_badge_template_from_installed_game(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            destination = root / "local-assets"
+            game_dir = root / "game"
+
+            def fake_extract(selected_game: Path, output: Path) -> None:
+                self.assertEqual(game_dir, selected_game)
+                output.mkdir(parents=True)
+                (output / "template.json").write_text("{}", encoding="utf-8")
+
+            with (
+                mock.patch(
+                    "asset_generator_core.preferred_game_install",
+                    return_value=SimpleNamespace(game_dir=game_dir),
+                ) as preferred,
+                mock.patch(
+                    "asset_generator_core.extract_game_template",
+                    side_effect=fake_extract,
+                ) as extract,
+            ):
+                result = ensure_local_badge_assets(destination, strict=True)
+
+            self.assertEqual(destination.resolve(), result)
+            preferred.assert_called_once_with(None)
+            extract.assert_called_once()
+
     def test_automatic_draft_fingerprint_changes_with_live_form_values(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -275,18 +350,20 @@ class ManualSlotEditorTests(unittest.TestCase):
             for x in range(20, 80):
                 character.putpixel((x, y), (230, 30, 50, 255))
 
-        centered = render_layered_badge(
-            character,
-            output_recipe=recipe,
-            layer=LayerState(scale=1.0),
-            template_root=BADGE_TEMPLATE_ROOT,
-        )
-        moved = render_layered_badge(
-            character,
-            output_recipe=recipe,
-            layer=LayerState(x=18, y=-9, scale=0.8),
-            template_root=BADGE_TEMPLATE_ROOT,
-        )
+        with tempfile.TemporaryDirectory() as temporary:
+            template_root = self._create_badge_template(Path(temporary))
+            centered = render_layered_badge(
+                character,
+                output_recipe=recipe,
+                layer=LayerState(scale=1.0),
+                template_root=template_root,
+            )
+            moved = render_layered_badge(
+                character,
+                output_recipe=recipe,
+                layer=LayerState(x=18, y=-9, scale=0.8),
+                template_root=template_root,
+            )
 
         self.assertEqual((256, 256), centered.size)
         self.assertNotEqual(centered.tobytes(), moved.tobytes())

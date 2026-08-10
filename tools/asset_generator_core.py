@@ -20,8 +20,13 @@ from typing import Callable, Iterable
 from PIL import Image
 
 from adapter_registry import AdapterRegistry, DEFAULT_ADAPTER_DIRECTORY
-from bazaar_skin_manager import installation_diagnostics, local_app_data, sha256_file
-from badge_pipeline import compose_badge
+from bazaar_skin_manager import (
+    installation_diagnostics,
+    local_app_data,
+    preferred_game_install,
+    sha256_file,
+)
+from badge_pipeline import compose_badge, extract_game_template
 from mod_studio_core import PROJECT_ROOT, WORKSPACES_ROOT, StudioWorkspace
 from skin_pack_builder import (
     _load_badge_template,
@@ -79,6 +84,42 @@ def authoring_adapters(registry: AdapterRegistry | None = None) -> tuple:
         )
         == AUTHORING_RECIPE_VERSION
     )
+
+
+def ensure_local_badge_assets(
+    destination: Path,
+    *,
+    source_root: Path | None = None,
+    game_dir: Path | None = None,
+    strict: bool = False,
+) -> Path:
+    """Prepare the game-derived hero badge template outside the public source.
+
+    Local maintainer builds may bundle an already-audited template.  Public
+    builds intentionally do not, so the same deterministic layers are
+    extracted from the user's installed game the first time authoring needs
+    them.
+    """
+
+    destination = destination.resolve()
+    template = destination / "badge-templates" / "hero-select-gold" / "template.json"
+    if template.is_file():
+        return destination
+    if source_root is not None and source_root.resolve().is_dir():
+        shutil.copytree(source_root.resolve(), destination, dirs_exist_ok=True)
+        if template.is_file():
+            return destination
+    destination.mkdir(parents=True, exist_ok=True)
+    try:
+        game = preferred_game_install(game_dir)
+        extract_game_template(
+            game.game_dir,
+            template.parent,
+        )
+    except Exception:
+        if strict:
+            raise
+    return destination
 
 
 def retarget_automatic_pack_id(

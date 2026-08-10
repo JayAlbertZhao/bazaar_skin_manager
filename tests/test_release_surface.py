@@ -234,13 +234,17 @@ class ReleaseSurfaceTests(unittest.TestCase):
         ui = (ROOT / "tools" / "asset_generator_ui.py").read_text(
             encoding="utf-8"
         )
+        core = (ROOT / "tools" / "asset_generator_core.py").read_text(
+            encoding="utf-8"
+        )
         self.assertIn('$badgeAssets = Join-Path $root "manager\\assets"', build)
         self.assertIn(
             "if (Test-Path -LiteralPath $badgeAssets -PathType Container)",
             build,
         )
-        self.assertIn("if source.is_dir():", ui)
-        self.assertNotIn("内置徽章模板缺失", ui)
+        self.assertIn("ensure_local_badge_assets(", ui)
+        self.assertIn("def ensure_local_badge_assets(", core)
+        self.assertIn("extract_game_template(", core)
         self.assertIn("$env:PYTHON", build)
         self.assertIn("Get-Command python", build)
 
