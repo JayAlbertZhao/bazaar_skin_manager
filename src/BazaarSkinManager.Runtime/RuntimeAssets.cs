@@ -68,6 +68,7 @@ namespace BazaarSkinManager.TheBazaar
                             pack.Audio = RuntimeAudioPack.Load(
                                 pack.PackDirectory,
                                 pack.Manifest.AudioManifest,
+                                pack.Manifest.Target.Hero,
                                 log);
                             if (pack.Audio != null)
                             {

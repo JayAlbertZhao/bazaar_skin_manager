@@ -25,6 +25,8 @@ DEFAULT_INVENTORY = (
     / "adapters"
     / "mak-default.json"
 )
+AUDIO_ROUTE_CATALOG = ROOT / "manager" / "audio-route-catalog.json"
+ADAPTER_DIRECTORY = ROOT / "manager" / "adapters"
 SHA256_PATTERN = re.compile(r"^[a-f0-9]{64}$")
 SUPPORTED_EXTENSIONS = {".wav", ".ogg"}
 HOOK_TYPES = {
@@ -194,6 +196,53 @@ def inventory_slots(
     return result, problems
 
 
+def resolve_inventory_audio_template(inventory: dict[str, Any]) -> dict[str, Any]:
+    if isinstance(inventory.get("audio_template"), dict):
+        return inventory
+    reference = str(inventory.get("audio_template_ref") or "")
+    if not reference:
+        return inventory
+    catalog = load_json(AUDIO_ROUTE_CATALOG)
+    if reference != catalog.get("id"):
+        raise ValueError(f"unknown audio template reference: {reference}")
+    target = inventory.get("target") or {}
+    hero_id = str(target.get("hero") or "")
+    hero = next(
+        (
+            item
+            for item in catalog.get("heroes") or []
+            if str(item.get("hero") or "").casefold() == hero_id.casefold()
+        ),
+        None,
+    )
+    if hero is None:
+        raise ValueError(f"audio route catalog has no hero {hero_id}")
+    payload = copy.deepcopy(inventory)
+    routes = copy.deepcopy(hero.get("routes") or [])
+    routes.extend(copy.deepcopy(catalog.get("menu_routes") or []))
+    payload["audio_template"] = {
+        "target": {
+            "game": "The Bazaar",
+            "steam_build": str(catalog["source"]["steam_build"]),
+            "supported_builds": copy.deepcopy(
+                catalog.get("supported_builds") or []
+            ),
+            "hero": hero_id,
+        },
+        "routes": routes,
+    }
+    return payload
+
+
+def inventory_path_for_hero(hero: str) -> Path:
+    for path in sorted(ADAPTER_DIRECTORY.glob("*.json")):
+        payload = load_json(path)
+        target = payload.get("target") or {}
+        if str(target.get("hero") or "").casefold() == hero.casefold():
+            return path
+    raise ValueError(f"no verified audio adapter for hero {hero}")
+
+
 def validate_manifest(
     manifest: dict[str, Any],
     inventory: dict[str, Any],
@@ -201,6 +250,7 @@ def validate_manifest(
 ) -> dict[str, Any]:
     """Validate one manifest against one exact build inventory."""
 
+    inventory = resolve_inventory_audio_template(inventory)
     problems: list[dict[str, str]] = []
     warnings: list[dict[str, str]] = []
     expected, inventory_problems = inventory_slots(inventory)
@@ -267,11 +317,22 @@ def validate_manifest(
                 "$.target.steam_build",
             )
         )
-    if target.get("hero") != "Mak" or target.get("game") != "The Bazaar":
+    inventory_target = inventory.get("target") or {}
+    audio_target = (inventory.get("audio_template") or {}).get("target") or {}
+    expected_hero = str(
+        audio_target.get("hero") or inventory_target.get("hero") or ""
+    )
+    if (
+        str(target.get("hero") or "").casefold() != expected_hero.casefold()
+        or target.get("game") != "The Bazaar"
+    ):
         problems.append(
             issue(
                 "target",
-                "semantic validator only accepts The Bazaar / Mak manifests",
+                (
+                    "manifest target must match The Bazaar / "
+                    f"{expected_hero} inventory"
+                ),
                 "$.target",
             )
         )
@@ -513,7 +574,7 @@ def main() -> int:
     parser.add_argument("--manifest", required=True)
     parser.add_argument(
         "--inventory",
-        default=str(DEFAULT_INVENTORY),
+        help="Adapter inventory; defaults to the manifest target hero.",
     )
     parser.add_argument(
         "--pack-root",
@@ -523,14 +584,20 @@ def main() -> int:
     args = parser.parse_args()
 
     manifest_path = Path(args.manifest).resolve()
-    inventory_path = Path(args.inventory).resolve()
+    manifest = load_json(manifest_path)
+    manifest_target = manifest.get("target") or {}
+    inventory_path = (
+        Path(args.inventory).resolve()
+        if args.inventory
+        else inventory_path_for_hero(str(manifest_target.get("hero") or ""))
+    )
     pack_root = (
         Path(args.pack_root).resolve()
         if args.pack_root
         else manifest_path.parent
     )
     result = validate_manifest(
-        load_json(manifest_path),
+        manifest,
         load_json(inventory_path),
         pack_root,
     )

@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.4.0
+
+- 全部八名英雄现在都具备经过 Steam build `24570932` 序列化路由校验的 17 个英雄语音逻辑槽位；菜单选择和装备语音作为共享槽位一并提供，Mak 独有的商人语音保持只在 Mak 目标上生效。
+- 语音素材改为按 `logical_slot` 作为可移植身份：Mak/KTN 语音包部署给 Vanessa、Pygmalien、Dooley、Jules、Stelle、Karnok 或 The Dragons 时，Manager 会保留 WAV 变体并重写为目标英雄的精确 FMOD GUID、路径和 selector，不再降级为纯视觉包。
+- 语音生产 ZIP 不再要求源英雄与工作区英雄相同；导入后立即绑定目标英雄适配器。文件名可以继续保留 `Makxxxx`，运行时不依赖文件名判断英雄。
+- Runtime 移除 Mak 单英雄限制，并补齐 `PygAudioSO -> Pygmalien`、`TheDragonsAudioSO -> Hero8` 的显式别名；英雄选择、装备语音及局内英雄语音均按当前己方英雄包路由，未知或不完整路由继续回退原声。
+- 新增不含游戏音频载荷的 `manager/audio-route-catalog.json`，公共 EXE/ZIP 会携带该精确元数据；语音语义校验器和 JSON Schema 同步支持全部八名英雄。
+
 ## 1.3.3
 
 - 逐槽位模式现在把英雄选择图标识别为“原生框 + 人物”合成槽位：从自动草稿进入时恢复原始人物层，人物可在徽章内部单独移动和缩放，底座、上下框及下框遮挡顺序继续使用经过校验的原生模板。

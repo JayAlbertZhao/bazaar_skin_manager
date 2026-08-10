@@ -36,6 +36,14 @@ A runtime route is identified by:
 Filename matching alone is not sufficient. If validation, decoding, selection,
 or playback fails, the runtime leaves the original FMOD event active.
 
+The authoring identity is the logical slot. A voice pack authored from one
+hero (for example, WAV files still named `MakIdle1.wav`) can be assigned to a
+different hero. During deployment the manager keeps the variants and rewrites
+the runtime event GUID, event path, and ordered selectors from the target
+hero's verified adapter. Unsupported source-only slots are dropped: Mak
+merchant routes remain Mak-only, while the 17 hero routes and two shared menu
+routes are portable across all supported heroes.
+
 Each declared variant contains:
 
 ```json
@@ -60,9 +68,11 @@ matching `*-voice-assets.json`. Its `schema_version` must follow:
 <producer>-voice-assets/v<major>
 ```
 
-The source manifest supplies target metadata and rows containing logical route,
-event identity, selectors, an audio-relative path, and the expected SHA-256.
-The importer converts those rows into the runtime `audio-manifest.json`.
+The source manifest supplies source-target metadata and rows containing logical
+route, event identity, selectors, an audio-relative path, and the expected
+SHA-256. The source hero may differ from the active workspace hero. The
+importer uses the logical route to produce a target-specific
+`audio-manifest.json`.
 
 ## Validation
 

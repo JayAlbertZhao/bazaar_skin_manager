@@ -197,6 +197,32 @@ class AudioManifestSemanticValidatorTests(unittest.TestCase):
             "disabled_files_not_checked",
         )
 
+    def test_jules_inventory_reference_validates_exact_hero_routes(self) -> None:
+        inventory_path = ROOT / "manager" / "adapters" / "jules-default.json"
+        inventory = json.loads(inventory_path.read_text(encoding="utf-8"))
+        resolved = validator.resolve_inventory_audio_template(inventory)
+        expected, problems = validator.inventory_slots(resolved)
+        self.assertEqual(problems, [])
+        self.assertEqual(len(expected), 17)
+        manifest = copy.deepcopy(EXAMPLE)
+        manifest["target"]["hero"] = "Jules"
+        manifest["target"]["steam_build"] = "24570932"
+        manifest["logical_slots"] = [
+            {
+                **copy.deepcopy(slot),
+                "category": "hero_voice",
+                "variants": [],
+            }
+            for slot in expected.values()
+        ]
+        with tempfile.TemporaryDirectory() as directory:
+            result = validator.validate_manifest(
+                manifest,
+                inventory,
+                Path(directory),
+            )
+        self.assertTrue(result["valid"], result["issues"])
+
 
 if __name__ == "__main__":
     unittest.main()

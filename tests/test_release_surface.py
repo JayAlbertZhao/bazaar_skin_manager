@@ -53,7 +53,7 @@ class ReleaseSurfaceTests(unittest.TestCase):
         workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text(
             encoding="utf-8"
         )
-        self.assertIn('default: "1.3.3"', workflow)
+        self.assertIn('default: "1.4.0"', workflow)
         self.assertIn('if ($tag.EndsWith("-experimental"))', workflow)
         self.assertNotIn("v1.0.0-experimental", workflow)
         self.assertNotIn("1.0.0 (experimental)", workflow)
@@ -76,7 +76,7 @@ class ReleaseSurfaceTests(unittest.TestCase):
                 encoding="utf-8-sig"
             )
         )
-        self.assertEqual(metadata["version"], "1.3.3")
+        self.assertEqual(metadata["version"], "1.4.0")
         self.assertEqual(metadata["bytes"], runtime.stat().st_size)
         self.assertEqual(
             metadata["sha256"], hashlib.sha256(runtime.read_bytes()).hexdigest()
@@ -247,6 +247,20 @@ class ReleaseSurfaceTests(unittest.TestCase):
         self.assertIn("extract_game_template(", core)
         self.assertIn("$env:PYTHON", build)
         self.assertIn("Get-Command python", build)
+
+    def test_public_builds_bundle_all_hero_audio_route_catalog(self) -> None:
+        manager = (ROOT / "build-manager.ps1").read_text(encoding="utf-8")
+        generator = (ROOT / "build-asset-generator.ps1").read_text(
+            encoding="utf-8"
+        )
+        for build in (manager, generator):
+            self.assertIn("manager\\audio-route-catalog.json;manager", build)
+        catalog = json.loads(
+            (ROOT / "manager" / "audio-route-catalog.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        self.assertEqual(len(catalog["heroes"]), 8)
 
 
 if __name__ == "__main__":

@@ -191,6 +191,7 @@
       ]
     }
   ],
+  "audio_template_ref": "hero-standard-v1",
   "authoring_recipe": {
     "id": "deterministic-raster-v1",
     "version": 2,

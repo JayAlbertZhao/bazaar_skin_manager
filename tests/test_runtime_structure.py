@@ -224,8 +224,8 @@ class RuntimeStructureTests(unittest.TestCase):
             ROOT / "src" / "BazaarSkinManager.Runtime" / "AssemblyInfo.cs"
         ).read_text(encoding="utf-8")
 
-        self.assertIn('PluginVersion = "1.3.3"', plugin)
-        self.assertIn('AssemblyVersion("1.3.3.0")', assembly)
+        self.assertIn('PluginVersion = "1.4.0"', plugin)
+        self.assertIn('AssemblyVersion("1.4.0.0")', assembly)
 
     def test_runtime_self_test_exercises_local_portrait_route(self) -> None:
         diagnostics = (
@@ -254,6 +254,9 @@ class RuntimeStructureTests(unittest.TestCase):
         self.assertIn("RuntimeAudioReplacement.Install(_harmony);", PLUGIN)
         self.assertIn("PackForAudioObject", replacement)
         self.assertIn("SelectedHeroPack", replacement)
+        self.assertIn("NormalizeAudioHeroName", replacement)
+        self.assertIn('return "Pygmalien";', replacement)
+        self.assertIn('return "Hero8";', replacement)
         self.assertIn("CanonicalGuid(guid)", replacement)
         self.assertIn("ReadSelectors(__args[2])", replacement)
         self.assertIn("if (!Play(pack, route, __instance, true))", replacement)
@@ -300,6 +303,8 @@ class RuntimeStructureTests(unittest.TestCase):
         self.assertIn("SHA-256 mismatch.", audio_pack)
         self.assertIn("PcmWaveDecoder.CreateClip", audio_pack)
         self.assertIn("Audio route has no usable variants", audio_pack)
+        self.assertNotIn('manifest.Target.Hero,\n                    "Mak"', audio_pack)
+        self.assertIn("expectedHero", audio_pack)
         self.assertIn("Only integer PCM WAV is supported.", decoder)
         self.assertIn("Voice WAV must be mono.", decoder)
         self.assertIn("Voice WAV must be 16-bit PCM.", decoder)

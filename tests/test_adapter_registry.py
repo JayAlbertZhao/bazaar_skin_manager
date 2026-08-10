@@ -99,6 +99,59 @@ class AdapterRegistryTests(unittest.TestCase):
             "Skin_DRA_01a_StoreImage_TUI",
         )
 
+    def test_all_eight_heroes_have_exact_voice_route_metadata(self):
+        registry = AdapterRegistry.load(ROOT / "manager" / "adapters")
+        base_catalog = json.loads(
+            (ROOT / "manager" / "hero-catalog.json").read_text(encoding="utf-8")
+        )
+        enriched = enrich_catalog(
+            base_catalog,
+            registry,
+            game_dir=None,
+            build_id="24570932",
+        )
+        self.assertTrue(all(hero["audio_supported"] for hero in enriched["heroes"]))
+        route_catalog = json.loads(
+            (ROOT / "manager" / "audio-route-catalog.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        heroes = {item["hero"]: item for item in route_catalog["heroes"]}
+        self.assertEqual(
+            set(heroes),
+            {"Mak", "Vanessa", "Pygmalien", "Dooley", "Jules", "Stelle", "Karnok", "Hero8"},
+        )
+        self.assertEqual(len(route_catalog["menu_routes"]), 2)
+        self.assertEqual(heroes["Karnok"]["event_folder"], "Karnnok")
+        self.assertTrue(
+            all(
+                route["event_path"].startswith("event:/VO/Hero/Karnnok/")
+                for route in heroes["Karnok"]["routes"]
+            )
+        )
+        for hero, entry in heroes.items():
+            self.assertEqual(len(entry["routes"]), 17)
+            self.assertEqual(
+                len(
+                    {
+                        (
+                            route["event_guid"],
+                            tuple(
+                                (item["parameter"], item["label"])
+                                for item in route["selectors"]
+                            ),
+                        )
+                        for route in entry["routes"]
+                    }
+                ),
+                17,
+            )
+            adapter = next(record for record in registry.records if record.hero == hero)
+            self.assertTrue(
+                adapter.payload.get("audio_template")
+                or adapter.payload.get("audio_template_ref") == route_catalog["id"]
+            )
+
     def test_registry_indexes_multiple_hero_skin_adapters(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)

@@ -50,6 +50,7 @@ namespace BazaarSkinManager.TheBazaar
         internal static RuntimeAudioPack Load(
             string packDirectory,
             string manifestRelative,
+            string expectedHero,
             ManualLogSource log)
         {
             if (string.IsNullOrWhiteSpace(manifestRelative))
@@ -89,10 +90,11 @@ namespace BazaarSkinManager.TheBazaar
                     manifest.Target.SteamBuild,
                     "24570932",
                     StringComparison.Ordinal)) ||
+                string.IsNullOrWhiteSpace(expectedHero) ||
                 !string.Equals(
                     manifest.Target.Hero,
-                    "Mak",
-                    StringComparison.Ordinal) ||
+                    expectedHero,
+                    StringComparison.OrdinalIgnoreCase) ||
                 !string.Equals(
                     manifest.Fallback,
                     "original",

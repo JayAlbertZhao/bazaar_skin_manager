@@ -44,7 +44,13 @@ namespace BazaarSkinManager.TheBazaar
         private static int _characterSelectContext;
 
         [ThreadStatic]
+        private static RuntimePack _characterSelectPack;
+
+        [ThreadStatic]
         private static int _equipMusicContext;
+
+        [ThreadStatic]
+        private static RuntimePack _equipMusicPack;
 
         internal static void Initialize(GameObject host)
         {
@@ -150,8 +156,8 @@ namespace BazaarSkinManager.TheBazaar
                         nameof(FinalizeExperimentalPvpResultVoice)));
                 _installed = true;
                 Plugin.Log.LogInfo(
-                    "External voice replacement enabled for exact Mak hero, " +
-                    "Mak merchant, and Mak menu routes.");
+                    "External voice replacement enabled for exact per-hero, " +
+                    "merchant, and menu routes.");
             }
             catch (Exception exception)
             {
@@ -175,7 +181,9 @@ namespace BazaarSkinManager.TheBazaar
             _pvpResultVoiceSide = PvpResultVoiceSide.None;
             ReportedRoutes.Clear();
             _characterSelectContext = 0;
+            _characterSelectPack = null;
             _equipMusicContext = 0;
+            _equipMusicPack = null;
         }
 
         private static bool ReplacePlayVo(
@@ -518,16 +526,17 @@ namespace BazaarSkinManager.TheBazaar
             object[] __args,
             ref bool __state)
         {
-            __state = __args != null &&
-                __args.Length == 1 &&
-                string.Equals(
-                    Convert.ToString(
-                        __args[0],
-                        CultureInfo.InvariantCulture),
-                    "Mak",
-                    StringComparison.Ordinal);
+            string hero = __args != null && __args.Length == 1
+                ? Convert.ToString(
+                    __args[0],
+                    CultureInfo.InvariantCulture)
+                : string.Empty;
+            RuntimePack pack = Plugin.PackForHero(
+                NormalizeAudioHeroName(hero));
+            __state = pack != null && pack.Audio != null;
             if (__state)
             {
+                _characterSelectPack = pack;
                 _characterSelectContext++;
             }
         }
@@ -537,6 +546,10 @@ namespace BazaarSkinManager.TheBazaar
             if (__state && _characterSelectContext > 0)
             {
                 _characterSelectContext--;
+                if (_characterSelectContext == 0)
+                {
+                    _characterSelectPack = null;
+                }
             }
         }
 
@@ -559,12 +572,13 @@ namespace BazaarSkinManager.TheBazaar
                 __instance,
                 "_collectionManager");
             object hero = ReadMember(collectionManager, "_currentHero");
-            __state = string.Equals(
-                Convert.ToString(hero, CultureInfo.InvariantCulture),
-                "Mak",
-                StringComparison.Ordinal);
+            RuntimePack pack = Plugin.PackForHero(
+                NormalizeAudioHeroName(
+                    Convert.ToString(hero, CultureInfo.InvariantCulture)));
+            __state = pack != null && pack.Audio != null;
             if (__state)
             {
+                _equipMusicPack = pack;
                 _equipMusicContext++;
             }
         }
@@ -574,6 +588,10 @@ namespace BazaarSkinManager.TheBazaar
             if (__state && _equipMusicContext > 0)
             {
                 _equipMusicContext--;
+                if (_equipMusicContext == 0)
+                {
+                    _equipMusicPack = null;
+                }
             }
         }
 
@@ -606,7 +624,9 @@ namespace BazaarSkinManager.TheBazaar
                     return true;
                 }
                 LoadedAudioRoute route;
-                RuntimePack pack = SelectedHeroPack();
+                RuntimePack pack = _characterSelectContext > 0
+                    ? _characterSelectPack
+                    : _equipMusicPack;
                 if (pack == null || pack.Audio == null ||
                     !pack.Audio.TryRoute(
                         CanonicalGuid(guid),
@@ -1017,7 +1037,23 @@ namespace BazaarSkinManager.TheBazaar
             {
                 hero = hero.Substring(0, hero.Length - "Merchant".Length);
             }
-            return Plugin.PackForHero(hero);
+            return Plugin.PackForHero(NormalizeAudioHeroName(hero));
+        }
+
+        private static string NormalizeAudioHeroName(string hero)
+        {
+            if (string.Equals(hero, "Pyg", StringComparison.OrdinalIgnoreCase))
+            {
+                return "Pygmalien";
+            }
+            if (string.Equals(
+                hero,
+                "TheDragons",
+                StringComparison.OrdinalIgnoreCase))
+            {
+                return "Hero8";
+            }
+            return hero;
         }
 
         private static object ReadMember(object value, string name)

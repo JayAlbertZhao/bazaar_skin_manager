@@ -1,0 +1,1579 @@
+{
+  "schema_version": 1,
+  "id": "hero-standard-v1",
+  "source": {
+    "steam_build": "24570932",
+    "hero_bank_bundle_sha256": "7d5ce9bcc10dabb8eb8a0db9b51bcde1c2b39c7b9468016ed8fc21555454f5af",
+    "payload_policy": "route_metadata_only_no_game_audio"
+  },
+  "supported_builds": [
+    "24001960",
+    "24570932"
+  ],
+  "audio_format": {
+    "encoding": "wav_pcm16",
+    "sample_rate_hz": 22050,
+    "channels": 1,
+    "sample_width_bytes": 2
+  },
+  "playback": {
+    "gain": 0.8,
+    "single_dialogue_channel": true
+  },
+  "menu_routes": [
+    {
+      "logical_slot": "Menu.CharacterSelect",
+      "category": "menu_voice",
+      "event_guid": "91d85ccb-0008-47ee-88eb-2dd7decea859",
+      "event_path": "event:/VO/Hero/Menu/VO_Menu_Select_Character",
+      "selectors": [],
+      "variants": []
+    },
+    {
+      "logical_slot": "Menu.EquipMusic",
+      "category": "menu_voice",
+      "event_guid": "79dac3ba-05d4-4517-9271-21d63def8262",
+      "event_path": "event:/VO/Hero/Menu/VO_Menu_Equip_Music",
+      "selectors": [],
+      "variants": []
+    }
+  ],
+  "heroes": [
+    {
+      "hero": "Vanessa",
+      "source_hero": "Vanessa",
+      "audio_object_names": [
+        "VanessaAudioSO"
+      ],
+      "event_folder": "Vanessa",
+      "event_prefix": "Vanessa",
+      "routes": [
+        {
+          "logical_slot": "Hit_React.default",
+          "category": "hero_voice",
+          "event_guid": "4da576b3-f389-4e1c-952b-2e259f2e19f2",
+          "event_path": "event:/VO/Hero/Vanessa/VO_Vanessa_HitReact",
+          "selectors": [],
+          "variants": []
+        },
+        {
+          "logical_slot": "Idle.default",
+          "category": "hero_voice",
+          "event_guid": "ef426387-592c-4dbd-b91b-6e50a671ef9c",
+          "event_path": "event:/VO/Hero/Vanessa/VO_Vanessa_Idle",
+          "selectors": [],
+          "variants": []
+        },
+        {
+          "logical_slot": "Last_Life.default",
+          "category": "hero_voice",
+          "event_guid": "1fbf41b5-b93a-4b5d-a530-e34f1524c465",
+          "event_path": "event:/VO/Hero/Vanessa/VO_Vanessa_LastLife",
+          "selectors": [],
+          "variants": []
+        },
+        {
+          "logical_slot": "Level_Up.default",
+          "category": "hero_voice",
+          "event_guid": "1b77197d-18a1-41f9-8827-dabb1db6fc17",
+          "event_path": "event:/VO/Hero/Vanessa/VO_Vanessa_LevelUp",
+          "selectors": [],
+          "variants": []
+        },
+        {
+          "logical_slot": "MultiClick.default",
+          "category": "hero_voice",
+          "event_guid": "9e351ac5-d616-4f11-a089-d4910134ec47",
+          "event_path": "event:/VO/Hero/Vanessa/VO_Vanessa_MultiClick",
+          "selectors": [],
+          "variants": []
+        },
+        {
+          "logical_slot": "No_Buy_Gold.default",
+          "category": "hero_voice",
+          "event_guid": "f7b6e12b-5941-4c3e-a102-4232f4984202",
+          "event_path": "event:/VO/Hero/Vanessa/VO_Vanessa_NoBuyGold",
+          "selectors": [],
+          "variants": []
+        },
+        {
+          "logical_slot": "No_Buy_Space.default",
+          "category": "hero_voice",
+          "event_guid": "4c201ec4-8b60-4e95-87fa-98052a2ce8a3",
+          "event_path": "event:/VO/Hero/Vanessa/VO_Vanessa_NoBuySpace",
+          "selectors": [],
+          "variants": []
+        },
+        {
+          "logical_slot": "PvE_VictoryDefeat.Defeat",
+          "category": "hero_voice",
+          "event_guid": "0aaf0cb4-00ea-4086-8cec-8f51e2a47ce4",
+          "event_path": "event:/VO/Hero/Vanessa/VO_Vanessa_PvE_VictoryDefeat",
+          "selectors": [
+            {
+              "parameter": "VO_Hero_VictoryDefeat",
+              "label": "Defeat"
+            }
+          ],
+          "variants": []
+        },
+        {
+          "logical_slot": "PvE_VictoryDefeat.Victory",
+          "category": "hero_voice",
+          "event_guid": "0aaf0cb4-00ea-4086-8cec-8f51e2a47ce4",
+          "event_path": "event:/VO/Hero/Vanessa/VO_Vanessa_PvE_VictoryDefeat",
+          "selectors": [
+            {
+              "parameter": "VO_Hero_VictoryDefeat",
+              "label": "Victory"
+            }
+          ],
+          "variants": []
+        },
+        {
+          "logical_slot": "PvP_Intro.Left",
+          "category": "hero_voice",
+          "event_guid": "56bd8d76-ffda-42d7-9f72-4a84be123c00",
+          "event_path": "event:/VO/Hero/Vanessa/VO_Vanessa_PvP_Intro",
+          "selectors": [
+            {
+              "parameter": "VO_Hero_PvPIntro_Pan",
+              "label": "Left"
+            }
+          ],
+          "variants": []
+        },
+        {
+          "logical_slot": "PvP_Intro.Right",
+          "category": "hero_voice",
+          "event_guid": "56bd8d76-ffda-42d7-9f72-4a84be123c00",
+          "event_path": "event:/VO/Hero/Vanessa/VO_Vanessa_PvP_Intro",
+          "selectors": [
+            {
+              "parameter": "VO_Hero_PvPIntro_Pan",
+              "label": "Right"
+            }
+          ],
+          "variants": []
+        },
+        {
+          "logical_slot": "PvP_VictoryDefeat.Defeat",
+          "category": "hero_voice",
+          "event_guid": "d7ee7a77-0143-4f34-a855-f1c23dc2460a",
+          "event_path": "event:/VO/Hero/Vanessa/VO_Vanessa_PvP_VictoryDefeat",
+          "selectors": [
+            {
+              "parameter": "VO_Hero_VictoryDefeat",
+              "label": "Defeat"
+            }
+          ],
+          "variants": []
+        },
+        {
+          "logical_slot": "PvP_VictoryDefeat.Victory",
+          "category": "hero_voice",
+          "event_guid": "d7ee7a77-0143-4f34-a855-f1c23dc2460a",
+          "event_path": "event:/VO/Hero/Vanessa/VO_Vanessa_PvP_VictoryDefeat",
+          "selectors": [
+            {
+              "parameter": "VO_Hero_VictoryDefeat",
+              "label": "Victory"
+            }
+          ],
+          "variants": []
+        },
+        {
+          "logical_slot": "Run_VictoryDefeat.Defeat",
+          "category": "hero_voice",
+          "event_guid": "cbac1c48-581f-4c90-8890-7679b82acec1",
+          "event_path": "event:/VO/Hero/Vanessa/VO_Vanessa_Run_VictoryDefeat",
+          "selectors": [
+            {
+              "parameter": "VO_Hero_VictoryDefeat",
+              "label": "Defeat"
+            }
+          ],
+          "variants": []
+        },
+        {
+          "logical_slot": "Run_VictoryDefeat.Perfect",
+          "category": "hero_voice",
+          "event_guid": "cbac1c48-581f-4c90-8890-7679b82acec1",
+          "event_path": "event:/VO/Hero/Vanessa/VO_Vanessa_Run_VictoryDefeat",
+          "selectors": [
+            {
+              "parameter": "VO_Hero_VictoryDefeat",
+              "label": "Perfect"
+            }
+          ],
+          "variants": []
+        },
+        {
+          "logical_slot": "Run_VictoryDefeat.Victory",
+          "category": "hero_voice",
+          "event_guid": "cbac1c48-581f-4c90-8890-7679b82acec1",
+          "event_path": "event:/VO/Hero/Vanessa/VO_Vanessa_Run_VictoryDefeat",
+          "selectors": [
+            {
+              "parameter": "VO_Hero_VictoryDefeat",
+              "label": "Victory"
+            }
+          ],
+          "variants": []
+        },
+        {
+          "logical_slot": "Upgrade.default",
+          "category": "hero_voice",
+          "event_guid": "fd504a98-f1f8-4b53-b91a-9d3f2f2872e3",
+          "event_path": "event:/VO/Hero/Vanessa/VO_Vanessa_Upgrade",
+          "selectors": [],
+          "variants": []
+        }
+      ]
+    },
+    {
+      "hero": "Pygmalien",
+      "source_hero": "Pygmalien",
+      "audio_object_names": [
+        "PygAudioSO"
+      ],
+      "event_folder": "Pyg",
+      "event_prefix": "Pyg",
+      "routes": [
+        {
+          "logical_slot": "Hit_React.default",
+          "category": "hero_voice",
+          "event_guid": "0f492c61-ea36-46ad-94b2-7afe1206fada",
+          "event_path": "event:/VO/Hero/Pyg/VO_Pyg_HitReact",
+          "selectors": [],
+          "variants": []
+        },
+        {
+          "logical_slot": "Idle.default",
+          "category": "hero_voice",
+          "event_guid": "3aac8e8b-9cd3-4f17-aa27-0f1470c945ed",
+          "event_path": "event:/VO/Hero/Pyg/VO_Pyg_Idle",
+          "selectors": [],
+          "variants": []
+        },
+        {
+          "logical_slot": "Last_Life.default",
+          "category": "hero_voice",
+          "event_guid": "7551073b-0600-4a7e-a1d0-06d0cc3f223d",
+          "event_path": "event:/VO/Hero/Pyg/VO_Pyg_LastLife",
+          "selectors": [],
+          "variants": []
+        },
+        {
+          "logical_slot": "Level_Up.default",
+          "category": "hero_voice",
+          "event_guid": "60898f1b-3e65-4253-8c2f-e9629d614e44",
+          "event_path": "event:/VO/Hero/Pyg/VO_Pyg_LevelUp",
+          "selectors": [],
+          "variants": []
+        },
+        {
+          "logical_slot": "MultiClick.default",
+          "category": "hero_voice",
+          "event_guid": "bc5ca87b-fa8d-4568-ae3f-ef8569645644",
+          "event_path": "event:/VO/Hero/Pyg/VO_Pyg_MultiClick",
+          "selectors": [],
+          "variants": []
+        },
+        {
+          "logical_slot": "No_Buy_Gold.default",
+          "category": "hero_voice",
+          "event_guid": "83d819df-8b5a-4d63-8d7e-60aeab136247",
+          "event_path": "event:/VO/Hero/Pyg/VO_Pyg_NoBuyGold",
+          "selectors": [],
+          "variants": []
+        },
+        {
+          "logical_slot": "No_Buy_Space.default",
+          "category": "hero_voice",
+          "event_guid": "419143c2-9a76-41c8-a048-77eb8f436b02",
+          "event_path": "event:/VO/Hero/Pyg/VO_Pyg_NoBuySpace",
+          "selectors": [],
+          "variants": []
+        },
+        {
+          "logical_slot": "PvE_VictoryDefeat.Defeat",
+          "category": "hero_voice",
+          "event_guid": "58a9f804-ebf8-4ebb-8c6a-e80c4504a233",
+          "event_path": "event:/VO/Hero/Pyg/VO_Pyg_PvE_VictoryDefeat",
+          "selectors": [
+            {
+              "parameter": "VO_Hero_VictoryDefeat",
+              "label": "Defeat"
+            }
+          ],
+          "variants": []
+        },
+        {
+          "logical_slot": "PvE_VictoryDefeat.Victory",
+          "category": "hero_voice",
+          "event_guid": "58a9f804-ebf8-4ebb-8c6a-e80c4504a233",
+          "event_path": "event:/VO/Hero/Pyg/VO_Pyg_PvE_VictoryDefeat",
+          "selectors": [
+            {
+              "parameter": "VO_Hero_VictoryDefeat",
+              "label": "Victory"
+            }
+          ],
+          "variants": []
+        },
+        {
+          "logical_slot": "PvP_Intro.Left",
+          "category": "hero_voice",
+          "event_guid": "669ce0ef-ce66-4d84-a81c-b9445f51c0e9",
+          "event_path": "event:/VO/Hero/Pyg/VO_Pyg_PvP_Intro",
+          "selectors": [
+            {
+              "parameter": "VO_Hero_PvPIntro_Pan",
+              "label": "Left"
+            }
+          ],
+          "variants": []
+        },
+        {
+          "logical_slot": "PvP_Intro.Right",
+          "category": "hero_voice",
+          "event_guid": "669ce0ef-ce66-4d84-a81c-b9445f51c0e9",
+          "event_path": "event:/VO/Hero/Pyg/VO_Pyg_PvP_Intro",
+          "selectors": [
+            {
+              "parameter": "VO_Hero_PvPIntro_Pan",
+              "label": "Right"
+            }
+          ],
+          "variants": []
+        },
+        {
+          "logical_slot": "PvP_VictoryDefeat.Defeat",
+          "category": "hero_voice",
+          "event_guid": "8f443cb1-0e13-4d06-9fb6-0a0f2a5870bd",
+          "event_path": "event:/VO/Hero/Pyg/VO_Pyg_PvP_VictoryDefeat",
+          "selectors": [
+            {
+              "parameter": "VO_Hero_VictoryDefeat",
+              "label": "Defeat"
+            }
+          ],
+          "variants": []
+        },
+        {
+          "logical_slot": "PvP_VictoryDefeat.Victory",
+          "category": "hero_voice",
+          "event_guid": "8f443cb1-0e13-4d06-9fb6-0a0f2a5870bd",
+          "event_path": "event:/VO/Hero/Pyg/VO_Pyg_PvP_VictoryDefeat",
+          "selectors": [
+            {
+              "parameter": "VO_Hero_VictoryDefeat",
+              "label": "Victory"
+            }
+          ],
+          "variants": []
+        },
+        {
+          "logical_slot": "Run_VictoryDefeat.Defeat",
+          "category": "hero_voice",
+          "event_guid": "154a9420-32fe-4235-b349-7c5996dba8ca",
+          "event_path": "event:/VO/Hero/Pyg/VO_Pyg_Run_VictoryDefeat",
+          "selectors": [
+            {
+              "parameter": "VO_Hero_VictoryDefeat",
+              "label": "Defeat"
+            }
+          ],
+          "variants": []
+        },
+        {
+          "logical_slot": "Run_VictoryDefeat.Perfect",
+          "category": "hero_voice",
+          "event_guid": "154a9420-32fe-4235-b349-7c5996dba8ca",
+          "event_path": "event:/VO/Hero/Pyg/VO_Pyg_Run_VictoryDefeat",
+          "selectors": [
+            {
+              "parameter": "VO_Hero_VictoryDefeat",
+              "label": "Perfect"
+            }
+          ],
+          "variants": []
+        },
+        {
+          "logical_slot": "Run_VictoryDefeat.Victory",
+          "category": "hero_voice",
+          "event_guid": "154a9420-32fe-4235-b349-7c5996dba8ca",
+          "event_path": "event:/VO/Hero/Pyg/VO_Pyg_Run_VictoryDefeat",
+          "selectors": [
+            {
+              "parameter": "VO_Hero_VictoryDefeat",
+              "label": "Victory"
+            }
+          ],
+          "variants": []
+        },
+        {
+          "logical_slot": "Upgrade.default",
+          "category": "hero_voice",
+          "event_guid": "602cd261-2f82-4337-acac-462dad6fcd0f",
+          "event_path": "event:/VO/Hero/Pyg/VO_Pyg_Upgrade",
+          "selectors": [],
+          "variants": []
+        }
+      ]
+    },
+    {
+      "hero": "Dooley",
+      "source_hero": "Dooley",
+      "audio_object_names": [
+        "DooleyAudioSO"
+      ],
+      "event_folder": "Dooley",
+      "event_prefix": "Dooley",
+      "routes": [
+        {
+          "logical_slot": "Hit_React.default",
+          "category": "hero_voice",
+          "event_guid": "19bc5316-3a1a-4f4b-a2f2-a3db5c6c15e9",
+          "event_path": "event:/VO/Hero/Dooley/VO_Dooley_HitReact",
+          "selectors": [],
+          "variants": []
+        },
+        {
+          "logical_slot": "Idle.default",
+          "category": "hero_voice",
+          "event_guid": "cc53755c-1177-40d5-b616-a56086f31b55",
+          "event_path": "event:/VO/Hero/Dooley/VO_Dooley_Idle",
+          "selectors": [],
+          "variants": []
+        },
+        {
+          "logical_slot": "Last_Life.default",
+          "category": "hero_voice",
+          "event_guid": "47c3bb53-144b-4dd3-9720-8a4b5b1a3047",
+          "event_path": "event:/VO/Hero/Dooley/VO_Dooley_LastLife",
+          "selectors": [],
+          "variants": []
+        },
+        {
+          "logical_slot": "Level_Up.default",
+          "category": "hero_voice",
+          "event_guid": "6e4e283e-13cf-4b39-add9-8317f017c12f",
+          "event_path": "event:/VO/Hero/Dooley/VO_Dooley_LevelUp",
+          "selectors": [],
+          "variants": []
+        },
+        {
+          "logical_slot": "MultiClick.default",
+          "category": "hero_voice",
+          "event_guid": "5801c334-6871-4fa1-a7f1-340808ac1552",
+          "event_path": "event:/VO/Hero/Dooley/VO_Dooley_MultiClick",
+          "selectors": [],
+          "variants": []
+        },
+        {
+          "logical_slot": "No_Buy_Gold.default",
+          "category": "hero_voice",
+          "event_guid": "3b04dac8-99a1-4e5e-939c-c63b6e1c1fbd",
+          "event_path": "event:/VO/Hero/Dooley/VO_Dooley_NoBuyGold",
+          "selectors": [],
+          "variants": []
+        },
+        {
+          "logical_slot": "No_Buy_Space.default",
+          "category": "hero_voice",
+          "event_guid": "673508e9-14a4-4e76-b0bb-ed4ad21480ea",
+          "event_path": "event:/VO/Hero/Dooley/VO_Dooley_NoBuySpace",
+          "selectors": [],
+          "variants": []
+        },
+        {
+          "logical_slot": "PvE_VictoryDefeat.Defeat",
+          "category": "hero_voice",
+          "event_guid": "8484d50c-ce28-4270-9706-f44509f6dfdd",
+          "event_path": "event:/VO/Hero/Dooley/VO_Dooley_PvE_VictoryDefeat",
+          "selectors": [
+            {
+              "parameter": "VO_Hero_VictoryDefeat",
+              "label": "Defeat"
+            }
+          ],
+          "variants": []
+        },
+        {
+          "logical_slot": "PvE_VictoryDefeat.Victory",
+          "category": "hero_voice",
+          "event_guid": "8484d50c-ce28-4270-9706-f44509f6dfdd",
+          "event_path": "event:/VO/Hero/Dooley/VO_Dooley_PvE_VictoryDefeat",
+          "selectors": [
+            {
+              "parameter": "VO_Hero_VictoryDefeat",
+              "label": "Victory"
+            }
+          ],
+          "variants": []
+        },
+        {
+          "logical_slot": "PvP_Intro.Left",
+          "category": "hero_voice",
+          "event_guid": "fd2ac64b-6c50-48de-8ed9-6abcf0da2ad9",
+          "event_path": "event:/VO/Hero/Dooley/VO_Dooley_PvP_Intro",
+          "selectors": [
+            {
+              "parameter": "VO_Hero_PvPIntro_Pan",
+              "label": "Left"
+            }
+          ],
+          "variants": []
+        },
+        {
+          "logical_slot": "PvP_Intro.Right",
+          "category": "hero_voice",
+          "event_guid": "fd2ac64b-6c50-48de-8ed9-6abcf0da2ad9",
+          "event_path": "event:/VO/Hero/Dooley/VO_Dooley_PvP_Intro",
+          "selectors": [
+            {
+              "parameter": "VO_Hero_PvPIntro_Pan",
+              "label": "Right"
+            }
+          ],
+          "variants": []
+        },
+        {
+          "logical_slot": "PvP_VictoryDefeat.Defeat",
+          "category": "hero_voice",
+          "event_guid": "5765acd7-91e6-4cfe-81bd-02a5525179bf",
+          "event_path": "event:/VO/Hero/Dooley/VO_Dooley_PvP_VictoryDefeat",
+          "selectors": [
+            {
+              "parameter": "VO_Hero_VictoryDefeat",
+              "label": "Defeat"
+            }
+          ],
+          "variants": []
+        },
+        {
+          "logical_slot": "PvP_VictoryDefeat.Victory",
+          "category": "hero_voice",
+          "event_guid": "5765acd7-91e6-4cfe-81bd-02a5525179bf",
+          "event_path": "event:/VO/Hero/Dooley/VO_Dooley_PvP_VictoryDefeat",
+          "selectors": [
+            {
+              "parameter": "VO_Hero_VictoryDefeat",
+              "label": "Victory"
+            }
+          ],
+          "variants": []
+        },
+        {
+          "logical_slot": "Run_VictoryDefeat.Defeat",
+          "category": "hero_voice",
+          "event_guid": "3e148484-3d9a-4705-bb79-c8f265a7249c",
+          "event_path": "event:/VO/Hero/Dooley/VO_Dooley_Run_VictoryDefeat",
+          "selectors": [
+            {
+              "parameter": "VO_Hero_VictoryDefeat",
+              "label": "Defeat"
+            }
+          ],
+          "variants": []
+        },
+        {
+          "logical_slot": "Run_VictoryDefeat.Perfect",
+          "category": "hero_voice",
+          "event_guid": "3e148484-3d9a-4705-bb79-c8f265a7249c",
+          "event_path": "event:/VO/Hero/Dooley/VO_Dooley_Run_VictoryDefeat",
+          "selectors": [
+            {
+              "parameter": "VO_Hero_VictoryDefeat",
+              "label": "Perfect"
+            }
+          ],
+          "variants": []
+        },
+        {
+          "logical_slot": "Run_VictoryDefeat.Victory",
+          "category": "hero_voice",
+          "event_guid": "3e148484-3d9a-4705-bb79-c8f265a7249c",
+          "event_path": "event:/VO/Hero/Dooley/VO_Dooley_Run_VictoryDefeat",
+          "selectors": [
+            {
+              "parameter": "VO_Hero_VictoryDefeat",
+              "label": "Victory"
+            }
+          ],
+          "variants": []
+        },
+        {
+          "logical_slot": "Upgrade.default",
+          "category": "hero_voice",
+          "event_guid": "68440828-0919-412e-a945-52333b784a46",
+          "event_path": "event:/VO/Hero/Dooley/VO_Dooley_Upgrade",
+          "selectors": [],
+          "variants": []
+        }
+      ]
+    },
+    {
+      "hero": "Mak",
+      "source_hero": "Mak",
+      "audio_object_names": [
+        "MakAudioSO"
+      ],
+      "event_folder": "Mak",
+      "event_prefix": "Mak",
+      "routes": [
+        {
+          "logical_slot": "Hit_React.default",
+          "category": "hero_voice",
+          "event_guid": "1c5b69f7-281f-4acd-bb84-1213d8700783",
+          "event_path": "event:/VO/Hero/Mak/VO_Mak_HitReact",
+          "selectors": [],
+          "variants": []
+        },
+        {
+          "logical_slot": "Idle.default",
+          "category": "hero_voice",
+          "event_guid": "c6f1a013-0da1-49dc-bba2-3d82c0845557",
+          "event_path": "event:/VO/Hero/Mak/VO_Mak_Idle",
+          "selectors": [],
+          "variants": []
+        },
+        {
+          "logical_slot": "Last_Life.default",
+          "category": "hero_voice",
+          "event_guid": "bdcce163-3d62-4fab-b570-dfeb5d35a455",
+          "event_path": "event:/VO/Hero/Mak/VO_Mak_LastLife",
+          "selectors": [],
+          "variants": []
+        },
+        {
+          "logical_slot": "Level_Up.default",
+          "category": "hero_voice",
+          "event_guid": "dd8e38dc-0041-4484-bb48-f574b57e0b14",
+          "event_path": "event:/VO/Hero/Mak/VO_Mak_LevelUp",
+          "selectors": [],
+          "variants": []
+        },
+        {
+          "logical_slot": "MultiClick.default",
+          "category": "hero_voice",
+          "event_guid": "1ee063c6-4072-40d5-aea2-e36700a5b45a",
+          "event_path": "event:/VO/Hero/Mak/VO_Mak_MultiClick",
+          "selectors": [],
+          "variants": []
+        },
+        {
+          "logical_slot": "No_Buy_Gold.default",
+          "category": "hero_voice",
+          "event_guid": "fee2d60c-3afd-4333-bbb0-743efe3611d3",
+          "event_path": "event:/VO/Hero/Mak/VO_Mak_NoBuyGold",
+          "selectors": [],
+          "variants": []
+        },
+        {
+          "logical_slot": "No_Buy_Space.default",
+          "category": "hero_voice",
+          "event_guid": "cde3ffec-ef8a-4d40-9b44-b368f22d69d3",
+          "event_path": "event:/VO/Hero/Mak/VO_Mak_NoBuySpace",
+          "selectors": [],
+          "variants": []
+        },
+        {
+          "logical_slot": "PvE_VictoryDefeat.Defeat",
+          "category": "hero_voice",
+          "event_guid": "384a1533-8dd0-4920-b91c-3f9c05771860",
+          "event_path": "event:/VO/Hero/Mak/VO_Mak_PvE_VictoryDefeat",
+          "selectors": [
+            {
+              "parameter": "VO_Hero_VictoryDefeat",
+              "label": "Defeat"
+            }
+          ],
+          "variants": []
+        },
+        {
+          "logical_slot": "PvE_VictoryDefeat.Victory",
+          "category": "hero_voice",
+          "event_guid": "384a1533-8dd0-4920-b91c-3f9c05771860",
+          "event_path": "event:/VO/Hero/Mak/VO_Mak_PvE_VictoryDefeat",
+          "selectors": [
+            {
+              "parameter": "VO_Hero_VictoryDefeat",
+              "label": "Victory"
+            }
+          ],
+          "variants": []
+        },
+        {
+          "logical_slot": "PvP_Intro.Left",
+          "category": "hero_voice",
+          "event_guid": "efb3cb04-cb8c-4a9c-a18b-ed1ef6efbf23",
+          "event_path": "event:/VO/Hero/Mak/VO_Mak_PvP_Intro",
+          "selectors": [
+            {
+              "parameter": "VO_Hero_PvPIntro_Pan",
+              "label": "Left"
+            }
+          ],
+          "variants": []
+        },
+        {
+          "logical_slot": "PvP_Intro.Right",
+          "category": "hero_voice",
+          "event_guid": "efb3cb04-cb8c-4a9c-a18b-ed1ef6efbf23",
+          "event_path": "event:/VO/Hero/Mak/VO_Mak_PvP_Intro",
+          "selectors": [
+            {
+              "parameter": "VO_Hero_PvPIntro_Pan",
+              "label": "Right"
+            }
+          ],
+          "variants": []
+        },
+        {
+          "logical_slot": "PvP_VictoryDefeat.Defeat",
+          "category": "hero_voice",
+          "event_guid": "aa704b55-116b-4470-9700-c2899caa5461",
+          "event_path": "event:/VO/Hero/Mak/VO_Mak_PvP_VictoryDefeat",
+          "selectors": [
+            {
+              "parameter": "VO_Hero_VictoryDefeat",
+              "label": "Defeat"
+            }
+          ],
+          "variants": []
+        },
+        {
+          "logical_slot": "PvP_VictoryDefeat.Victory",
+          "category": "hero_voice",
+          "event_guid": "aa704b55-116b-4470-9700-c2899caa5461",
+          "event_path": "event:/VO/Hero/Mak/VO_Mak_PvP_VictoryDefeat",
+          "selectors": [
+            {
+              "parameter": "VO_Hero_VictoryDefeat",
+              "label": "Victory"
+            }
+          ],
+          "variants": []
+        },
+        {
+          "logical_slot": "Run_VictoryDefeat.Defeat",
+          "category": "hero_voice",
+          "event_guid": "8d141a19-cd95-4b7f-831e-c2fd2f90c65e",
+          "event_path": "event:/VO/Hero/Mak/VO_Mak_Run_VictoryDefeat",
+          "selectors": [
+            {
+              "parameter": "VO_Hero_VictoryDefeat",
+              "label": "Defeat"
+            }
+          ],
+          "variants": []
+        },
+        {
+          "logical_slot": "Run_VictoryDefeat.Perfect",
+          "category": "hero_voice",
+          "event_guid": "8d141a19-cd95-4b7f-831e-c2fd2f90c65e",
+          "event_path": "event:/VO/Hero/Mak/VO_Mak_Run_VictoryDefeat",
+          "selectors": [
+            {
+              "parameter": "VO_Hero_VictoryDefeat",
+              "label": "Perfect"
+            }
+          ],
+          "variants": []
+        },
+        {
+          "logical_slot": "Run_VictoryDefeat.Victory",
+          "category": "hero_voice",
+          "event_guid": "8d141a19-cd95-4b7f-831e-c2fd2f90c65e",
+          "event_path": "event:/VO/Hero/Mak/VO_Mak_Run_VictoryDefeat",
+          "selectors": [
+            {
+              "parameter": "VO_Hero_VictoryDefeat",
+              "label": "Victory"
+            }
+          ],
+          "variants": []
+        },
+        {
+          "logical_slot": "Upgrade.default",
+          "category": "hero_voice",
+          "event_guid": "9b7f636a-9b4d-44a6-acf6-a41dd19bd650",
+          "event_path": "event:/VO/Hero/Mak/VO_Mak_Upgrade",
+          "selectors": [],
+          "variants": []
+        }
+      ]
+    },
+    {
+      "hero": "Stelle",
+      "source_hero": "Stelle",
+      "audio_object_names": [
+        "StelleAudioSO"
+      ],
+      "event_folder": "Stelle",
+      "event_prefix": "Stelle",
+      "routes": [
+        {
+          "logical_slot": "Hit_React.default",
+          "category": "hero_voice",
+          "event_guid": "3a702950-812b-4790-bef5-d2a35f786cc5",
+          "event_path": "event:/VO/Hero/Stelle/VO_Stelle_HitReact",
+          "selectors": [],
+          "variants": []
+        },
+        {
+          "logical_slot": "Idle.default",
+          "category": "hero_voice",
+          "event_guid": "f51db6e1-4411-4155-91a2-9d673ae94417",
+          "event_path": "event:/VO/Hero/Stelle/VO_Stelle_Idle",
+          "selectors": [],
+          "variants": []
+        },
+        {
+          "logical_slot": "Last_Life.default",
+          "category": "hero_voice",
+          "event_guid": "0af025cf-14be-4a83-8194-caf1f2a3bbfb",
+          "event_path": "event:/VO/Hero/Stelle/VO_Stelle_LastLife",
+          "selectors": [],
+          "variants": []
+        },
+        {
+          "logical_slot": "Level_Up.default",
+          "category": "hero_voice",
+          "event_guid": "db473ec3-3e1e-4815-b5af-19caf2f5212b",
+          "event_path": "event:/VO/Hero/Stelle/VO_Stelle_LevelUp",
+          "selectors": [],
+          "variants": []
+        },
+        {
+          "logical_slot": "MultiClick.default",
+          "category": "hero_voice",
+          "event_guid": "3f53c15f-402b-4928-82e8-f6b4419e9031",
+          "event_path": "event:/VO/Hero/Stelle/VO_Stelle_MultiClick",
+          "selectors": [],
+          "variants": []
+        },
+        {
+          "logical_slot": "No_Buy_Gold.default",
+          "category": "hero_voice",
+          "event_guid": "16fbc04c-54ab-4103-9840-faa3a778f5e9",
+          "event_path": "event:/VO/Hero/Stelle/VO_Stelle_NoBuyGold",
+          "selectors": [],
+          "variants": []
+        },
+        {
+          "logical_slot": "No_Buy_Space.default",
+          "category": "hero_voice",
+          "event_guid": "623f9f93-8b36-458c-adb0-e3abf292e10d",
+          "event_path": "event:/VO/Hero/Stelle/VO_Stelle_NoBuySpace",
+          "selectors": [],
+          "variants": []
+        },
+        {
+          "logical_slot": "PvE_VictoryDefeat.Defeat",
+          "category": "hero_voice",
+          "event_guid": "f065ba0d-d160-482f-aa6f-3feecec01891",
+          "event_path": "event:/VO/Hero/Stelle/VO_Stelle_PvE_VictoryDefeat",
+          "selectors": [
+            {
+              "parameter": "VO_Hero_VictoryDefeat",
+              "label": "Defeat"
+            }
+          ],
+          "variants": []
+        },
+        {
+          "logical_slot": "PvE_VictoryDefeat.Victory",
+          "category": "hero_voice",
+          "event_guid": "f065ba0d-d160-482f-aa6f-3feecec01891",
+          "event_path": "event:/VO/Hero/Stelle/VO_Stelle_PvE_VictoryDefeat",
+          "selectors": [
+            {
+              "parameter": "VO_Hero_VictoryDefeat",
+              "label": "Victory"
+            }
+          ],
+          "variants": []
+        },
+        {
+          "logical_slot": "PvP_Intro.Left",
+          "category": "hero_voice",
+          "event_guid": "67f00db4-64e6-45e5-af1d-185b9d41b5bc",
+          "event_path": "event:/VO/Hero/Stelle/VO_Stelle_PvP_Intro",
+          "selectors": [
+            {
+              "parameter": "VO_Hero_PvPIntro_Pan",
+              "label": "Left"
+            }
+          ],
+          "variants": []
+        },
+        {
+          "logical_slot": "PvP_Intro.Right",
+          "category": "hero_voice",
+          "event_guid": "67f00db4-64e6-45e5-af1d-185b9d41b5bc",
+          "event_path": "event:/VO/Hero/Stelle/VO_Stelle_PvP_Intro",
+          "selectors": [
+            {
+              "parameter": "VO_Hero_PvPIntro_Pan",
+              "label": "Right"
+            }
+          ],
+          "variants": []
+        },
+        {
+          "logical_slot": "PvP_VictoryDefeat.Defeat",
+          "category": "hero_voice",
+          "event_guid": "8774bd95-ae49-433a-9104-0d935a0a2d1c",
+          "event_path": "event:/VO/Hero/Stelle/VO_Stelle_PvP_VictoryDefeat",
+          "selectors": [
+            {
+              "parameter": "VO_Hero_VictoryDefeat",
+              "label": "Defeat"
+            }
+          ],
+          "variants": []
+        },
+        {
+          "logical_slot": "PvP_VictoryDefeat.Victory",
+          "category": "hero_voice",
+          "event_guid": "8774bd95-ae49-433a-9104-0d935a0a2d1c",
+          "event_path": "event:/VO/Hero/Stelle/VO_Stelle_PvP_VictoryDefeat",
+          "selectors": [
+            {
+              "parameter": "VO_Hero_VictoryDefeat",
+              "label": "Victory"
+            }
+          ],
+          "variants": []
+        },
+        {
+          "logical_slot": "Run_VictoryDefeat.Defeat",
+          "category": "hero_voice",
+          "event_guid": "fde19975-f637-42a0-978e-c02233f72c9b",
+          "event_path": "event:/VO/Hero/Stelle/VO_Stelle_Run_VictoryDefeat",
+          "selectors": [
+            {
+              "parameter": "VO_Hero_VictoryDefeat",
+              "label": "Defeat"
+            }
+          ],
+          "variants": []
+        },
+        {
+          "logical_slot": "Run_VictoryDefeat.Perfect",
+          "category": "hero_voice",
+          "event_guid": "fde19975-f637-42a0-978e-c02233f72c9b",
+          "event_path": "event:/VO/Hero/Stelle/VO_Stelle_Run_VictoryDefeat",
+          "selectors": [
+            {
+              "parameter": "VO_Hero_VictoryDefeat",
+              "label": "Perfect"
+            }
+          ],
+          "variants": []
+        },
+        {
+          "logical_slot": "Run_VictoryDefeat.Victory",
+          "category": "hero_voice",
+          "event_guid": "fde19975-f637-42a0-978e-c02233f72c9b",
+          "event_path": "event:/VO/Hero/Stelle/VO_Stelle_Run_VictoryDefeat",
+          "selectors": [
+            {
+              "parameter": "VO_Hero_VictoryDefeat",
+              "label": "Victory"
+            }
+          ],
+          "variants": []
+        },
+        {
+          "logical_slot": "Upgrade.default",
+          "category": "hero_voice",
+          "event_guid": "669a5a66-c6a6-4398-83e8-41180452110d",
+          "event_path": "event:/VO/Hero/Stelle/VO_Stelle_Upgrade",
+          "selectors": [],
+          "variants": []
+        }
+      ]
+    },
+    {
+      "hero": "Jules",
+      "source_hero": "Jules",
+      "audio_object_names": [
+        "JulesAudioSO"
+      ],
+      "event_folder": "Jules",
+      "event_prefix": "Jules",
+      "routes": [
+        {
+          "logical_slot": "Hit_React.default",
+          "category": "hero_voice",
+          "event_guid": "b1da3069-929c-4fcf-94d1-890d9cdcb331",
+          "event_path": "event:/VO/Hero/Jules/VO_Jules_HitReact",
+          "selectors": [],
+          "variants": []
+        },
+        {
+          "logical_slot": "Idle.default",
+          "category": "hero_voice",
+          "event_guid": "c6caadc5-a8db-4296-81fb-f15cd62b0086",
+          "event_path": "event:/VO/Hero/Jules/VO_Jules_Idle",
+          "selectors": [],
+          "variants": []
+        },
+        {
+          "logical_slot": "Last_Life.default",
+          "category": "hero_voice",
+          "event_guid": "dbfef891-1d81-4981-ac27-2a9b74cf4b64",
+          "event_path": "event:/VO/Hero/Jules/VO_Jules_LastLife",
+          "selectors": [],
+          "variants": []
+        },
+        {
+          "logical_slot": "Level_Up.default",
+          "category": "hero_voice",
+          "event_guid": "8abb18b6-e2f8-443d-b6b9-f8d6768dbc4b",
+          "event_path": "event:/VO/Hero/Jules/VO_Jules_LevelUp",
+          "selectors": [],
+          "variants": []
+        },
+        {
+          "logical_slot": "MultiClick.default",
+          "category": "hero_voice",
+          "event_guid": "5004c130-a6b0-4b1e-8d6b-d9872bd19f83",
+          "event_path": "event:/VO/Hero/Jules/VO_Jules_MultiClick",
+          "selectors": [],
+          "variants": []
+        },
+        {
+          "logical_slot": "No_Buy_Gold.default",
+          "category": "hero_voice",
+          "event_guid": "580efa59-e063-4d2f-a738-f430edf4cf1a",
+          "event_path": "event:/VO/Hero/Jules/VO_Jules_NoBuyGold",
+          "selectors": [],
+          "variants": []
+        },
+        {
+          "logical_slot": "No_Buy_Space.default",
+          "category": "hero_voice",
+          "event_guid": "05bfde7f-630a-4309-84a2-1ba6b3ba327e",
+          "event_path": "event:/VO/Hero/Jules/VO_Jules_NoBuySpace",
+          "selectors": [],
+          "variants": []
+        },
+        {
+          "logical_slot": "PvE_VictoryDefeat.Defeat",
+          "category": "hero_voice",
+          "event_guid": "5a30ed24-49a3-47d9-b7ae-f946d96e6826",
+          "event_path": "event:/VO/Hero/Jules/VO_Jules_PvE_VictoryDefeat",
+          "selectors": [
+            {
+              "parameter": "VO_Hero_VictoryDefeat",
+              "label": "Defeat"
+            }
+          ],
+          "variants": []
+        },
+        {
+          "logical_slot": "PvE_VictoryDefeat.Victory",
+          "category": "hero_voice",
+          "event_guid": "5a30ed24-49a3-47d9-b7ae-f946d96e6826",
+          "event_path": "event:/VO/Hero/Jules/VO_Jules_PvE_VictoryDefeat",
+          "selectors": [
+            {
+              "parameter": "VO_Hero_VictoryDefeat",
+              "label": "Victory"
+            }
+          ],
+          "variants": []
+        },
+        {
+          "logical_slot": "PvP_Intro.Left",
+          "category": "hero_voice",
+          "event_guid": "8878a639-4b8a-4bb9-90c6-eeff1721302f",
+          "event_path": "event:/VO/Hero/Jules/VO_Jules_PvP_Intro",
+          "selectors": [
+            {
+              "parameter": "VO_Hero_PvPIntro_Pan",
+              "label": "Left"
+            }
+          ],
+          "variants": []
+        },
+        {
+          "logical_slot": "PvP_Intro.Right",
+          "category": "hero_voice",
+          "event_guid": "8878a639-4b8a-4bb9-90c6-eeff1721302f",
+          "event_path": "event:/VO/Hero/Jules/VO_Jules_PvP_Intro",
+          "selectors": [
+            {
+              "parameter": "VO_Hero_PvPIntro_Pan",
+              "label": "Right"
+            }
+          ],
+          "variants": []
+        },
+        {
+          "logical_slot": "PvP_VictoryDefeat.Defeat",
+          "category": "hero_voice",
+          "event_guid": "8450ef66-6e34-409a-b861-cf0391ca818e",
+          "event_path": "event:/VO/Hero/Jules/VO_Jules_PvP_VictoryDefeat",
+          "selectors": [
+            {
+              "parameter": "VO_Hero_VictoryDefeat",
+              "label": "Defeat"
+            }
+          ],
+          "variants": []
+        },
+        {
+          "logical_slot": "PvP_VictoryDefeat.Victory",
+          "category": "hero_voice",
+          "event_guid": "8450ef66-6e34-409a-b861-cf0391ca818e",
+          "event_path": "event:/VO/Hero/Jules/VO_Jules_PvP_VictoryDefeat",
+          "selectors": [
+            {
+              "parameter": "VO_Hero_VictoryDefeat",
+              "label": "Victory"
+            }
+          ],
+          "variants": []
+        },
+        {
+          "logical_slot": "Run_VictoryDefeat.Defeat",
+          "category": "hero_voice",
+          "event_guid": "c81dfd33-b064-4a80-bb1d-abba8bea9088",
+          "event_path": "event:/VO/Hero/Jules/VO_Jules_Run_VictoryDefeat",
+          "selectors": [
+            {
+              "parameter": "VO_Hero_VictoryDefeat",
+              "label": "Defeat"
+            }
+          ],
+          "variants": []
+        },
+        {
+          "logical_slot": "Run_VictoryDefeat.Perfect",
+          "category": "hero_voice",
+          "event_guid": "c81dfd33-b064-4a80-bb1d-abba8bea9088",
+          "event_path": "event:/VO/Hero/Jules/VO_Jules_Run_VictoryDefeat",
+          "selectors": [
+            {
+              "parameter": "VO_Hero_VictoryDefeat",
+              "label": "Perfect"
+            }
+          ],
+          "variants": []
+        },
+        {
+          "logical_slot": "Run_VictoryDefeat.Victory",
+          "category": "hero_voice",
+          "event_guid": "c81dfd33-b064-4a80-bb1d-abba8bea9088",
+          "event_path": "event:/VO/Hero/Jules/VO_Jules_Run_VictoryDefeat",
+          "selectors": [
+            {
+              "parameter": "VO_Hero_VictoryDefeat",
+              "label": "Victory"
+            }
+          ],
+          "variants": []
+        },
+        {
+          "logical_slot": "Upgrade.default",
+          "category": "hero_voice",
+          "event_guid": "73d9c1e2-42c5-4895-a852-c49de90a2fa9",
+          "event_path": "event:/VO/Hero/Jules/VO_Jules_Upgrade",
+          "selectors": [],
+          "variants": []
+        }
+      ]
+    },
+    {
+      "hero": "Karnok",
+      "source_hero": "Karnok",
+      "audio_object_names": [
+        "KarnokAudioSO"
+      ],
+      "event_folder": "Karnnok",
+      "event_prefix": "Karnok",
+      "routes": [
+        {
+          "logical_slot": "Hit_React.default",
+          "category": "hero_voice",
+          "event_guid": "a398061a-88a0-46aa-9842-19cfb1fd5951",
+          "event_path": "event:/VO/Hero/Karnnok/VO_Karnok_HitReact",
+          "selectors": [],
+          "variants": []
+        },
+        {
+          "logical_slot": "Idle.default",
+          "category": "hero_voice",
+          "event_guid": "c513acbb-9812-4252-8796-4fcb5af235a8",
+          "event_path": "event:/VO/Hero/Karnnok/VO_Karnok_Idle",
+          "selectors": [],
+          "variants": []
+        },
+        {
+          "logical_slot": "Last_Life.default",
+          "category": "hero_voice",
+          "event_guid": "723d6ef0-c47a-4c6f-90ef-f43e59307343",
+          "event_path": "event:/VO/Hero/Karnnok/VO_Karnok_LastLife",
+          "selectors": [],
+          "variants": []
+        },
+        {
+          "logical_slot": "Level_Up.default",
+          "category": "hero_voice",
+          "event_guid": "a1acd974-64a5-4894-9c8e-130aac9bfddf",
+          "event_path": "event:/VO/Hero/Karnnok/VO_Karnok_LevelUp",
+          "selectors": [],
+          "variants": []
+        },
+        {
+          "logical_slot": "MultiClick.default",
+          "category": "hero_voice",
+          "event_guid": "40c9cf15-f59c-49cd-b8de-1e4088791b56",
+          "event_path": "event:/VO/Hero/Karnnok/VO_Karnok_MultiClick",
+          "selectors": [],
+          "variants": []
+        },
+        {
+          "logical_slot": "No_Buy_Gold.default",
+          "category": "hero_voice",
+          "event_guid": "01b681a7-d93a-4791-8d57-b066301805ed",
+          "event_path": "event:/VO/Hero/Karnnok/VO_Karnok_NoBuyGold",
+          "selectors": [],
+          "variants": []
+        },
+        {
+          "logical_slot": "No_Buy_Space.default",
+          "category": "hero_voice",
+          "event_guid": "3248e850-3554-4004-a005-748f1bcf8b14",
+          "event_path": "event:/VO/Hero/Karnnok/VO_Karnok_NoBuySpace",
+          "selectors": [],
+          "variants": []
+        },
+        {
+          "logical_slot": "PvE_VictoryDefeat.Defeat",
+          "category": "hero_voice",
+          "event_guid": "77320e1f-629b-4410-a03b-f7a1db62419f",
+          "event_path": "event:/VO/Hero/Karnnok/VO_Karnok_PvE_VictoryDefeat",
+          "selectors": [
+            {
+              "parameter": "VO_Hero_VictoryDefeat",
+              "label": "Defeat"
+            }
+          ],
+          "variants": []
+        },
+        {
+          "logical_slot": "PvE_VictoryDefeat.Victory",
+          "category": "hero_voice",
+          "event_guid": "77320e1f-629b-4410-a03b-f7a1db62419f",
+          "event_path": "event:/VO/Hero/Karnnok/VO_Karnok_PvE_VictoryDefeat",
+          "selectors": [
+            {
+              "parameter": "VO_Hero_VictoryDefeat",
+              "label": "Victory"
+            }
+          ],
+          "variants": []
+        },
+        {
+          "logical_slot": "PvP_Intro.Left",
+          "category": "hero_voice",
+          "event_guid": "970b80d9-1424-4647-a894-6f83d399d99a",
+          "event_path": "event:/VO/Hero/Karnnok/VO_Karnok_PvP_Intro",
+          "selectors": [
+            {
+              "parameter": "VO_Hero_PvPIntro_Pan",
+              "label": "Left"
+            }
+          ],
+          "variants": []
+        },
+        {
+          "logical_slot": "PvP_Intro.Right",
+          "category": "hero_voice",
+          "event_guid": "970b80d9-1424-4647-a894-6f83d399d99a",
+          "event_path": "event:/VO/Hero/Karnnok/VO_Karnok_PvP_Intro",
+          "selectors": [
+            {
+              "parameter": "VO_Hero_PvPIntro_Pan",
+              "label": "Right"
+            }
+          ],
+          "variants": []
+        },
+        {
+          "logical_slot": "PvP_VictoryDefeat.Defeat",
+          "category": "hero_voice",
+          "event_guid": "76de89f8-134b-48f1-80aa-7191727750d9",
+          "event_path": "event:/VO/Hero/Karnnok/VO_Karnok_PvP_VictoryDefeat",
+          "selectors": [
+            {
+              "parameter": "VO_Hero_VictoryDefeat",
+              "label": "Defeat"
+            }
+          ],
+          "variants": []
+        },
+        {
+          "logical_slot": "PvP_VictoryDefeat.Victory",
+          "category": "hero_voice",
+          "event_guid": "76de89f8-134b-48f1-80aa-7191727750d9",
+          "event_path": "event:/VO/Hero/Karnnok/VO_Karnok_PvP_VictoryDefeat",
+          "selectors": [
+            {
+              "parameter": "VO_Hero_VictoryDefeat",
+              "label": "Victory"
+            }
+          ],
+          "variants": []
+        },
+        {
+          "logical_slot": "Run_VictoryDefeat.Defeat",
+          "category": "hero_voice",
+          "event_guid": "3b0dec46-b5ec-41e9-8a9a-7cdce0d1b743",
+          "event_path": "event:/VO/Hero/Karnnok/VO_Karnok_Run_VictoryDefeat",
+          "selectors": [
+            {
+              "parameter": "VO_Hero_VictoryDefeat",
+              "label": "Defeat"
+            }
+          ],
+          "variants": []
+        },
+        {
+          "logical_slot": "Run_VictoryDefeat.Perfect",
+          "category": "hero_voice",
+          "event_guid": "3b0dec46-b5ec-41e9-8a9a-7cdce0d1b743",
+          "event_path": "event:/VO/Hero/Karnnok/VO_Karnok_Run_VictoryDefeat",
+          "selectors": [
+            {
+              "parameter": "VO_Hero_VictoryDefeat",
+              "label": "Perfect"
+            }
+          ],
+          "variants": []
+        },
+        {
+          "logical_slot": "Run_VictoryDefeat.Victory",
+          "category": "hero_voice",
+          "event_guid": "3b0dec46-b5ec-41e9-8a9a-7cdce0d1b743",
+          "event_path": "event:/VO/Hero/Karnnok/VO_Karnok_Run_VictoryDefeat",
+          "selectors": [
+            {
+              "parameter": "VO_Hero_VictoryDefeat",
+              "label": "Victory"
+            }
+          ],
+          "variants": []
+        },
+        {
+          "logical_slot": "Upgrade.default",
+          "category": "hero_voice",
+          "event_guid": "e3089f5e-102e-4618-82bb-2bd2e78c8637",
+          "event_path": "event:/VO/Hero/Karnnok/VO_Karnok_Upgrade",
+          "selectors": [],
+          "variants": []
+        }
+      ]
+    },
+    {
+      "hero": "Hero8",
+      "source_hero": "TheDragons",
+      "audio_object_names": [
+        "TheDragonsAudioSO"
+      ],
+      "event_folder": "TheDragons",
+      "event_prefix": "TheDragons",
+      "routes": [
+        {
+          "logical_slot": "Hit_React.default",
+          "category": "hero_voice",
+          "event_guid": "8238a738-02be-4be9-b7b0-aa4e1cd03c8a",
+          "event_path": "event:/VO/Hero/TheDragons/VO_TheDragons_HitReact",
+          "selectors": [],
+          "variants": []
+        },
+        {
+          "logical_slot": "Idle.default",
+          "category": "hero_voice",
+          "event_guid": "9f0e1d2c-ab3e-4d93-ad80-613f5bb86f54",
+          "event_path": "event:/VO/Hero/TheDragons/VO_TheDragons_Idle",
+          "selectors": [],
+          "variants": []
+        },
+        {
+          "logical_slot": "Last_Life.default",
+          "category": "hero_voice",
+          "event_guid": "af6ca106-8979-4844-8893-ddafcfd6ecad",
+          "event_path": "event:/VO/Hero/TheDragons/VO_TheDragons_LastLife",
+          "selectors": [],
+          "variants": []
+        },
+        {
+          "logical_slot": "Level_Up.default",
+          "category": "hero_voice",
+          "event_guid": "17b7188f-2088-472c-b80c-68bee87d29ca",
+          "event_path": "event:/VO/Hero/TheDragons/VO_TheDragons_LevelUp",
+          "selectors": [],
+          "variants": []
+        },
+        {
+          "logical_slot": "MultiClick.default",
+          "category": "hero_voice",
+          "event_guid": "3d2216c1-77e2-4140-acc7-f635b26dcdf2",
+          "event_path": "event:/VO/Hero/TheDragons/VO_TheDragons_MultiClick",
+          "selectors": [],
+          "variants": []
+        },
+        {
+          "logical_slot": "No_Buy_Gold.default",
+          "category": "hero_voice",
+          "event_guid": "9e09dc21-877b-4d85-9d43-1b09412ec1a0",
+          "event_path": "event:/VO/Hero/TheDragons/VO_TheDragons_NoBuyGold",
+          "selectors": [],
+          "variants": []
+        },
+        {
+          "logical_slot": "No_Buy_Space.default",
+          "category": "hero_voice",
+          "event_guid": "87bf347d-2d4a-4877-ba83-e3a60dc729e5",
+          "event_path": "event:/VO/Hero/TheDragons/VO_TheDragons_NoBuySpace",
+          "selectors": [],
+          "variants": []
+        },
+        {
+          "logical_slot": "PvE_VictoryDefeat.Defeat",
+          "category": "hero_voice",
+          "event_guid": "34c11fd5-45b3-4d0f-a818-c92ec608d64a",
+          "event_path": "event:/VO/Hero/TheDragons/VO_TheDragons_PvE_VictoryDefeat",
+          "selectors": [
+            {
+              "parameter": "VO_Hero_VictoryDefeat",
+              "label": "Defeat"
+            }
+          ],
+          "variants": []
+        },
+        {
+          "logical_slot": "PvE_VictoryDefeat.Victory",
+          "category": "hero_voice",
+          "event_guid": "34c11fd5-45b3-4d0f-a818-c92ec608d64a",
+          "event_path": "event:/VO/Hero/TheDragons/VO_TheDragons_PvE_VictoryDefeat",
+          "selectors": [
+            {
+              "parameter": "VO_Hero_VictoryDefeat",
+              "label": "Victory"
+            }
+          ],
+          "variants": []
+        },
+        {
+          "logical_slot": "PvP_Intro.Left",
+          "category": "hero_voice",
+          "event_guid": "654187c0-6785-4762-8dba-e3ff3fcbbba7",
+          "event_path": "event:/VO/Hero/TheDragons/VO_TheDragons_PvP_Intro",
+          "selectors": [
+            {
+              "parameter": "VO_Hero_PvPIntro_Pan",
+              "label": "Left"
+            }
+          ],
+          "variants": []
+        },
+        {
+          "logical_slot": "PvP_Intro.Right",
+          "category": "hero_voice",
+          "event_guid": "654187c0-6785-4762-8dba-e3ff3fcbbba7",
+          "event_path": "event:/VO/Hero/TheDragons/VO_TheDragons_PvP_Intro",
+          "selectors": [
+            {
+              "parameter": "VO_Hero_PvPIntro_Pan",
+              "label": "Right"
+            }
+          ],
+          "variants": []
+        },
+        {
+          "logical_slot": "PvP_VictoryDefeat.Defeat",
+          "category": "hero_voice",
+          "event_guid": "df4830aa-4ff1-400c-b6f3-f08cfad9c94a",
+          "event_path": "event:/VO/Hero/TheDragons/VO_TheDragons_PvP_VictoryDefeat",
+          "selectors": [
+            {
+              "parameter": "VO_Hero_VictoryDefeat",
+              "label": "Defeat"
+            }
+          ],
+          "variants": []
+        },
+        {
+          "logical_slot": "PvP_VictoryDefeat.Victory",
+          "category": "hero_voice",
+          "event_guid": "df4830aa-4ff1-400c-b6f3-f08cfad9c94a",
+          "event_path": "event:/VO/Hero/TheDragons/VO_TheDragons_PvP_VictoryDefeat",
+          "selectors": [
+            {
+              "parameter": "VO_Hero_VictoryDefeat",
+              "label": "Victory"
+            }
+          ],
+          "variants": []
+        },
+        {
+          "logical_slot": "Run_VictoryDefeat.Defeat",
+          "category": "hero_voice",
+          "event_guid": "12529152-00e4-4449-9580-14c2d1c3bf86",
+          "event_path": "event:/VO/Hero/TheDragons/VO_TheDragons_Run_VictoryDefeat",
+          "selectors": [
+            {
+              "parameter": "VO_Hero_VictoryDefeat",
+              "label": "Defeat"
+            }
+          ],
+          "variants": []
+        },
+        {
+          "logical_slot": "Run_VictoryDefeat.Perfect",
+          "category": "hero_voice",
+          "event_guid": "12529152-00e4-4449-9580-14c2d1c3bf86",
+          "event_path": "event:/VO/Hero/TheDragons/VO_TheDragons_Run_VictoryDefeat",
+          "selectors": [
+            {
+              "parameter": "VO_Hero_VictoryDefeat",
+              "label": "Perfect"
+            }
+          ],
+          "variants": []
+        },
+        {
+          "logical_slot": "Run_VictoryDefeat.Victory",
+          "category": "hero_voice",
+          "event_guid": "12529152-00e4-4449-9580-14c2d1c3bf86",
+          "event_path": "event:/VO/Hero/TheDragons/VO_TheDragons_Run_VictoryDefeat",
+          "selectors": [
+            {
+              "parameter": "VO_Hero_VictoryDefeat",
+              "label": "Victory"
+            }
+          ],
+          "variants": []
+        },
+        {
+          "logical_slot": "Upgrade.default",
+          "category": "hero_voice",
+          "event_guid": "5ec0b9e3-e8e1-46a2-95bb-ee4046d421e0",
+          "event_path": "event:/VO/Hero/TheDragons/VO_TheDragons_Upgrade",
+          "selectors": [],
+          "variants": []
+        }
+      ]
+    }
+  ]
+}

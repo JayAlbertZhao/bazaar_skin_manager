@@ -32,7 +32,18 @@
       "properties": {
         "game": { "const": "The Bazaar" },
         "steam_build": { "type": "string", "pattern": "^[0-9]+$" },
-        "hero": { "const": "Mak" }
+        "hero": {
+          "enum": [
+            "Mak",
+            "Vanessa",
+            "Pygmalien",
+            "Dooley",
+            "Jules",
+            "Stelle",
+            "Karnok",
+            "Hero8"
+          ]
+        }
       }
     },
     "fallback": { "const": "original" },
@@ -151,7 +162,7 @@
         },
         "event_path": {
           "type": "string",
-          "pattern": "^event:/VO/Hero/Mak/VO_Mak_[A-Za-z0-9_]+$"
+          "pattern": "^event:/VO/Hero/[A-Za-z0-9]+/VO_[A-Za-z0-9]+_[A-Za-z0-9_]+$"
         },
         "selectors": {
           "type": "array",

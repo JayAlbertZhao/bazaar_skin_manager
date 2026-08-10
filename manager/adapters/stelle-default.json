@@ -55,6 +55,7 @@
     },
     {"slot": "standing_overlay", "direct_only": true, "match_mode": "exact", "match_names": ["Skin_STE_01a_Base_P", "Skin_STE_01a_UI_Base_P", "Skin_STE_01a_SE_P", "Skin_STE_01a_SkeletonData"]}
   ],
+  "audio_template_ref": "hero-standard-v1",
   "authoring_recipe": {
     "id": "deterministic-raster-v1",
     "version": 2,

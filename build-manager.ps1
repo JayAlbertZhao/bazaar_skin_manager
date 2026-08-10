@@ -1,5 +1,5 @@
 param(
-    [string]$Version = "1.3.3"
+    [string]$Version = "1.4.0"
 )
 
 $ErrorActionPreference = "Stop"
@@ -89,6 +89,7 @@ if (Test-Path -LiteralPath $managerAssets -PathType Container) {
     --hidden-import spine_manager_core `
     --add-binary "$fmodDll;fmod_toolkit\libfmod\Windows\x64" `
     --add-data "$root\manager\hero-catalog.json;manager" `
+    --add-data "$root\manager\audio-route-catalog.json;manager" `
     --add-data "$root\manager\adapters;manager\adapters" `
     $managerAssetArguments `
     --add-data "$runtime;dist\runtime" `

@@ -52,6 +52,7 @@ PROJECT_ROOT = Path(
 )
 CATALOG_PATH = PROJECT_ROOT / "manager" / "hero-catalog.json"
 ADAPTERS_PATH = PROJECT_ROOT / "manager" / "adapters"
+AUDIO_ROUTE_CATALOG_PATH = PROJECT_ROOT / "manager" / "audio-route-catalog.json"
 WORKSPACES_ROOT = manager_root() / "workspaces"
 STATE_FILE = "studio.json"
 SUPPORTED_IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".bmp"}
@@ -215,9 +216,88 @@ def _all_visual_slot_ids() -> set[str]:
 def _audio_template(target: dict) -> dict:
     adapter = _adapter_for_target(target)
     template = adapter.payload.get("audio_template")
-    if not template:
+    if template:
+        return deepcopy(template)
+    reference = str(adapter.payload.get("audio_template_ref") or "")
+    if not reference:
         raise ValueError(f"Adapter {adapter.adapter_id} has no audio routes.")
-    return template
+    catalog_payload = _read_json(AUDIO_ROUTE_CATALOG_PATH)
+    if reference != catalog_payload.get("id"):
+        raise ValueError(
+            f"Adapter {adapter.adapter_id} requests unknown audio template "
+            f"{reference}."
+        )
+    hero_id = str(target.get("hero") or adapter.hero)
+    hero = next(
+        (
+            item
+            for item in catalog_payload.get("heroes") or []
+            if str(item.get("hero") or "").casefold() == hero_id.casefold()
+        ),
+        None,
+    )
+    if hero is None:
+        raise ValueError(f"Audio template {reference} has no hero {hero_id}.")
+    routes = deepcopy(hero.get("routes") or [])
+    routes.extend(deepcopy(catalog_payload.get("menu_routes") or []))
+    return {
+        "schema_version": 1,
+        "enabled": True,
+        "target": {
+            "game": "The Bazaar",
+            "steam_build": str(catalog_payload["source"]["steam_build"]),
+            "supported_builds": deepcopy(
+                catalog_payload.get("supported_builds") or []
+            ),
+            "hero": hero_id,
+        },
+        "fallback": "original",
+        "audio_format": deepcopy(catalog_payload["audio_format"]),
+        "playback": deepcopy(catalog_payload["playback"]),
+        "routes": routes,
+    }
+
+
+def _retarget_audio_manifest_payload(manifest: dict, target: dict) -> dict:
+    """Bind portable logical voice slots to one hero's exact FMOD routes."""
+
+    template = _audio_template(target)
+    source_routes = {
+        str(route.get("logical_slot") or ""): route
+        for route in manifest.get("routes") or []
+        if route.get("logical_slot") and route.get("variants")
+    }
+    routes = []
+    for exact in template.get("routes") or []:
+        source = source_routes.get(str(exact.get("logical_slot") or ""))
+        if source is None:
+            continue
+        route = {
+            key: deepcopy(exact[key])
+            for key in (
+                "logical_slot",
+                "category",
+                "event_guid",
+                "event_path",
+                "selectors",
+            )
+        }
+        route["variants"] = deepcopy(source.get("variants") or [])
+        routes.append(route)
+    result = deepcopy(manifest)
+    previous_target = deepcopy(manifest.get("target") or {})
+    result["target"] = {
+        "game": "The Bazaar",
+        "steam_build": str(template["target"]["steam_build"]),
+        "hero": str(target["hero"]),
+    }
+    result["fallback"] = "original"
+    result["audio_format"] = deepcopy(template["audio_format"])
+    result["playback"] = deepcopy(template.get("playback") or {"gain": 0.8})
+    result["routes"] = routes
+    if previous_target and previous_target != result["target"]:
+        result["source_audio_target"] = previous_target
+    return result
 
 
 def catalog() -> dict:
@@ -815,10 +895,9 @@ class StudioWorkspace:
         ):
             raise ValueError(f"Unsupported voice source schema: {schema}")
         target = source_manifest.get("target") or {}
-        if target.get("hero") != self.state["target"]["hero"]:
-            raise ValueError(
-                "Voice package hero does not match the selected workspace hero."
-            )
+        source_hero = str(target.get("hero") or "").strip()
+        if not source_hero:
+            raise ValueError("Voice package target.hero is missing.")
         assets = source_manifest.get("assets") or []
         route_rows: dict[tuple[str, str, str, str, str], list[dict]] = {}
         copied_sources: set[Path] = set()
@@ -861,12 +940,12 @@ class StudioWorkspace:
             return [(pool, selectors)]
 
         def category_for(event_path: str) -> str:
-            if event_path.startswith("event:/VO/Hero/Mak/"):
-                return "hero_voice"
-            if event_path.startswith("event:/VO/Merchant/MakMerchant/"):
-                return "merchant_voice"
             if event_path.startswith("event:/VO/Hero/Menu/"):
                 return "menu_voice"
+            if event_path.startswith("event:/VO/Hero/"):
+                return "hero_voice"
+            if event_path.startswith("event:/VO/Merchant/"):
+                return "merchant_voice"
             raise ValueError(f"Unsupported event path: {event_path}")
 
         for row in assets:
@@ -965,11 +1044,16 @@ class StudioWorkspace:
                 "name": manifest_path.parent.name,
                 "version": source_manifest.get("version"),
                 "schema": schema,
+                "hero": source_hero,
             },
             "audio_format": deepcopy(template["audio_format"]),
             "playback": deepcopy(template.get("playback") or {"gain": 0.8}),
             "routes": routes,
         }
+        runtime_manifest = _retarget_audio_manifest_payload(
+            runtime_manifest,
+            self.state["target"],
+        )
         runtime_path = self.directory / "audio-manifest.json"
         _write_json(runtime_path, runtime_manifest)
         self.state["audio_manifest"] = runtime_path.relative_to(
@@ -1160,10 +1244,13 @@ class StudioWorkspace:
                 if str(source_target.get("hero") or "").casefold() != str(
                     target.get("hero") or ""
                 ).casefold():
-                    # Current audio manifests carry hero-specific FMOD routes.
-                    # Cross-profession assignments remain visual-only until a
-                    # route-independent source audio schema is available.
-                    workspace.state["audio_manifest"] = None
+                    audio = workspace.audio_manifest()
+                    if audio:
+                        remapped = _retarget_audio_manifest_payload(audio, target)
+                        if remapped.get("routes"):
+                            _write_json(workspace.audio_manifest_path(), remapped)
+                        else:
+                            workspace.state["audio_manifest"] = None
                     # Animation sources are also authored against a specific
                     # profession skeleton.  Cross-profession reuse is static
                     # visual-only until the Spine component materializes a

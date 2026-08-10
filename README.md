@@ -43,6 +43,8 @@ files goes through its verified, reversible deployment transaction.
 - Detects Steam installations across registered and conventional library paths.
 - Imports complete visual-and-audio ZIP packs.
 - Supports individual image and audio slot editing.
+- Retargets one portable logical voice set across all eight supported heroes;
+  source filenames such as `MakIdle1.wav` do not bind the pack to Mak.
 - Provides automatic generation and a separate per-slot authoring mode.
 - Lets each visual slot keep independent image, position, and scale settings;
   background-capable slots can compose separately adjustable background and
@@ -186,13 +188,13 @@ Build the runtime and manager:
 
 ```powershell
 .\build.ps1 -Configuration Release
-.\build.ps1 -Version 1.3.3
-.\build-manager.ps1 -Version 1.3.3
-.\build-asset-generator.ps1 -Version 1.3.3
-.\build-spine-manager.ps1 -Version 1.3.3
-.\build-installer.ps1 -Version 1.3.3
-.\package-manager-portable.ps1 -Version 1.3.3
-.\package-asset-generator-portable.ps1 -Version 1.3.3
+.\build.ps1 -Version 1.4.0
+.\build-manager.ps1 -Version 1.4.0
+.\build-asset-generator.ps1 -Version 1.4.0
+.\build-spine-manager.ps1 -Version 1.4.0
+.\build-installer.ps1 -Version 1.4.0
+.\package-manager-portable.ps1 -Version 1.4.0
+.\package-asset-generator-portable.ps1 -Version 1.4.0
 ```
 
 Useful source commands:

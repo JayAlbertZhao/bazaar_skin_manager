@@ -227,7 +227,10 @@ def enrich_catalog(
         hero["audio_supported"] = any(
             (
                 (adapter := registry.find(hero["id"], item["id"])) is not None
-                and bool(adapter.payload.get("audio_template"))
+                and bool(
+                    adapter.payload.get("audio_template")
+                    or adapter.payload.get("audio_template_ref")
+                )
                 and item["deployment_status"] == "supported"
             )
             for item in skins

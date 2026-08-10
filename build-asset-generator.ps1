@@ -1,5 +1,5 @@
 param(
-    [string]$Version = "1.3.3",
+    [string]$Version = "1.4.0",
     [string]$OutputDirectory = ""
 )
 
@@ -62,6 +62,7 @@ $pyInstallerArguments = @(
     "--hidden-import", "unity_bundle_texture_patch",
     "--add-binary", "$fmodDll;fmod_toolkit\libfmod\Windows\x64",
     "--add-data", "$root\manager\hero-catalog.json;manager",
+    "--add-data", "$root\manager\audio-route-catalog.json;manager",
     "--add-data", "$root\manager\adapters;manager\adapters",
     "--add-data", "$runtime;dist\runtime",
     "--add-data", "$runtimeMetadata;dist\runtime",

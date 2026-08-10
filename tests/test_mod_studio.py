@@ -196,6 +196,66 @@ class ModStudioTests(unittest.TestCase):
             workspace.build_pack()
             self.assertEqual(validate_pack(workspace.directory), [])
 
+    def test_mak_voice_source_package_retargets_to_jules_exact_routes(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            source_root = root / "voice-source"
+            wav = source_root / "audio" / "MakIdle1.wav"
+            write_runtime_wav(wav)
+            source_manifest = {
+                "schema_version": "example-voice-assets/v1",
+                "version": "1.0.0",
+                "target": {
+                    "game": "The Bazaar",
+                    "steam_build": "24570932",
+                    "hero": "Mak",
+                },
+                "assets": [
+                    {
+                        "row_number": 1,
+                        "logical_pool": "Idle.default",
+                        "sample_name": "MakIdle1",
+                        "event_path": "event:/VO/Hero/Mak/VO_Mak_Idle",
+                        "event_guid": "c6f1a013-0da1-49dc-bba2-3d82c0845557",
+                        "selector": None,
+                        "audio_file": "audio/MakIdle1.wav",
+                        "audio_sha256": sha256_file(wav),
+                        "asset_action": "replace_candidate",
+                    }
+                ],
+            }
+            (source_root / "example-voice-assets.json").write_text(
+                json.dumps(source_manifest),
+                encoding="utf-8",
+            )
+            archive = root / "voice.zip"
+            with zipfile.ZipFile(archive, "w") as output:
+                for path in source_root.rglob("*"):
+                    if path.is_file():
+                        output.write(path, path.relative_to(source_root).as_posix())
+            workspace = StudioWorkspace.create(
+                "test.voice-jules",
+                root=root / "workspaces",
+                hero="Jules",
+                skin="Skin_JUL_01/A",
+                skin_name_contains="JUL_01a",
+            )
+            summary = workspace.import_zip(archive)
+            self.assertEqual(summary.audio_routes, ["Idle.default"])
+            manifest = workspace.audio_manifest()
+            self.assertEqual(manifest["target"]["hero"], "Jules")
+            self.assertEqual(manifest["source_package"]["hero"], "Mak")
+            self.assertEqual(
+                manifest["routes"][0]["event_guid"],
+                "c6caadc5-a8db-4296-81fb-f15cd62b0086",
+            )
+            self.assertEqual(
+                manifest["routes"][0]["event_path"],
+                "event:/VO/Hero/Jules/VO_Jules_Idle",
+            )
+            workspace.build_pack()
+            self.assertEqual(validate_pack(workspace.directory), [])
+
     def test_complete_pack_round_trip(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
@@ -332,6 +392,9 @@ class ModStudioTests(unittest.TestCase):
                 "hero_select",
                 Image.new("RGBA", (512, 512), (10, 20, 30, 255)),
             )
+            voice = root / "voice.wav"
+            write_runtime_wav(voice)
+            source.import_audio("Idle.default", voice)
             original_target = dict(source.state["target"])
             targets = [
                 {
@@ -357,6 +420,12 @@ class ModStudioTests(unittest.TestCase):
                             encoding="utf-8"
                         )
                     )
+                    audio = json.loads(
+                        (workspace.directory / "audio-manifest.json").read_text(
+                            encoding="utf-8"
+                        )
+                    )
+                    manifest["_test_audio"] = audio
                     captured.append(manifest)
                 return {"packs": captured}
 
@@ -377,6 +446,18 @@ class ModStudioTests(unittest.TestCase):
             self.assertEqual(len({manifest["id"] for manifest in captured}), 2)
             for manifest in captured:
                 self.assertEqual(manifest["source_pack"]["id"], "test.reusable")
+                self.assertEqual(
+                    manifest["_test_audio"]["target"]["hero"],
+                    manifest["target"]["hero"],
+                )
+                self.assertEqual(
+                    manifest["_test_audio"]["routes"][0]["event_path"],
+                    (
+                        "event:/VO/Hero/Dooley/VO_Dooley_Idle"
+                        if manifest["target"]["hero"] == "Dooley"
+                        else "event:/VO/Hero/Jules/VO_Jules_Idle"
+                    ),
+                )
                 self.assertIn(
                     "hero_select",
                     {
