@@ -9,6 +9,8 @@ from pathlib import Path
 import queue
 import shutil
 import threading
+import time
+import traceback
 from typing import Callable
 import uuid
 import tkinter as tk
@@ -27,6 +29,7 @@ from mod_studio_core import (
     export_original_visual_reference,
 )
 from skin_pack_builder import _load_badge_template, apply_declared_clip_mask
+from support_report import append_error_log
 
 
 COLORS = {
@@ -106,6 +109,21 @@ class SlotState:
         if self.mode == "layered":
             return bool(self.background.path or self.character.path)
         return bool(self.direct.path)
+
+
+@dataclass
+class ManualBuildSnapshot:
+    pack_id: str
+    name: str
+    version: str
+    hero: str
+    skin: str
+    skin_name_contains: str
+    slot_states: dict[str, SlotState]
+    slot_sizes: dict[str, tuple[int, int]]
+    automatic_authoring: dict
+    dirty_slots: set[str]
+    workspace: "StudioWorkspace | None"
 
 
 def _resolved_output(recipe: dict, slot: str) -> dict:
@@ -356,8 +374,14 @@ class ManualSlotEditor:
         self.preview_scale = 1.0
         self.drag_origin: tuple[int, int, int, int] | None = None
         self._loading_controls = False
+        self.dirty_slots: set[str] = set()
+        self.slot_preview_cache: dict[str, Image.Image] = {}
+        self.build_events: queue.Queue[tuple[str, object]] = queue.Queue()
+        self.build_busy = False
+        self.build_buttons: list[ttk.Button] = []
         self._build_ui()
         self.new_project()
+        self.root.after(100, self._poll_build_events)
 
     def _build_ui(self) -> None:
         outer = ttk.Frame(self.host, padding=12)
@@ -375,7 +399,20 @@ class ManualSlotEditor:
             text="逐槽位导入成品图；支持背景/人物分层的槽位可分别调整两层。",
             foreground=COLORS["muted"],
         ).pack(side="left", padx=(14, 0), pady=(5, 0))
-        ttk.Button(heading, text="新建项目", command=self.new_project).pack(side="right")
+        new_button = ttk.Button(heading, text="新建项目", command=self.new_project)
+        new_button.pack(side="right")
+        self.build_buttons.append(new_button)
+        export_button = ttk.Button(heading, text="导出 ZIP…", command=self._export)
+        export_button.pack(side="right", padx=(0, 8))
+        self.build_buttons.append(export_button)
+        import_button = ttk.Button(
+            heading,
+            text="导入到皮肤库",
+            style="Accent.TButton",
+            command=self._import,
+        )
+        import_button.pack(side="right", padx=(0, 8))
+        self.build_buttons.append(import_button)
 
         project = ttk.LabelFrame(outer, text="皮肤包", padding=10)
         project.pack(fill="x", pady=(0, 10))
@@ -484,6 +521,14 @@ class ManualSlotEditor:
             widgets.append(label)
             entry = ttk.Entry(inputs, textvariable=self.path_vars[layer_id])
             entry.grid(row=row, column=1, sticky="ew", padx=(8, 6), pady=3)
+            entry.bind(
+                "<Return>",
+                lambda _event, selected=layer_id: self._path_entry_changed(selected),
+            )
+            entry.bind(
+                "<FocusOut>",
+                lambda _event, selected=layer_id: self._path_entry_changed(selected),
+            )
             widgets.append(entry)
             browse = ttk.Button(
                 inputs,
@@ -602,13 +647,17 @@ class ManualSlotEditor:
         ttk.Label(footer, textvariable=self.status_var, foreground=COLORS["muted"]).pack(
             side="left"
         )
-        ttk.Button(footer, text="导出 ZIP…", command=self._export).pack(side="right")
-        ttk.Button(
+        footer_export = ttk.Button(footer, text="导出 ZIP…", command=self._export)
+        footer_export.pack(side="right")
+        self.build_buttons.append(footer_export)
+        footer_import = ttk.Button(
             footer,
             text="导入到皮肤库",
             style="Accent.TButton",
             command=self._import,
-        ).pack(side="right", padx=(0, 8))
+        )
+        footer_import.pack(side="right", padx=(0, 8))
+        self.build_buttons.append(footer_import)
 
     def _adapter(self):
         adapter_id = self.adapter_labels.get(self.target_var.get())
@@ -645,6 +694,8 @@ class ManualSlotEditor:
     def new_project(self) -> None:
         self.editing_workspace = None
         self.automatic_authoring = {}
+        self.dirty_slots = set()
+        self.slot_preview_cache = {}
         self.current_slot = ""
         self.current_layer = "direct"
         default = self.adapters[0]
@@ -686,10 +737,22 @@ class ManualSlotEditor:
             slot: SlotState.from_dict(payload.get(slot), workspace.directory)
             for slot in self.slot_names
         }
+        declared_overrides = authoring.get("manual_overrides")
+        self.dirty_slots = (
+            {str(slot) for slot in declared_overrides if str(slot) in self.slot_states}
+            if isinstance(declared_overrides, list)
+            else {str(slot) for slot in payload if str(slot) in self.slot_states}
+        )
+        self.slot_preview_cache = {}
         self._apply_target_contracts(select_first=True)
         self.status_var.set(f"正在编辑：{self.name_var.get()}；保存后覆盖同名皮肤包")
 
-    def continue_from_automatic_workspace(self, workspace: StudioWorkspace) -> None:
+    def continue_from_automatic_workspace(
+        self,
+        workspace: StudioWorkspace,
+        *,
+        preserve_overrides: bool = False,
+    ) -> None:
         """Use one generated workspace as the editable per-slot draft cache."""
 
         authoring = workspace.state.get("authoring") or {}
@@ -709,6 +772,13 @@ class ManualSlotEditor:
         if not label:
             raise ValueError("自动草稿的目标不再具有可编辑适配器。")
 
+        previous_pack_id = self.pack_id
+        previous_states = deepcopy(self.slot_states)
+        previous_dirty = set(self.dirty_slots)
+        previous_previews = {
+            slot: image.copy() for slot, image in self.slot_preview_cache.items()
+        }
+
         self.editing_workspace = workspace
         self.automatic_authoring = deepcopy(authoring)
         self.current_slot = ""
@@ -721,12 +791,27 @@ class ManualSlotEditor:
         self.slot_states = {slot: SlotState() for slot in self.slot_names}
         self._apply_target_contracts(select_first=False)
 
-        self.slot_states = automatic_draft_slot_states(
+        automatic_states = automatic_draft_slot_states(
             workspace,
             tuple(self.slot_states),
             self.background_slots,
             self.template_slots,
         )
+        same_project = previous_pack_id.casefold() == self.pack_id.casefold()
+        if preserve_overrides and same_project:
+            for slot in previous_dirty:
+                if slot in automatic_states and slot in previous_states:
+                    automatic_states[slot] = previous_states[slot]
+            self.dirty_slots = previous_dirty & set(automatic_states)
+            self.slot_preview_cache = {
+                slot: image
+                for slot, image in previous_previews.items()
+                if slot in self.dirty_slots
+            }
+        else:
+            self.dirty_slots = set()
+            self.slot_preview_cache = {}
+        self.slot_states = automatic_states
 
         for slot in self.slot_tree.get_children():
             self._refresh_slot_status(slot)
@@ -739,7 +824,8 @@ class ManualSlotEditor:
             self.slot_tree.focus(configured)
             self._load_slot(configured)
         self.status_var.set(
-            f"已接续自动草稿：{self.name_var.get()}；逐槽位调整将复用同一工作区缓存"
+            f"已接续自动草稿：{self.name_var.get()}；"
+            f"保留 {len(self.dirty_slots)} 个逐槽位覆盖"
         )
 
     def _apply_target_contracts(self, *, select_first: bool = False) -> None:
@@ -777,6 +863,66 @@ class ManualSlotEditor:
         if state is None or not state.has_input():
             return "未提供"
         return "分层" if state.mode == "layered" else "成品图"
+
+    def _mark_dirty(self, slot: str | None = None) -> None:
+        selected = slot or self.current_slot
+        if not selected:
+            return
+        self.dirty_slots.add(selected)
+        self.slot_preview_cache.pop(selected, None)
+        self.status_var.set(
+            f"草稿已修改：{len(self.dirty_slots)} 个槽位覆盖默认模式；切换模式不会重新生成"
+        )
+
+    def has_overrides(self) -> bool:
+        return bool(self.dirty_slots)
+
+    def override_count(self) -> int:
+        return len(self.dirty_slots)
+
+    def current_pack_id(self) -> str:
+        return self.pack_id
+
+    def commit_for_mode_switch(
+        self,
+        preview_slots: set[str] | None = None,
+    ) -> dict[str, Image.Image]:
+        """Commit Tk controls and return an in-memory override snapshot.
+
+        This deliberately performs no file copies, PNG encoding, workspace
+        rebuild, or ZIP work.  Notebook tab handlers must stay cheap.
+        """
+
+        self._commit_controls()
+        overrides: dict[str, Image.Image] = {}
+        requested = self.dirty_slots & preview_slots if preview_slots is not None else self.dirty_slots
+        for slot in requested:
+            if slot not in self.slot_states:
+                continue
+            if not self.slot_states[slot].has_input():
+                overrides[slot] = Image.new(
+                    "RGBA",
+                    self.slot_sizes[slot],
+                    (0, 0, 0, 0),
+                )
+                continue
+            cached = self.slot_preview_cache.get(slot)
+            if cached is None:
+                foreground, background = self._render_slot(slot)
+                cached = (
+                    background.copy()
+                    if background is not None
+                    else Image.new("RGBA", foreground.size, (0, 0, 0, 0))
+                )
+                cached.alpha_composite(foreground)
+                self.slot_preview_cache[slot] = cached.copy()
+            overrides[slot] = cached.copy()
+        return overrides
+
+    def show_background_sync(self) -> None:
+        self.status_var.set(
+            "默认草稿已变化，正在后台同步未覆盖槽位；当前逐槽位调整可以继续使用"
+        )
 
     def _refresh_slot_status(self, slot: str) -> None:
         if self.slot_tree.exists(slot):
@@ -914,6 +1060,7 @@ class ManualSlotEditor:
         self._commit_controls()
         state = self.slot_states[self.current_slot]
         state.mode = self.mode_var.get()
+        self._mark_dirty()
         self.current_layer = "direct" if state.mode == "direct" else "character"
         self._show_mode_rows()
         self._load_layer_controls()
@@ -970,6 +1117,17 @@ class ManualSlotEditor:
         if selected is not None:
             self._set_layer_path(layer_id, selected)
 
+    def _path_entry_changed(self, layer_id: str) -> None:
+        if not self.current_slot:
+            return
+        state = self.slot_states[self.current_slot]
+        before = state.layer(layer_id).path
+        self._commit_controls()
+        if state.layer(layer_id).path != before:
+            self._mark_dirty()
+            self._refresh_slot_status(self.current_slot)
+            self._render_preview()
+
     def _set_layer_path(self, layer_id: str, path: Path) -> None:
         if path.suffix.casefold() not in SUPPORTED_IMAGE_EXTENSIONS:
             messagebox.showerror("素材格式不支持", f"不支持 {path.suffix} 图像。", parent=self.root)
@@ -983,6 +1141,7 @@ class ManualSlotEditor:
         self.path_vars[layer_id].set(str(path.resolve()))
         if self.current_slot:
             self.slot_states[self.current_slot].layer(layer_id).path = str(path.resolve())
+            self._mark_dirty()
             self._refresh_slot_status(self.current_slot)
         self._render_preview()
 
@@ -990,6 +1149,7 @@ class ManualSlotEditor:
         self.path_vars[layer_id].set("")
         if self.current_slot:
             self.slot_states[self.current_slot].layer(layer_id).path = ""
+            self._mark_dirty()
             self._refresh_slot_status(self.current_slot)
         self._render_preview()
 
@@ -997,13 +1157,22 @@ class ManualSlotEditor:
         if not self.current_slot:
             return
         self.slot_states[self.current_slot] = SlotState()
+        self._mark_dirty()
         self._load_slot(self.current_slot)
         self._refresh_slot_status(self.current_slot)
 
     def _transform_changed(self, _event: tk.Event | None = None) -> None:
         if self._loading_controls:
             return
+        before = None
+        if self.current_slot:
+            layer = self.slot_states[self.current_slot].layer(self.current_layer)
+            before = (layer.x, layer.y, layer.scale)
         self._commit_controls()
+        if self.current_slot:
+            layer = self.slot_states[self.current_slot].layer(self.current_layer)
+            if before != (layer.x, layer.y, layer.scale):
+                self._mark_dirty()
         self._load_layer_controls()
         self._render_preview()
 
@@ -1011,9 +1180,12 @@ class ManualSlotEditor:
         if not self.current_slot:
             return
         layer = self.slot_states[self.current_slot].layer(self.current_layer)
+        changed = (layer.x, layer.y, layer.scale) != (0, 0, 1.0)
         layer.x = 0
         layer.y = 0
         layer.scale = 1.0
+        if changed:
+            self._mark_dirty()
         self._load_layer_controls()
         self._render_preview()
 
@@ -1036,9 +1208,14 @@ class ManualSlotEditor:
                     return dict(layer["clip_mask"])
         return None
 
-    def _render_slot(self, slot: str) -> tuple[Image.Image, Image.Image | None]:
-        state = self.slot_states[slot]
-        size = self.slot_sizes[slot]
+    def _render_slot(
+        self,
+        slot: str,
+        slot_states: dict[str, SlotState] | None = None,
+        slot_sizes: dict[str, tuple[int, int]] | None = None,
+    ) -> tuple[Image.Image, Image.Image | None]:
+        state = (slot_states or self.slot_states)[slot]
+        size = (slot_sizes or self.slot_sizes)[slot]
         if state.mode == "direct":
             source = self._open_image(state.direct.path)
             if source is None:
@@ -1109,6 +1286,11 @@ class ManualSlotEditor:
                 "RGBA", foreground.size, (0, 0, 0, 0)
             )
             source.alpha_composite(foreground)
+            if self.current_slot in self.dirty_slots:
+                # Cache the actual exported pixels before adding the preview-
+                # only frame guide.  Default mode consumes this snapshot when
+                # both views share the same project.
+                self.slot_preview_cache[self.current_slot] = source.copy()
             if self.current_slot in PORTRAIT_PREVIEW_SLOTS:
                 clip = self._portrait_clip_declaration(self.current_slot)
                 if clip:
@@ -1291,6 +1473,7 @@ class ManualSlotEditor:
         layer.y = source_y + round((event.y - start_y) / self.preview_scale)
         self.x_var.set(layer.x)
         self.y_var.set(layer.y)
+        self._mark_dirty()
         self._render_preview()
 
     def _drag_end(self, _event: tk.Event) -> None:
@@ -1325,37 +1508,55 @@ class ManualSlotEditor:
             shutil.copy2(source, destination)
         return destination.relative_to(workspace.directory).as_posix()
 
-    def build_workspace(self) -> StudioWorkspace:
+    def _build_snapshot(self) -> ManualBuildSnapshot:
         self._commit_controls()
         pack_id, name, version = self._validated_identity()
         adapter = self._adapter()
-        workspace = self.editing_workspace
-        if workspace is None:
-            workspace = StudioWorkspace.create(
-                pack_id,
-                root=WORKSPACES_ROOT,
-                name=name,
-                version=version,
-                hero=adapter.hero,
-                skin=adapter.skin,
-                skin_name_contains=adapter.skin_name_contains,
-            )
-        workspace.set_metadata(
+        return ManualBuildSnapshot(
             pack_id=pack_id,
             name=name,
             version=version,
             hero=adapter.hero,
             skin=adapter.skin,
             skin_name_contains=adapter.skin_name_contains,
+            slot_states=deepcopy(self.slot_states),
+            slot_sizes=dict(self.slot_sizes),
+            automatic_authoring=deepcopy(getattr(self, "automatic_authoring", {})),
+            dirty_slots=set(getattr(self, "dirty_slots", set())),
+            workspace=self.editing_workspace,
+        )
+
+    def _materialize_workspace(
+        self,
+        snapshot: ManualBuildSnapshot,
+    ) -> StudioWorkspace:
+        workspace = snapshot.workspace
+        if workspace is None:
+            workspace = StudioWorkspace.create(
+                snapshot.pack_id,
+                root=WORKSPACES_ROOT,
+                name=snapshot.name,
+                version=snapshot.version,
+                hero=snapshot.hero,
+                skin=snapshot.skin,
+                skin_name_contains=snapshot.skin_name_contains,
+            )
+        workspace.set_metadata(
+            pack_id=snapshot.pack_id,
+            name=snapshot.name,
+            version=snapshot.version,
+            hero=snapshot.hero,
+            skin=snapshot.skin,
+            skin_name_contains=snapshot.skin_name_contains,
         )
         author_inputs: dict[str, dict] = deepcopy(
-            (getattr(self, "automatic_authoring", {}).get("inputs") or {})
+            (snapshot.automatic_authoring.get("inputs") or {})
         )
         manual_slots: dict[str, dict] = {}
-        for slot, state in self.slot_states.items():
+        for slot, state in snapshot.slot_states.items():
             if not state.has_input():
                 continue
-            record = {"mode": state.mode, "size": list(self.slot_sizes[slot])}
+            record = {"mode": state.mode, "size": list(snapshot.slot_sizes[slot])}
             for layer_id in ("direct", "background", "character"):
                 layer = state.layer(layer_id)
                 relative = self._copy_author_source(
@@ -1371,29 +1572,34 @@ class ManualSlotEditor:
                     }
             manual_slots[slot] = record
 
-        for slot in list((workspace.state.get("visual_slots") or {})):
-            workspace.clear_visual(slot)
+        rendered_images: dict[str, Image.Image] = {}
         paired_background: Image.Image | None = None
-        for slot, state in self.slot_states.items():
+        for slot, state in snapshot.slot_states.items():
             if not state.has_input():
                 continue
-            rendered, background = self._render_slot(slot)
-            workspace.import_pil_image(slot, rendered)
+            rendered, background = self._render_slot(
+                slot,
+                snapshot.slot_states,
+                snapshot.slot_sizes,
+            )
+            rendered_images[slot] = rendered
             if slot == PORTRAIT_PAIR_SLOT and background is not None:
                 paired_background = background
-        explicit_background = self.slot_states.get(PORTRAIT_BACKGROUND_SLOT)
+        explicit_background = snapshot.slot_states.get(PORTRAIT_BACKGROUND_SLOT)
         if paired_background is not None and not (
             explicit_background and explicit_background.has_input()
         ):
-            workspace.import_pil_image(PORTRAIT_BACKGROUND_SLOT, paired_background)
+            rendered_images[PORTRAIT_BACKGROUND_SLOT] = paired_background
+        workspace.replace_visual_images(rendered_images)
 
         manual_authoring = {
             "schema": MANUAL_AUTHORING_SCHEMA,
             "mode": "manual_slots",
             "inputs": author_inputs,
             "manual_slots": manual_slots,
+            "manual_overrides": sorted(snapshot.dirty_slots),
         }
-        automatic_authoring = getattr(self, "automatic_authoring", {})
+        automatic_authoring = snapshot.automatic_authoring
         if automatic_authoring:
             manual_authoring["automatic_draft"] = deepcopy(automatic_authoring)
         workspace.state["authoring"] = manual_authoring
@@ -1401,23 +1607,108 @@ class ManualSlotEditor:
         workspace.state["library_assets"]["inputs"] = {}
         workspace.save()
         workspace.build_pack()
+        return workspace
+
+    def build_workspace(self) -> StudioWorkspace:
+        """Synchronously materialize a snapshot for tests and non-UI callers."""
+
+        snapshot = self._build_snapshot()
+        workspace = self._materialize_workspace(snapshot)
+        self.slot_states = snapshot.slot_states
         self.editing_workspace = workspace
         self.status_var.set(f"已生成 {len(workspace.state.get('visual_slots') or {})} 个槽位")
         return workspace
 
-    def _import(self) -> None:
-        try:
-            workspace = self.build_workspace()
-            self.on_import(workspace)
-        except Exception as error:
-            messagebox.showerror("逐槽位生成失败", str(error), parent=self.root)
+    def _set_build_busy(self, busy: bool) -> None:
+        self.build_busy = busy
+        for button in getattr(self, "build_buttons", []):
+            button.configure(state="disabled" if busy else "normal")
 
-    def _export(self) -> None:
+    def _start_async_build(
+        self,
+        action: str,
+        *,
+        destination: Path | None = None,
+    ) -> bool:
+        if self.build_busy:
+            return False
         try:
-            workspace = self.build_workspace()
+            snapshot = self._build_snapshot()
         except Exception as error:
             messagebox.showerror("逐槽位生成失败", str(error), parent=self.root)
-            return
+            return False
+        self._set_build_busy(True)
+        started = time.perf_counter()
+        self.status_var.set("正在后台生成逐槽位皮肤；界面仍可切换和查看")
+
+        def worker() -> None:
+            try:
+                workspace = self._materialize_workspace(snapshot)
+                if action == "export":
+                    assert destination is not None
+                    workspace.export_zip(destination)
+                self.build_events.put(
+                    (
+                        "complete",
+                        (action, workspace, destination, time.perf_counter() - started),
+                    )
+                )
+            except Exception:
+                details = traceback.format_exc()
+                append_error_log(
+                    manager_root() / "ui-error.log",
+                    f"逐槽位{action}失败",
+                    details,
+                )
+                self.build_events.put(("error", (action, details.strip().splitlines()[-1])))
+
+        threading.Thread(
+            target=worker,
+            name=f"manual-slot-{action}",
+            daemon=True,
+        ).start()
+        return True
+
+    def _poll_build_events(self) -> None:
+        try:
+            while True:
+                kind, payload = self.build_events.get_nowait()
+                self._set_build_busy(False)
+                if kind == "error":
+                    _action, details = payload
+                    self.status_var.set("逐槽位生成失败")
+                    messagebox.showerror("逐槽位生成失败", details, parent=self.root)
+                    continue
+                action, workspace, destination, elapsed = payload
+                self.editing_workspace = workspace
+                self.status_var.set(
+                    f"已生成 {len(workspace.state.get('visual_slots') or {})} 个槽位，"
+                    f"耗时 {elapsed:.1f} 秒"
+                )
+                if action == "import":
+                    self.on_import(workspace)
+                elif action == "export":
+                    messagebox.showinfo(
+                        "导出完成",
+                        f"皮肤包已导出：\n{destination}",
+                        parent=self.root,
+                    )
+        except queue.Empty:
+            pass
+        try:
+            self.root.after(100, self._poll_build_events)
+        except (tk.TclError, RuntimeError):
+            pass
+
+    def import_to_library(self) -> bool:
+        return self._start_async_build("import")
+
+    def _import(self) -> None:
+        self.import_to_library()
+
+    def export_to_zip(self) -> bool:
+        if self.build_busy:
+            return False
         selected = filedialog.asksaveasfilename(
             parent=self.root,
             title="导出逐槽位皮肤包",
@@ -1426,12 +1717,11 @@ class ManualSlotEditor:
             filetypes=(("皮肤包 ZIP", "*.zip"),),
         )
         if not selected:
-            return
-        try:
-            workspace.export_zip(Path(selected))
-            messagebox.showinfo("导出完成", f"皮肤包已导出：\n{selected}", parent=self.root)
-        except Exception as error:
-            messagebox.showerror("导出失败", str(error), parent=self.root)
+            return False
+        return self._start_async_build("export", destination=Path(selected))
+
+    def _export(self) -> None:
+        self.export_to_zip()
 
     def self_test(self) -> None:
         if set(self.slot_states) != set(self.slot_sizes):

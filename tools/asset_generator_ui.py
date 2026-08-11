@@ -111,6 +111,7 @@ class AssetGeneratorUI:
         on_generation_failed: Callable[[str], None] | None = None,
         on_material_import: Callable[[str, Path], None] | None = None,
         on_choose_asset: Callable[[str], Path | None] | None = None,
+        on_effective_action: Callable[[str], bool] | None = None,
     ) -> None:
         self.embedded = parent is not None
         self.root = parent.winfo_toplevel() if parent is not None else RootClass()
@@ -120,6 +121,7 @@ class AssetGeneratorUI:
         self.on_generation_failed = on_generation_failed
         self.on_material_import = on_material_import
         self.on_choose_asset = on_choose_asset
+        self.on_effective_action = on_effective_action
         self.pending_embedded_action: str | None = None
         self.editing_workspace_id: str | None = None
         if not self.embedded:
@@ -152,6 +154,8 @@ class AssetGeneratorUI:
         self.user_small_icon_path = ""
         self.small_icon_brown_preview_var = tk.BooleanVar(value=False)
         self.live_renderer: LivePreviewRenderer | None = None
+        self.manual_override_pack_id = ""
+        self.manual_preview_overrides: dict[str, Image.Image] = {}
         self.preview_refresh_job: str | None = None
         self.pending_preview_slots: set[str] = set()
         self.path_entries: dict[str, ttk.Entry] = {}
@@ -783,6 +787,13 @@ class AssetGeneratorUI:
             style="Alt.TLabel",
             font=("Microsoft YaHei UI", 12, "bold"),
         ).pack(anchor="w", pady=(10, 0))
+        self.manual_override_var = tk.StringVar(value="")
+        ttk.Label(
+            parent,
+            textvariable=self.manual_override_var,
+            style="Alt.TLabel",
+            foreground=COLORS["warning"],
+        ).pack(anchor="w", pady=(2, 0))
         grid = ttk.Frame(parent, style="Alt.TFrame")
         grid.pack(fill="both", expand=True, pady=(6, 8))
         for index, (title, slot) in enumerate(PREVIEW_CARDS):
@@ -1940,6 +1951,8 @@ class AssetGeneratorUI:
     def _embedded_import(self) -> None:
         if self.busy:
             return
+        if self.on_effective_action is not None and self.on_effective_action("import"):
+            return
         try:
             profile = self._profile_from_form(validate=False)
             output = USER_PROJECT_ROOT / "exports" / (
@@ -1956,6 +1969,8 @@ class AssetGeneratorUI:
 
     def _embedded_export(self) -> None:
         if self.busy:
+            return
+        if self.on_effective_action is not None and self.on_effective_action("export"):
             return
         try:
             profile = self._profile_from_form(validate=False)
@@ -2051,6 +2066,41 @@ class AssetGeneratorUI:
         self.log.see("end")
         self.log.configure(state="disabled")
 
+    def set_manual_preview_overrides(
+        self,
+        pack_id: str,
+        images: dict[str, Image.Image],
+        *,
+        total_count: int | None = None,
+    ) -> None:
+        """Expose sparse manual edits in the default-mode preview.
+
+        The automatic form remains the canonical base draft.  Manual mode
+        contributes only explicitly edited slots, which avoids attempting an
+        impossible reverse conversion from arbitrary bitmaps into global
+        character/background parameters.
+        """
+
+        self.manual_override_pack_id = pack_id.strip()
+        self.manual_preview_overrides = {
+            slot: image.copy() for slot, image in images.items()
+        }
+        count = len(self.manual_preview_overrides) if total_count is None else total_count
+        self.manual_override_var.set(
+            (
+                f"当前草稿包含 {count} 个逐槽位覆盖；预览和导出优先使用这些覆盖。"
+                if count
+                else ""
+            )
+        )
+        self._schedule_live_previews()
+
+    def clear_manual_preview_overrides(self) -> None:
+        self.manual_override_pack_id = ""
+        self.manual_preview_overrides = {}
+        self.manual_override_var.set("")
+        self._schedule_live_previews()
+
     def _rebuild_live_renderer(self) -> None:
         self._render_small_icon_source_preview()
         character_text = self.vars["character"].get().strip()
@@ -2094,13 +2144,26 @@ class AssetGeneratorUI:
         self.preview_refresh_job = None
         slots = tuple(self.pending_preview_slots)
         self.pending_preview_slots.clear()
-        if self.live_renderer is None:
+        current_pack_id = self.vars["pack_id"].get().strip()
+        use_manual = (
+            bool(current_pack_id)
+            and current_pack_id.casefold() == self.manual_override_pack_id.casefold()
+        )
+        if self.live_renderer is None and not use_manual:
             return
         for slot in slots:
             canvas = self.preview_canvases.get(slot)
             if canvas is None or canvas.winfo_width() < 20 or canvas.winfo_height() < 20:
                 continue
             try:
+                manual_preview = (
+                    self.manual_preview_overrides.get(slot) if use_manual else None
+                )
+                if manual_preview is not None:
+                    self._render_output_canvas(slot, manual_preview)
+                    continue
+                if self.live_renderer is None:
+                    continue
                 render_arguments = {
                     "character_canvas_offset": (
                         self.character_offset_x,

@@ -667,6 +667,46 @@ class StudioWorkspace:
         self.save()
         return destination
 
+    def replace_visual_images(self, images: dict[str, Image.Image]) -> dict[str, Path]:
+        """Replace the complete visual set and persist workspace state once.
+
+        Per-slot authoring used to call ``clear_visual`` and
+        ``import_pil_image`` for every image.  Besides repeatedly rewriting
+        studio.json, that made a full draft materialization unnecessarily
+        expensive.  This bulk path keeps the same PNG contract while making
+        the state update atomic from the caller's point of view.
+        """
+
+        unknown = sorted(set(images) - set(_all_visual_slot_ids()))
+        if unknown:
+            raise ValueError(f"Unknown visual slots: {', '.join(unknown)}")
+
+        previous = dict(self.state.get("visual_slots") or {})
+        next_visuals: dict[str, str] = {}
+        written: dict[str, Path] = {}
+        assets = self.directory / "assets"
+        assets.mkdir(parents=True, exist_ok=True)
+        for slot, image in images.items():
+            destination = assets / f"{slot}.png"
+            image.convert("RGBA").save(destination, "PNG", optimize=True)
+            next_visuals[slot] = destination.relative_to(self.directory).as_posix()
+            written[slot] = destination
+
+        for slot, relative in previous.items():
+            if slot in next_visuals:
+                continue
+            path = (self.directory / relative).resolve()
+            try:
+                path.relative_to(self.directory)
+            except ValueError:
+                continue
+            if path.is_file():
+                path.unlink()
+
+        self.state["visual_slots"] = next_visuals
+        self.save()
+        return written
+
     def export_original_visual(
         self,
         slot: str,

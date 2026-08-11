@@ -35,6 +35,25 @@ from mod_studio_core import StudioWorkspace  # noqa: E402
 
 
 class ManualSlotEditorTests(unittest.TestCase):
+    def test_default_preview_uses_sparse_manual_override_without_regeneration(self) -> None:
+        ui = AssetGeneratorUI.__new__(AssetGeneratorUI)
+        ui.manual_override_pack_id = "local.dooley.shared"
+        override = Image.new("RGBA", (8, 8), (220, 40, 30, 255))
+        ui.manual_preview_overrides = {"store_image": override}
+        ui.vars = {"pack_id": mock.Mock(get=mock.Mock(return_value="local.dooley.shared"))}
+        ui.pending_preview_slots = {"store_image"}
+        ui.preview_refresh_job = "scheduled"
+        ui.preview_canvases = {
+            "store_image": mock.Mock(winfo_width=mock.Mock(return_value=100), winfo_height=mock.Mock(return_value=100))
+        }
+        ui.live_renderer = mock.Mock()
+        ui._render_output_canvas = mock.Mock()
+
+        ui._refresh_live_previews()
+
+        ui._render_output_canvas.assert_called_once_with("store_image", override)
+        ui.live_renderer.render.assert_not_called()
+
     @staticmethod
     def _create_badge_template(root: Path) -> Path:
         directory = root / "badge-templates" / "hero-select-gold"

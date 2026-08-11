@@ -53,7 +53,7 @@ class ReleaseSurfaceTests(unittest.TestCase):
         workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text(
             encoding="utf-8"
         )
-        self.assertIn('default: "1.4.6"', workflow)
+        self.assertIn('default: "1.4.7"', workflow)
         self.assertIn('if ($tag.EndsWith("-experimental"))', workflow)
         self.assertNotIn("v1.0.0-experimental", workflow)
         self.assertNotIn("1.0.0 (experimental)", workflow)
@@ -76,7 +76,7 @@ class ReleaseSurfaceTests(unittest.TestCase):
                 encoding="utf-8-sig"
             )
         )
-        self.assertEqual(metadata["version"], "1.4.6")
+        self.assertEqual(metadata["version"], "1.4.7")
         self.assertEqual(metadata["bytes"], runtime.stat().st_size)
         self.assertEqual(
             metadata["sha256"], hashlib.sha256(runtime.read_bytes()).hexdigest()

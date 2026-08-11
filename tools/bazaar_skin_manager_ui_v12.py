@@ -23,7 +23,7 @@ from tkinter import filedialog, messagebox, ttk
 
 from PIL import Image, ImageDraw, ImageGrab, ImageTk
 
-from asset_generator_ui import AssetGeneratorUI
+from asset_generator_ui import AssetGeneratorUI, PREVIEW_SLOTS
 from manual_slot_editor import ManualSlotEditor
 from bazaar_skin_manager import (
     MANAGER_VERSION,
@@ -347,6 +347,7 @@ class SkinManagerV12:
         self.active_creation_workspace: StudioWorkspace | None = None
         self.active_automatic_fingerprint: str | None = None
         self.pending_manual_mode_switch = False
+        self.pending_effective_action: str | None = None
         self.creation_mode_guard = False
         self.spine_files: list[Path] = []
         self.latest_release: dict | None = None
@@ -1130,6 +1131,7 @@ class SkinManagerV12:
             on_generation_failed=self._generator_generation_failed,
             on_material_import=self._generator_material_imported,
             on_choose_asset=self._generator_choose_asset,
+            on_effective_action=self._generator_effective_action,
         )
         self.manual_slot_editor = ManualSlotEditor(
             manual_page,
@@ -1163,10 +1165,10 @@ class SkinManagerV12:
         )
 
     def _enter_manual_creation_mode(self) -> None:
-        """Synchronize the live automatic form only when it has changed."""
+        """Show manual mode immediately and synchronize its base in background."""
 
         if getattr(self.generator, "busy", False) is True:
-            self._select_creation_mode(0)
+            self.manual_slot_editor.show_background_sync()
             return
         workspace = self.active_creation_workspace
         if not self.generator.has_draft_source():
@@ -1180,13 +1182,11 @@ class SkinManagerV12:
                 try:
                     self.manual_slot_editor.edit_workspace(workspace)
                 except Exception as error:
-                    self._select_creation_mode(0)
                     self._show_error("无法接续逐槽位草稿", error)
             return
         try:
             fingerprint = self.generator.current_draft_fingerprint()
         except Exception as error:
-            self._select_creation_mode(0)
             self._show_error("无法读取默认草稿", error)
             return
         if (
@@ -1197,35 +1197,73 @@ class SkinManagerV12:
                 try:
                     self.manual_slot_editor.edit_workspace(workspace)
                 except Exception as error:
-                    self._select_creation_mode(0)
                     self._show_error("无法接续逐槽位草稿", error)
             return
 
         self.pending_manual_mode_switch = True
-        self._select_creation_mode(0)
+        self.manual_slot_editor.show_background_sync()
         if not self.generator.generate_shared_draft():
             self.pending_manual_mode_switch = False
 
     def _enter_automatic_creation_mode(self) -> None:
-        """Persist the live per-slot controls before leaving that mode."""
+        """Publish manual overrides to the default preview without disk I/O."""
 
-        workspace = getattr(self.manual_slot_editor, "editing_workspace", None)
-        if workspace is None:
-            return
         try:
-            workspace = self.manual_slot_editor.build_workspace()
-            path = str(workspace.directory)
-            self.workspaces[path] = workspace
-            self.active_creation_workspace = workspace
-            self.selected_pack_path = path
-            pack_id = str((workspace.state.get("pack") or {}).get("id") or "")
-            if (self.generator.editing_workspace_id or "").casefold() != pack_id.casefold():
-                profile = self.generator.edit_workspace(workspace)
-                self.active_automatic_fingerprint = self.generator.draft_fingerprint(profile)
+            images = self.manual_slot_editor.commit_for_mode_switch(
+                {slot for _title, slot in PREVIEW_SLOTS}
+            )
+            self.generator.set_manual_preview_overrides(
+                self.manual_slot_editor.current_pack_id(),
+                images,
+                total_count=self.manual_slot_editor.override_count(),
+            )
             self._save_settings()
         except Exception as error:
-            self._select_creation_mode(1)
             self._show_error("无法保存逐槽位草稿", error)
+
+    def _generator_effective_action(self, action: str) -> bool:
+        """Route default-mode publish/export through sparse manual overrides."""
+
+        if action not in {"import", "export"}:
+            return False
+        if not self.manual_slot_editor.has_overrides():
+            return False
+        pack_id = self.generator.vars["pack_id"].get().strip()
+        if pack_id.casefold() != self.manual_slot_editor.current_pack_id().casefold():
+            return False
+        images = self.manual_slot_editor.commit_for_mode_switch(
+            {slot for _title, slot in PREVIEW_SLOTS}
+        )
+        self.generator.set_manual_preview_overrides(
+            pack_id,
+            images,
+            total_count=self.manual_slot_editor.override_count(),
+        )
+        try:
+            fingerprint = self.generator.current_draft_fingerprint()
+        except Exception as error:
+            self._show_error("无法读取默认草稿", error)
+            return True
+        if (
+            self.active_creation_workspace is not None
+            and fingerprint == self.active_automatic_fingerprint
+        ):
+            self._dispatch_effective_action(action)
+            return True
+
+        self.pending_effective_action = action
+        self.pending_manual_mode_switch = True
+        self.manual_slot_editor.show_background_sync()
+        if not self.generator.generate_shared_draft():
+            self.pending_effective_action = None
+            self.pending_manual_mode_switch = False
+        return True
+
+    def _dispatch_effective_action(self, action: str) -> None:
+        if action == "import":
+            self.manual_slot_editor.import_to_library()
+        elif action == "export":
+            self.manual_slot_editor.export_to_zip()
 
     def _generator_draft_generated(self, profile, result) -> None:
         if not result.generated_workspace:
@@ -1237,13 +1275,28 @@ class SkinManagerV12:
         self.active_automatic_fingerprint = self.generator.draft_fingerprint(profile)
         self.selected_pack_path = path
         self._save_settings()
-        if self.pending_manual_mode_switch:
+        if self.pending_manual_mode_switch or getattr(self, "pending_effective_action", None):
             self.pending_manual_mode_switch = False
-            self.manual_slot_editor.continue_from_automatic_workspace(workspace)
-            self._select_creation_mode(1)
+            self.manual_slot_editor.continue_from_automatic_workspace(
+                workspace,
+                preserve_overrides=True,
+            )
+            images = self.manual_slot_editor.commit_for_mode_switch(
+                {slot for _title, slot in PREVIEW_SLOTS}
+            )
+            self.generator.set_manual_preview_overrides(
+                self.manual_slot_editor.current_pack_id(),
+                images,
+                total_count=self.manual_slot_editor.override_count(),
+            )
+        action = getattr(self, "pending_effective_action", None)
+        self.pending_effective_action = None
+        if action:
+            self.root.after_idle(lambda selected=action: self._dispatch_effective_action(selected))
 
     def _generator_generation_failed(self, _details: str) -> None:
         self.pending_manual_mode_switch = False
+        self.pending_effective_action = None
 
     def _manual_slot_choose_asset(self) -> Path | None:
         records = [

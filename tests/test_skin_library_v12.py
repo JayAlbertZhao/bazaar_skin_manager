@@ -15,6 +15,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
 
 from mod_studio_core import StudioWorkspace
+from asset_generator_ui import PREVIEW_SLOTS
 from bazaar_skin_manager_ui_v12 import (
     EMBEDDED_LIBRARY_INDEX,
     SkinManagerV12,
@@ -424,7 +425,7 @@ class ManagerV12SurfaceTests(unittest.TestCase):
             manager.manual_slot_editor.continue_from_automatic_workspace.assert_not_called()
             manager._save_settings.assert_called_once_with()
 
-    def test_switching_to_manual_materializes_changed_live_draft(self) -> None:
+    def test_switching_to_manual_keeps_tab_visible_while_sync_runs(self) -> None:
         manager = SkinManagerV12.__new__(SkinManagerV12)
         manager.generator = mock.Mock()
         manager.generator.current_draft_fingerprint.return_value = "changed"
@@ -438,7 +439,8 @@ class ManagerV12SurfaceTests(unittest.TestCase):
         manager._enter_manual_creation_mode()
 
         self.assertTrue(manager.pending_manual_mode_switch)
-        manager._select_creation_mode.assert_called_once_with(0)
+        manager._select_creation_mode.assert_not_called()
+        manager.manual_slot_editor.show_background_sync.assert_called_once_with()
         manager.generator.generate_shared_draft.assert_called_once_with()
         manager.manual_slot_editor.edit_workspace.assert_not_called()
 
@@ -496,9 +498,15 @@ class ManagerV12SurfaceTests(unittest.TestCase):
 
             cached = manager.active_creation_workspace
             manager.manual_slot_editor.continue_from_automatic_workspace.assert_called_once_with(
-                cached
+                cached,
+                preserve_overrides=True,
             )
-            manager._select_creation_mode.assert_called_once_with(1)
+            manager._select_creation_mode.assert_not_called()
+            manager.generator.set_manual_preview_overrides.assert_called_once_with(
+                manager.manual_slot_editor.current_pack_id.return_value,
+                manager.manual_slot_editor.commit_for_mode_switch.return_value,
+                total_count=manager.manual_slot_editor.override_count.return_value,
+            )
             self.assertFalse(manager.pending_manual_mode_switch)
 
     def test_default_mode_publish_goes_directly_to_library_management(self) -> None:
@@ -526,7 +534,7 @@ class ManagerV12SurfaceTests(unittest.TestCase):
             manager.pages.select.assert_called_once_with(manager.management_page)
             manager.management_tabs.select.assert_called_once_with(manager.pack_tab)
 
-    def test_leaving_manual_mode_persists_the_same_workspace_cache(self) -> None:
+    def test_leaving_manual_mode_only_commits_an_in_memory_preview(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             workspace = StudioWorkspace.create(
                 "local.dooley.manual-cache",
@@ -537,7 +545,9 @@ class ManagerV12SurfaceTests(unittest.TestCase):
             manager = SkinManagerV12.__new__(SkinManagerV12)
             manager.workspaces = {}
             manager.manual_slot_editor = mock.Mock(editing_workspace=workspace)
-            manager.manual_slot_editor.build_workspace.return_value = workspace
+            preview = {"store_image": object()}
+            manager.manual_slot_editor.commit_for_mode_switch.return_value = preview
+            manager.manual_slot_editor.current_pack_id.return_value = "local.dooley.manual-cache"
             manager.generator = mock.Mock(editing_workspace_id="local.dooley.manual-cache")
             manager._save_settings = mock.Mock()
             manager._select_creation_mode = mock.Mock()
@@ -545,9 +555,15 @@ class ManagerV12SurfaceTests(unittest.TestCase):
 
             manager._enter_automatic_creation_mode()
 
-            manager.manual_slot_editor.build_workspace.assert_called_once_with()
-            self.assertIs(manager.active_creation_workspace, workspace)
-            self.assertIs(manager.workspaces[str(workspace.directory)], workspace)
+            manager.manual_slot_editor.commit_for_mode_switch.assert_called_once_with(
+                {slot for _title, slot in PREVIEW_SLOTS}
+            )
+            manager.manual_slot_editor.build_workspace.assert_not_called()
+            manager.generator.set_manual_preview_overrides.assert_called_once_with(
+                "local.dooley.manual-cache",
+                preview,
+                total_count=manager.manual_slot_editor.override_count.return_value,
+            )
             manager.generator.edit_workspace.assert_not_called()
             manager._save_settings.assert_called_once_with()
 
