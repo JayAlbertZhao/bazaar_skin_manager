@@ -6,6 +6,8 @@ The Bazaar Skin Manager - Portable quick start
 4. Obtain a compatible skin-pack ZIP from its creator.
 5. Drag the ZIP onto the package area and review the imported slots.
 6. Close The Bazaar and select DEPLOY.
+   If BepInEx is absent, the manager installs its verified official BepInEx
+   5.4.23.5 bootstrap automatically. BazaarPlusPlus is not required.
 7. Select START GAME or launch The Bazaar from Steam.
 8. Use Undeploy / restore original before removing a pack.
 

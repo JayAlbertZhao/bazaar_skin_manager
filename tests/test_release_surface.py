@@ -53,7 +53,7 @@ class ReleaseSurfaceTests(unittest.TestCase):
         workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text(
             encoding="utf-8"
         )
-        self.assertIn('default: "1.4.2"', workflow)
+        self.assertIn('default: "1.4.3"', workflow)
         self.assertIn('if ($tag.EndsWith("-experimental"))', workflow)
         self.assertNotIn("v1.0.0-experimental", workflow)
         self.assertNotIn("1.0.0 (experimental)", workflow)
@@ -76,11 +76,23 @@ class ReleaseSurfaceTests(unittest.TestCase):
                 encoding="utf-8-sig"
             )
         )
-        self.assertEqual(metadata["version"], "1.4.2")
+        self.assertEqual(metadata["version"], "1.4.3")
         self.assertEqual(metadata["bytes"], runtime.stat().st_size)
         self.assertEqual(
             metadata["sha256"], hashlib.sha256(runtime.read_bytes()).hexdigest()
         )
+
+    def test_release_embeds_verified_bepinex_without_bazaarplusplus(self) -> None:
+        archive = ROOT / "third_party" / "BepInEx" / manager.BEPINEX_ARCHIVE_FILENAME
+        self.assertTrue(archive.is_file())
+        self.assertEqual(
+            hashlib.sha256(archive.read_bytes()).hexdigest(),
+            manager.BEPINEX_ARCHIVE_SHA256,
+        )
+        build = (ROOT / "build-manager.ps1").read_text(encoding="utf-8")
+        self.assertIn('third_party\\BepInEx', build)
+        self.assertNotIn('BazaarPlusPlus.dll', build)
+        self.assertIn('--self-test-bepinex-bootstrap', build)
 
     def test_0_9_62_excludes_badge_authoring_pipeline(self) -> None:
         self.assertFalse((ROOT / "tools" / "badge_compositor.py").exists())

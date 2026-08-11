@@ -14,13 +14,14 @@ import struct
 import subprocess
 import sys
 import tempfile
+import zipfile
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Iterable
 
 
 APP_ID = "1617400"
-MANAGER_VERSION = "1.4.2"
+MANAGER_VERSION = "1.4.3"
 PROJECT_ROOT = Path(
     getattr(sys, "_MEIPASS", Path(__file__).resolve().parents[1])
 )
@@ -30,6 +31,23 @@ DEFAULT_RUNTIME_METADATA = (
 )
 PRELOAD_TEXTURE_MODE = "preload_unity_texture2d"
 RUNTIME_CONFIG_FILENAME = "bazaar-skin-manager.the-bazaar.runtime.cfg"
+BEPINEX_VERSION = "5.4.23.5"
+BEPINEX_ARCHIVE_FILENAME = f"BepInEx_win_x64_{BEPINEX_VERSION}.zip"
+DEFAULT_BEPINEX_ARCHIVE = (
+    PROJECT_ROOT / "third_party" / "BepInEx" / BEPINEX_ARCHIVE_FILENAME
+)
+BEPINEX_ARCHIVE_SHA256 = (
+    "82f9878551030f54657792c0740d9d51a09500eeae1fba21106b0c441e6732c4"
+)
+BEPINEX_CORE_SHA256 = (
+    "8255b28902886085c578b9e427d3073c97002db85176d2090cdeda90ef14ce70"
+)
+BEPINEX_REQUIRED_PATHS = (
+    "doorstop_config.ini",
+    "winhttp.dll",
+    "BepInEx/core/BepInEx.dll",
+    "BepInEx/core/BepInEx.Preloader.dll",
+)
 
 
 def _load_bundle_patcher():
@@ -167,6 +185,208 @@ def mods_root() -> Path:
 
 def manager_root() -> Path:
     return local_app_data() / "BazaarSkinManager" / "TheBazaar" / "manager"
+
+
+def bepinex_bootstrap_record_path() -> Path:
+    return manager_root() / "bepinex-bootstrap.json"
+
+
+def _doorstop_targets_bepinex(config_path: Path) -> bool:
+    if not config_path.is_file():
+        return False
+    try:
+        text = config_path.read_text(encoding="utf-8-sig", errors="replace")
+    except OSError:
+        return False
+    enabled = re.search(r"(?im)^\s*enabled\s*=\s*true\s*$", text) is not None
+    target = re.search(
+        r"(?im)^\s*target_?assembly\s*=\s*BepInEx[\\/]core[\\/]"
+        r"BepInEx\.Preloader\.dll\s*$",
+        text,
+    ) is not None
+    return enabled and target
+
+
+def bepinex_status(game_dir: Path) -> dict:
+    """Describe the shared BepInEx 5 bootstrap needed by our runtime."""
+    game_dir = Path(game_dir).resolve()
+    missing = [
+        relative
+        for relative in BEPINEX_REQUIRED_PATHS
+        if not (game_dir / Path(relative)).is_file()
+    ]
+    doorstop_config = game_dir / "doorstop_config.ini"
+    doorstop_ready = _doorstop_targets_bepinex(doorstop_config)
+    core = game_dir / "BepInEx" / "core" / "BepInEx.dll"
+    core_sha256 = sha256_file(core) if core.is_file() else None
+    detected_version = (
+        BEPINEX_VERSION
+        if core_sha256 and core_sha256.casefold() == BEPINEX_CORE_SHA256
+        else None
+    )
+    issues = [f"missing {relative}" for relative in missing]
+    if doorstop_config.is_file() and not doorstop_ready:
+        issues.append(
+            "doorstop_config.ini does not enable the BepInEx 5 preloader"
+        )
+    return {
+        "ready": not missing and doorstop_ready,
+        "version": detected_version,
+        "bootstrap_version": BEPINEX_VERSION,
+        "core_sha256": core_sha256,
+        "game_dir": str(game_dir),
+        "missing": missing,
+        "doorstop_ready": doorstop_ready,
+        "issues": issues,
+    }
+
+
+def _safe_bepinex_archive_entries(archive: zipfile.ZipFile) -> list[zipfile.ZipInfo]:
+    entries: list[zipfile.ZipInfo] = []
+    names: set[str] = set()
+    for entry in archive.infolist():
+        normalized = entry.filename.replace("\\", "/")
+        parts = Path(normalized).parts
+        if (
+            not normalized
+            or normalized.startswith("/")
+            or re.match(r"^[A-Za-z]:", normalized)
+            or ".." in parts
+        ):
+            raise RuntimeError(f"unsafe path in bundled BepInEx archive: {entry.filename}")
+        if entry.is_dir():
+            continue
+        if normalized.casefold() in names:
+            raise RuntimeError(
+                f"duplicate path in bundled BepInEx archive: {entry.filename}"
+            )
+        names.add(normalized.casefold())
+        entries.append(entry)
+    missing = [
+        relative
+        for relative in BEPINEX_REQUIRED_PATHS
+        if relative.casefold() not in names
+    ]
+    if missing:
+        raise RuntimeError(
+            "bundled BepInEx archive is incomplete: " + ", ".join(missing)
+        )
+    return entries
+
+
+def ensure_bepinex(
+    game_dir: Path,
+    archive_path: Path = DEFAULT_BEPINEX_ARCHIVE,
+) -> dict:
+    """Install the pinned official BepInEx 5 payload when it is absent.
+
+    Existing files and third-party plugins are never overwritten. The deploy
+    confirmation already authorizes writing the selected game installation;
+    BepInEx is a shared loader installed as part of that transaction rather
+    than an undeclared dependency on BazaarPlusPlus.
+    """
+    game_dir = Path(game_dir).resolve()
+    before = bepinex_status(game_dir)
+    if before["ready"]:
+        return {
+            **before,
+            "installed": False,
+            "source": "existing",
+            "created_files": [],
+        }
+    archive_path = Path(archive_path).resolve()
+    if not archive_path.is_file():
+        raise RuntimeError(
+            "BepInEx is required and the Skin Manager bootstrap payload is missing: "
+            f"{archive_path}"
+        )
+    digest = sha256_file(archive_path)
+    if digest.casefold() != BEPINEX_ARCHIVE_SHA256:
+        raise RuntimeError(
+            "Bundled BepInEx SHA-256 verification failed; reinstall Skin Manager."
+        )
+
+    created: list[dict] = []
+    with zipfile.ZipFile(archive_path, "r") as archive:
+        entries = _safe_bepinex_archive_entries(archive)
+        with tempfile.TemporaryDirectory() as temp:
+            staging = Path(temp)
+            for entry in entries:
+                relative = Path(entry.filename.replace("\\", "/"))
+                staged = staging / relative
+                staged.parent.mkdir(parents=True, exist_ok=True)
+                with archive.open(entry, "r") as source, staged.open("wb") as target:
+                    shutil.copyfileobj(source, target)
+            conflicts: list[str] = []
+            for entry in entries:
+                relative = Path(entry.filename.replace("\\", "/"))
+                relative_text = relative.as_posix()
+                target = game_dir / relative
+                if not target.is_file():
+                    continue
+                is_loader_file = relative_text in {
+                    "doorstop_config.ini",
+                    "winhttp.dll",
+                } or relative_text.startswith("BepInEx/core/")
+                if (
+                    is_loader_file
+                    and sha256_file(target) != sha256_file(staging / relative)
+                ):
+                    conflicts.append(relative_text)
+            if conflicts:
+                raise RuntimeError(
+                    "The selected game has a partial BepInEx installation with "
+                    "conflicting loader files. Skin Manager did not overwrite it. "
+                    "Back up or remove that incomplete loader, then deploy again. "
+                    "Conflicts: "
+                    + ", ".join(conflicts)
+                )
+            for entry in entries:
+                relative = Path(entry.filename.replace("\\", "/"))
+                target = game_dir / relative
+                if target.exists():
+                    continue
+                staged = staging / relative
+                atomic_copy_file(staged, target)
+                created.append(
+                    {
+                        "path": str(target),
+                        "relative_path": relative.as_posix(),
+                        "sha256": sha256_file(target),
+                    }
+                )
+
+    after = bepinex_status(game_dir)
+    if not after["ready"]:
+        for item in reversed(created):
+            Path(item["path"]).unlink(missing_ok=True)
+        raise RuntimeError(
+            "BepInEx bootstrap could not repair the selected game installation: "
+            + "; ".join(after["issues"])
+        )
+    record = {
+        "schema_version": 1,
+        "manager_version": MANAGER_VERSION,
+        "bepinex_version": BEPINEX_VERSION,
+        "archive": {
+            "filename": BEPINEX_ARCHIVE_FILENAME,
+            "sha256": digest,
+            "source": (
+                "https://github.com/BepInEx/BepInEx/releases/download/"
+                f"v{BEPINEX_VERSION}/{BEPINEX_ARCHIVE_FILENAME}"
+            ),
+        },
+        "game_dir": str(game_dir),
+        "created_files": created,
+    }
+    atomic_write_text(bepinex_bootstrap_record_path(), serialized_json(record))
+    return {
+        **after,
+        "installed": bool(created),
+        "source": "skin-manager-bootstrap",
+        "archive_sha256": digest,
+        "created_files": created,
+    }
 
 
 def runtime_compatibility_path() -> Path:
@@ -1150,10 +1370,6 @@ def install_many(
         raise RuntimeError(f"incomplete game installation: {game.game_dir}")
     if not runtime.is_file():
         raise RuntimeError(f"runtime DLL not built: {runtime}")
-    if not (game.game_dir / "BepInEx" / "core" / "BepInEx.dll").is_file():
-        raise RuntimeError(
-            "BepInEx is missing; install or repair BazaarPlusPlus before this skin runtime"
-        )
     previous_record = existing_install_record() or {}
     if spine_requests is None:
         spine_requests = list(previous_record.get("spine_replacements") or [])
@@ -1193,6 +1409,8 @@ def install_many(
         raise RuntimeError(
             "native deployment is not ready: " + "; ".join(native_issues)
         )
+
+    bepinex = ensure_bepinex(game.game_dir)
 
     if (manager_root() / "install-manifest.json").is_file():
         uninstall()
@@ -1271,6 +1489,12 @@ def install_many(
             "schema_version": 4,
             "manager": {
                 "version": MANAGER_VERSION,
+            },
+            "bepinex": {
+                "version": bepinex.get("version"),
+                "source": bepinex.get("source"),
+                "installed_by_manager": bool(bepinex.get("installed")),
+                "archive_sha256": bepinex.get("archive_sha256"),
             },
             "game": asdict(game),
             "game_fingerprint": fingerprint(game),
@@ -1354,8 +1578,17 @@ def plan_install(runtime: Path, pack: Path, game: GameInstall) -> dict:
     issues.extend(f"invalid pack: {error}" for error in pack_errors)
     if game.complete and not pack_errors:
         issues.extend(native_patch_plan_issues(pack, game))
-    if not (game.game_dir / "BepInEx" / "core" / "BepInEx.dll").is_file():
-        issues.append("BepInEx core is missing; repair BazaarPlusPlus first")
+    bepinex = bepinex_status(game.game_dir)
+    bootstrap_available = (
+        DEFAULT_BEPINEX_ARCHIVE.is_file()
+        and sha256_file(DEFAULT_BEPINEX_ARCHIVE).casefold()
+        == BEPINEX_ARCHIVE_SHA256
+    )
+    if not bepinex["ready"] and not bootstrap_available:
+        issues.append(
+            "BepInEx is missing and the verified Skin Manager bootstrap payload "
+            "is unavailable; reinstall Skin Manager"
+        )
 
     manifest = None
     manifest_path = pack / "mod.json"
@@ -1368,6 +1601,11 @@ def plan_install(runtime: Path, pack: Path, game: GameInstall) -> dict:
         "game": asdict(game),
         "source_runtime": str(runtime),
         "source_pack": str(pack),
+        "bepinex": {
+            **bepinex,
+            "bootstrap_available": bootstrap_available,
+            "action": "none" if bepinex["ready"] else "install_or_repair",
+        },
         "compatibility_fingerprint": (
             runtime_compatibility_payload(game)
             if game.complete
@@ -1526,9 +1764,7 @@ def installation_diagnostics() -> dict:
     managed_payload_present = bool(pack_entries or spine_replacements)
     checks = {
         "game_complete": game.complete,
-        "bepinex_present": (
-            game_dir / "BepInEx" / "core" / "BepInEx.dll"
-        ).is_file(),
+        "bepinex_present": bepinex_status(game_dir)["ready"],
         "plugin_present": plugin.is_file(),
         "plugin_hash_matches": plugin_hash_matches,
         "packs_present": managed_payload_present and all(
@@ -1564,6 +1800,10 @@ def installation_diagnostics() -> dict:
         "healthy": healthy,
         "components": {
             "manager": record.get("manager") or {"version": None},
+            "bepinex": {
+                **(record.get("bepinex") or {}),
+                **bepinex_status(game_dir),
+            },
             "runtime": record.get("runtime") or {
                 "version": None,
                 "path": record["plugin"].get("path"),

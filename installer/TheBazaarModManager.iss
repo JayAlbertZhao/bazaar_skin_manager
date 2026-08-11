@@ -1,5 +1,5 @@
 #ifndef MyAppVersion
-  #define MyAppVersion "1.4.2"
+  #define MyAppVersion "1.4.3"
 #endif
 #ifndef SourceRoot
   #define SourceRoot ".."
@@ -46,6 +46,8 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 Source: "{#SourceRoot}\dist\manager\TheBazaarModManager.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#SourceRoot}\dist\manager\manager-build.json"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#SourceRoot}\docs\portable-quick-start.txt"; DestDir: "{app}"; DestName: "README.txt"; Flags: ignoreversion
+Source: "{#SourceRoot}\third_party\BepInEx\LICENSE.txt"; DestDir: "{app}"; DestName: "BepInEx-LICENSE.txt"; Flags: ignoreversion
+Source: "{#SourceRoot}\third_party\BepInEx\NOTICE.md"; DestDir: "{app}"; DestName: "BepInEx-NOTICE.md"; Flags: ignoreversion
 
 [InstallDelete]
 ; v1.2.x and earlier installed these as separate helper applications. Their

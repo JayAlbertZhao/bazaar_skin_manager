@@ -597,6 +597,17 @@ def image_metrics(image: Image.Image) -> dict:
     }
 
 
+def has_authored_transparency(image: Image.Image) -> bool:
+    """Return whether a source actually contains transparency to preserve.
+
+    Old authoring profiles labelled every user image as authoritative-alpha,
+    including JPEGs and fully opaque PNGs. Treating that declaration as fact
+    bypassed background removal and produced nearly opaque standing canvases.
+    """
+    minimum, _maximum = image.convert("RGBA").getchannel("A").getextrema()
+    return minimum < 255
+
+
 def _validate_metrics(slot: str, metrics: dict, output_recipe: dict) -> None:
     coverage = metrics["alpha_coverage"]
     if coverage < float(output_recipe.get("minimum_alpha_coverage", 0.0)):

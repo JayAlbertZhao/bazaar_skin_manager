@@ -91,9 +91,10 @@ The installer is per-user and does not require administrator rights. If a
 release is unsigned, Windows may display a reputation warning; verify the
 published SHA-256 before running it.
 
-The runtime requires a working BepInEx installation. BazaarPlusPlus is the
-currently tested way to provide it. The manager preserves unrelated BepInEx
-plugins.
+The runtime uses BepInEx 5. The manager carries the pinned official Windows
+x64 BepInEx 5.4.23.5 archive and installs it automatically on the first deploy
+when no loader is present. BazaarPlusPlus is not required and is not installed.
+Existing compatible BepInEx installations and unrelated plugins are preserved.
 
 ## First run
 
@@ -189,13 +190,13 @@ Build the runtime and manager:
 
 ```powershell
 .\build.ps1 -Configuration Release
-.\build.ps1 -Version 1.4.2
-.\build-manager.ps1 -Version 1.4.2
-.\build-asset-generator.ps1 -Version 1.4.2
-.\build-spine-manager.ps1 -Version 1.4.2
-.\build-installer.ps1 -Version 1.4.2
-.\package-manager-portable.ps1 -Version 1.4.2
-.\package-asset-generator-portable.ps1 -Version 1.4.2
+.\build.ps1 -Version 1.4.3
+.\build-manager.ps1 -Version 1.4.3
+.\build-asset-generator.ps1 -Version 1.4.3
+.\build-spine-manager.ps1 -Version 1.4.3
+.\build-installer.ps1 -Version 1.4.3
+.\package-manager-portable.ps1 -Version 1.4.3
+.\package-asset-generator-portable.ps1 -Version 1.4.3
 ```
 
 Useful source commands:

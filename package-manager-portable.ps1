@@ -1,5 +1,5 @@
 param(
-    [string]$Version = "1.4.2"
+    [string]$Version = "1.4.3"
 )
 
 $ErrorActionPreference = "Stop"
@@ -8,6 +8,8 @@ $dist = Join-Path $root "dist"
 $manager = Join-Path $dist "manager\TheBazaarModManager.exe"
 $managerMetadata = Join-Path $dist "manager\manager-build.json"
 $quickStart = Join-Path $root "docs\portable-quick-start.txt"
+$thirdPartyLicense = Join-Path $root "third_party\BepInEx\LICENSE.txt"
+$thirdPartyNotice = Join-Path $root "third_party\BepInEx\NOTICE.md"
 $staging = Join-Path $dist "manager-portable-staging"
 $archive = Join-Path $dist "TheBazaarModManager-Portable-$Version.zip"
 
@@ -16,7 +18,7 @@ if (-not $resolvedStaging.StartsWith($root, [StringComparison]::OrdinalIgnoreCas
     throw "Unsafe staging path: $resolvedStaging"
 }
 
-foreach ($required in @($manager, $managerMetadata, $quickStart)) {
+foreach ($required in @($manager, $managerMetadata, $quickStart, $thirdPartyLicense, $thirdPartyNotice)) {
     if (-not (Test-Path -LiteralPath $required)) {
         throw "Required portable-package input is missing: $required"
     }
@@ -30,6 +32,8 @@ New-Item -ItemType Directory -Force -Path $staging | Out-Null
 Copy-Item -LiteralPath $manager -Destination $staging
 Copy-Item -LiteralPath $managerMetadata -Destination $staging
 Copy-Item -LiteralPath $quickStart -Destination (Join-Path $staging "README.txt")
+Copy-Item -LiteralPath $thirdPartyLicense -Destination (Join-Path $staging "BepInEx-LICENSE.txt")
+Copy-Item -LiteralPath $thirdPartyNotice -Destination (Join-Path $staging "BepInEx-NOTICE.md")
 
 $files = Get-ChildItem -LiteralPath $staging -File -Recurse |
     Sort-Object FullName |

@@ -22,6 +22,7 @@ from skin_pack_builder import (  # noqa: E402
     fit_alpha_contain,
     fit_cover,
     generate_pack,
+    has_authored_transparency,
     image_metrics,
     remove_edge_connected_background,
     split_authored_underlay,
@@ -34,6 +35,7 @@ from badge_pipeline import (  # noqa: E402
     extract_template,
 )
 from mod_studio_core import sha256_file  # noqa: E402
+from adapter_registry import AdapterRegistry  # noqa: E402
 
 
 def write_test_badge_template(root: Path) -> Path:
@@ -95,6 +97,26 @@ def write_test_badge_template(root: Path) -> Path:
 
 
 class SkinPackBuilderTests(unittest.TestCase):
+    def test_standing_overlay_allows_deliberate_high_coverage(self) -> None:
+        adapter = AdapterRegistry.load(ROOT / "manager" / "adapters").find_by_id(
+            "dooley-default"
+        )
+        self.assertIsNotNone(adapter)
+        recipe = adapter.payload["authoring_recipe"]["outputs"]["standing_overlay"]
+        self.assertEqual(recipe["maximum_alpha_coverage"], 0.98)
+        _validate_metrics(
+            "standing_overlay",
+            {"alpha_coverage": 0.9055, "transparent_border": 0.7},
+            recipe,
+        )
+
+    def test_opaque_png_is_not_authoritative_alpha(self) -> None:
+        opaque = Image.new("RGBA", (32, 32), (10, 20, 30, 255))
+        transparent = opaque.copy()
+        transparent.putpixel((0, 0), (0, 0, 0, 0))
+        self.assertFalse(has_authored_transparency(opaque))
+        self.assertTrue(has_authored_transparency(transparent))
+
     def test_portrait_inner_frame_mask_blocks_three_sides_and_leaves_top_open(self) -> None:
         source = Image.new("RGBA", (100, 100), (230, 80, 40, 255))
         masked = apply_declared_clip_mask(

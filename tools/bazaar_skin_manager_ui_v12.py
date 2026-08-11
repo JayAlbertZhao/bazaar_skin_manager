@@ -28,11 +28,13 @@ from manual_slot_editor import ManualSlotEditor
 from bazaar_skin_manager import (
     MANAGER_VERSION,
     atomic_copy_tree,
+    bepinex_status,
     detect_installs,
     find_steam_executable,
     installation_diagnostics,
     launch_game,
     manager_root,
+    preferred_game_install,
     uninstall,
 )
 from mod_studio_core import (
@@ -1685,7 +1687,24 @@ class SkinManagerV12:
         if not assignments:
             messagebox.showinfo("没有启用映射", "请先建立并启用至少一条“自定义皮肤 → 游戏原皮肤”映射。", parent=self.root)
             return
-        if not messagebox.askyesno("部署更改", f"将部署 {len(assignments)} 条皮肤映射。继续前请关闭 The Bazaar。", parent=self.root):
+        try:
+            selected_game = preferred_game_install(self.game_dir_override)
+            loader = bepinex_status(selected_game.game_dir)
+        except Exception as error:
+            self._show_error("无法准备部署", error)
+            return
+        loader_note = ""
+        if not loader["ready"]:
+            loader_note = (
+                "\n\n未检测到完整的 BepInEx。皮肤管理器将自动安装并校验官方 "
+                f"BepInEx {loader['bootstrap_version']}；不需要 BazaarPlusPlus。"
+            )
+        if not messagebox.askyesno(
+            "部署更改",
+            f"将部署 {len(assignments)} 条皮肤映射。继续前请关闭 The Bazaar。"
+            + loader_note,
+            parent=self.root,
+        ):
             return
         self.assignments = {
             model["target_key"]: {"pack_path": model["pack_path"], "enabled": model["enabled"]}

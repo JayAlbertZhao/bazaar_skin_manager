@@ -3473,6 +3473,38 @@ def main() -> int:
         except Exception:
             return 4
         return 0
+    if "--self-test-bepinex-bootstrap" in sys.argv:
+        try:
+            from bazaar_skin_manager import ensure_bepinex
+
+            with tempfile.TemporaryDirectory() as temp:
+                root = Path(temp)
+                game = root / "The Bazaar"
+                (game / "TheBazaar_Data").mkdir(parents=True)
+                (game / "TheBazaar.exe").write_bytes(b"release bootstrap smoke")
+                previous_local_app_data = os.environ.get("LOCALAPPDATA")
+                os.environ["LOCALAPPDATA"] = str(root / "LocalAppData")
+                try:
+                    result = ensure_bepinex(game)
+                finally:
+                    if previous_local_app_data is None:
+                        os.environ.pop("LOCALAPPDATA", None)
+                    else:
+                        os.environ["LOCALAPPDATA"] = previous_local_app_data
+                if not result.get("ready") or not result.get("installed"):
+                    return 12
+                if not (game / "BepInEx" / "core" / "BepInEx.dll").is_file():
+                    return 12
+                if (game / "BepInEx" / "plugins" / "BazaarPlusPlus.dll").exists():
+                    return 12
+        except Exception:
+            if os.environ.get("BAZAAR_SKIN_MANAGER_STUDIO_DEBUG") == "1":
+                Path(
+                    tempfile.gettempdir(),
+                    "bazaar-manager-smoke-bepinex-bootstrap.log",
+                ).write_text(traceback.format_exc(), encoding="utf-8")
+            return 12
+        return 0
     if "--smoke-spine-import" in sys.argv:
         try:
             index = sys.argv.index("--smoke-spine-import")

@@ -8,6 +8,7 @@ import shutil
 import sys
 import tempfile
 import unittest
+import zipfile
 from pathlib import Path
 from unittest import mock
 
@@ -85,10 +86,88 @@ def write_game(root: Path) -> Path:
     core = game / "BepInEx" / "core"
     core.mkdir(parents=True)
     (core / "BepInEx.dll").write_bytes(b"fixture")
+    (core / "BepInEx.Preloader.dll").write_bytes(b"fixture")
+    (game / "winhttp.dll").write_bytes(b"fixture")
+    (game / "doorstop_config.ini").write_text(
+        "enabled=true\ntargetAssembly=BepInEx\\core\\BepInEx.Preloader.dll\n",
+        encoding="utf-8",
+    )
     return game
 
 
 class ManagerTests(unittest.TestCase):
+    def test_bepinex_bootstrap_rejects_archive_path_traversal(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            archive_path = Path(temp) / "unsafe.zip"
+            with zipfile.ZipFile(archive_path, "w") as archive:
+                for relative in manager.BEPINEX_REQUIRED_PATHS:
+                    archive.writestr(relative, b"fixture")
+                archive.writestr("../outside.dll", b"unsafe")
+            with zipfile.ZipFile(archive_path, "r") as archive:
+                with self.assertRaisesRegex(RuntimeError, "unsafe path"):
+                    manager._safe_bepinex_archive_entries(archive)
+
+    def test_bepinex_status_requires_loader_and_preloader(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            game = Path(temp) / "game"
+            game.mkdir()
+            status = manager.bepinex_status(game)
+            self.assertFalse(status["ready"])
+            self.assertIn("BepInEx/core/BepInEx.dll", status["missing"])
+            self.assertIn("winhttp.dll", status["missing"])
+
+    def test_ensure_bepinex_installs_official_payload_without_bazaarplusplus(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            game = root / "game"
+            (game / "TheBazaar_Data").mkdir(parents=True)
+            (game / "TheBazaar.exe").write_bytes(b"fixture")
+            local = root / "local"
+            with mock.patch.dict("os.environ", {"LOCALAPPDATA": str(local)}):
+                result = manager.ensure_bepinex(game)
+                self.assertTrue(result["ready"])
+                self.assertTrue(result["installed"])
+                self.assertEqual(result["version"], "5.4.23.5")
+                self.assertTrue((game / "BepInEx" / "core" / "BepInEx.dll").is_file())
+                self.assertTrue((game / "winhttp.dll").is_file())
+                self.assertFalse(
+                    (game / "BepInEx" / "plugins" / "BazaarPlusPlus.dll").exists()
+                )
+                record = json.loads(
+                    manager.bepinex_bootstrap_record_path().read_text(encoding="utf-8")
+                )
+                self.assertEqual(record["bepinex_version"], "5.4.23.5")
+                self.assertEqual(
+                    record["archive"]["sha256"], manager.BEPINEX_ARCHIVE_SHA256
+                )
+
+    def test_ensure_bepinex_preserves_existing_plugins(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            game = root / "game"
+            plugin = game / "BepInEx" / "plugins" / "OtherMod.dll"
+            plugin.parent.mkdir(parents=True)
+            plugin.write_bytes(b"do-not-replace")
+            local = root / "local"
+            with mock.patch.dict("os.environ", {"LOCALAPPDATA": str(local)}):
+                result = manager.ensure_bepinex(game)
+            self.assertTrue(result["ready"])
+            self.assertEqual(plugin.read_bytes(), b"do-not-replace")
+
+    def test_ensure_bepinex_does_not_mix_conflicting_partial_loader(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            game = root / "game"
+            conflict = game / "BepInEx" / "core" / "Mono.Cecil.dll"
+            conflict.parent.mkdir(parents=True)
+            conflict.write_bytes(b"different-existing-version")
+            local = root / "local"
+            with mock.patch.dict("os.environ", {"LOCALAPPDATA": str(local)}):
+                with self.assertRaisesRegex(RuntimeError, "partial BepInEx"):
+                    manager.ensure_bepinex(game)
+            self.assertEqual(conflict.read_bytes(), b"different-existing-version")
+            self.assertFalse((game / "winhttp.dll").exists())
+
     def test_install_many_keeps_two_professions_active_and_reversible(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)

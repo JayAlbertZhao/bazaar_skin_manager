@@ -33,7 +33,7 @@ from asset_generator_core import (
 from bazaar_skin_manager import manager_root
 from mod_studio_core import PROJECT_ROOT, WORKSPACES_ROOT, StudioWorkspace
 from mod_studio_core import remove_color_screen
-from skin_pack_builder import derive_small_icon_file
+from skin_pack_builder import derive_small_icon_file, has_authored_transparency
 
 try:
     from tkinterdnd2 import DND_FILES, TkinterDnD
@@ -1135,6 +1135,7 @@ class AssetGeneratorUI:
         }
         for key, value in values.items():
             self.vars[key].set(str(value))
+        self._update_character_alpha_metadata(migrate_stale_only=True)
         selected_label = next(
             (
                 label
@@ -1397,6 +1398,7 @@ class AssetGeneratorUI:
 
     def _input_changed(self, key: str) -> None:
         if key == "character":
+            self._update_character_alpha_metadata()
             self.character_offset_x = 0
             self.character_offset_y = 0
             self.character_scale = 1.0
@@ -1427,6 +1429,54 @@ class AssetGeneratorUI:
                 self._update_small_icon_metadata("user")
         self._autosave_profile()
         self._rebuild_live_renderer()
+
+    def _update_character_alpha_metadata(
+        self,
+        *,
+        migrate_stale_only: bool = False,
+    ) -> None:
+        character_text = self.vars["character"].get().strip()
+        metadata_text = self.vars["metadata"].get().strip()
+        if not character_text or not metadata_text:
+            return
+        character = Path(character_text)
+        metadata_path = Path(metadata_text)
+        if not character.is_file():
+            return
+        payload: dict = {}
+        if metadata_path.is_file():
+            try:
+                payload = json.loads(metadata_path.read_text(encoding="utf-8-sig"))
+            except (OSError, ValueError, TypeError, json.JSONDecodeError):
+                payload = {}
+        existing = dict(payload.get("character") or {})
+        with Image.open(character) as loaded:
+            authoritative = has_authored_transparency(loaded)
+        if migrate_stale_only and not (
+            existing.get("authoritative_alpha") is True
+            and existing.get("alpha_method") == "user-supplied transparent source"
+            and not authoritative
+        ):
+            return
+        character_metadata = existing
+        character_metadata.update(
+            {
+                "origin": character_metadata.get("origin") or "user_supplied",
+                "aigc": False,
+                "authoritative_alpha": authoritative,
+                "alpha_method": (
+                    "user-supplied transparent source"
+                    if authoritative
+                    else "automatic edge-connected background removal"
+                ),
+            }
+        )
+        payload["character"] = character_metadata
+        metadata_path.parent.mkdir(parents=True, exist_ok=True)
+        metadata_path.write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
 
     def _selected_small_icon_mode(self) -> str:
         return ICON_MODE_LABELS.get(self.small_icon_mode_var.get(), "none")

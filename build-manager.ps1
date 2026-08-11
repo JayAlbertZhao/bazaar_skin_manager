@@ -1,5 +1,5 @@
 param(
-    [string]$Version = "1.4.2"
+    [string]$Version = "1.4.3"
 )
 
 $ErrorActionPreference = "Stop"
@@ -59,6 +59,22 @@ if ($runtimeRelease.sha256 -ne $runtimeHash) {
 }
 Write-Host "Bundling runtime adapter $($runtimeRelease.version): $runtime"
 
+$bepInExDirectory = Join-Path $root "third_party\BepInEx"
+$bepInExArchive = Join-Path $bepInExDirectory "BepInEx_win_x64_5.4.23.5.zip"
+$bepInExLicense = Join-Path $bepInExDirectory "LICENSE.txt"
+$bepInExNotice = Join-Path $bepInExDirectory "NOTICE.md"
+$bepInExExpectedHash = "82f9878551030f54657792c0740d9d51a09500eeae1fba21106b0c441e6732c4"
+foreach ($required in @($bepInExArchive, $bepInExLicense, $bepInExNotice)) {
+    if (-not (Test-Path -LiteralPath $required)) {
+        throw "BepInEx bootstrap release input is missing: $required"
+    }
+}
+$bepInExHash = (Get-FileHash -LiteralPath $bepInExArchive -Algorithm SHA256).Hash.ToLowerInvariant()
+if ($bepInExHash -ne $bepInExExpectedHash) {
+    throw "BepInEx bootstrap SHA-256 does not match: $bepInExArchive"
+}
+Write-Host "Bundling official BepInEx 5.4.23.5 bootstrap: $bepInExArchive"
+
 & $python -c "import archspec, PIL, PyInstaller, tkinterdnd2, UnityPy"
 if ($LASTEXITCODE -ne 0) {
     throw "Manager build dependencies are incomplete. Install manager\requirements-build.txt into .venv-manager."
@@ -94,6 +110,9 @@ if (Test-Path -LiteralPath $managerAssets -PathType Container) {
     $managerAssetArguments `
     --add-data "$runtime;dist\runtime" `
     --add-data "$runtimeMetadata;dist\runtime" `
+    --add-data "$bepInExArchive;third_party\BepInEx" `
+    --add-data "$bepInExLicense;third_party\BepInEx" `
+    --add-data "$bepInExNotice;third_party\BepInEx" `
     --add-data "$root\tools\unity_bundle_texture_patch.py;tools" `
     $entry
 
@@ -113,6 +132,15 @@ $selfTest = Start-Process `
     -WindowStyle Hidden
 if ($selfTest.ExitCode -ne 0) {
     throw "Frozen release runtime self-test failed with exit code $($selfTest.ExitCode)"
+}
+$bepInExSelfTest = Start-Process `
+    -FilePath $exe `
+    -ArgumentList "--self-test-bepinex-bootstrap" `
+    -Wait `
+    -PassThru `
+    -WindowStyle Hidden
+if ($bepInExSelfTest.ExitCode -ne 0) {
+    throw "Frozen BepInEx bootstrap self-test failed with exit code $($bepInExSelfTest.ExitCode)"
 }
 $previousLocalAppData = $env:LOCALAPPDATA
 try {
