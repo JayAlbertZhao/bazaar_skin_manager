@@ -6,7 +6,9 @@ from __future__ import annotations
 from copy import deepcopy
 from dataclasses import dataclass, field
 from pathlib import Path
+import queue
 import shutil
+import threading
 from typing import Callable
 import uuid
 import tkinter as tk
@@ -22,6 +24,7 @@ from mod_studio_core import (
     SUPPORTED_IMAGE_EXTENSIONS,
     WORKSPACES_ROOT,
     StudioWorkspace,
+    export_original_visual_reference,
 )
 from skin_pack_builder import _load_badge_template, apply_declared_clip_mask
 
@@ -312,12 +315,14 @@ class ManualSlotEditor:
         catalog: dict,
         on_import: Callable[[StudioWorkspace], None],
         on_choose_asset: Callable[[], Path | None] | None = None,
+        game_dir_provider: Callable[[], Path | None] | None = None,
     ) -> None:
         self.root = parent.winfo_toplevel()
         self.host = parent
         self.catalog = catalog
         self.on_import = on_import
         self.on_choose_asset = on_choose_asset
+        self.game_dir_provider = game_dir_provider
         self.adapters = authoring_adapters()
         self.adapter_labels = {
             f"{record.hero} · {record.skin}": record.adapter_id
@@ -343,6 +348,11 @@ class ManualSlotEditor:
         self.automatic_authoring: dict = {}
         self.pack_id = ""
         self.preview_photo: ImageTk.PhotoImage | None = None
+        self.original_preview_photo: ImageTk.PhotoImage | None = None
+        self.original_reference_image: Image.Image | None = None
+        self.original_reference_status = "选择槽位后读取原版"
+        self._original_reference_request = 0
+        self._original_reference_memory: dict[tuple[str, str, str], Image.Image] = {}
         self.preview_scale = 1.0
         self.drag_origin: tuple[int, int, int, int] | None = None
         self._loading_controls = False
@@ -547,18 +557,44 @@ class ManualSlotEditor:
             row=0, column=8, padx=(14, 0)
         )
 
+        previews = ttk.Frame(editor)
+        previews.grid(row=4, column=0, sticky="nsew")
+        previews.columnconfigure(0, weight=1, uniform="slot-preview")
+        previews.columnconfigure(1, weight=1, uniform="slot-preview")
+        previews.rowconfigure(1, weight=1)
+        ttk.Label(
+            previews,
+            text="当前调整（可拖动）",
+            foreground=COLORS["muted"],
+        ).grid(row=0, column=0, sticky="w", pady=(0, 5))
+        ttk.Label(
+            previews,
+            text="游戏原版参考（同画布 / 同比例）",
+            foreground=COLORS["muted"],
+        ).grid(row=0, column=1, sticky="w", padx=(8, 0), pady=(0, 5))
+
         self.canvas = tk.Canvas(
-            editor,
+            previews,
             bg="#0d1219",
             highlightthickness=1,
             highlightbackground=COLORS["line"],
             cursor="fleur",
         )
-        self.canvas.grid(row=4, column=0, sticky="nsew")
+        self.canvas.grid(row=1, column=0, sticky="nsew", padx=(0, 4))
         self.canvas.bind("<Configure>", lambda _event: self._render_preview())
         self.canvas.bind("<ButtonPress-1>", self._drag_start)
         self.canvas.bind("<B1-Motion>", self._drag_motion)
         self.canvas.bind("<ButtonRelease-1>", self._drag_end)
+        self.original_canvas = tk.Canvas(
+            previews,
+            bg="#0d1219",
+            highlightthickness=1,
+            highlightbackground=COLORS["line"],
+        )
+        self.original_canvas.grid(row=1, column=1, sticky="nsew", padx=(4, 0))
+        self.original_canvas.bind(
+            "<Configure>", lambda _event: self._render_original_preview()
+        )
 
         footer = ttk.Frame(outer)
         footer.pack(fill="x", pady=(10, 0))
@@ -774,6 +810,75 @@ class ManualSlotEditor:
         self.current_layer = "direct" if state.mode == "direct" else "character"
         self._load_layer_controls()
         self._render_preview()
+        self._load_original_reference(slot)
+
+    def _load_original_reference(self, slot: str) -> None:
+        """Read the verified native image without blocking the editor UI."""
+
+        self._original_reference_request += 1
+        request = self._original_reference_request
+        record = self._adapter()
+        game_dir = self.game_dir_provider() if self.game_dir_provider else None
+        key = (record.adapter_id, slot, str(game_dir or ""))
+        cached = self._original_reference_memory.get(key)
+        if cached is not None:
+            self.original_reference_image = cached.copy()
+            self.original_reference_status = ""
+            self._render_original_preview()
+            return
+
+        self.original_reference_image = None
+        self.original_reference_status = "正在读取游戏原版…"
+        self._render_original_preview()
+        target = {"hero": record.hero, "skin": record.skin}
+        results: queue.Queue[tuple[Image.Image | None, str]] = queue.Queue(maxsize=1)
+
+        def worker() -> None:
+            image: Image.Image | None = None
+            error_text = ""
+            try:
+                reference = export_original_visual_reference(
+                    target,
+                    slot,
+                    game_dir=game_dir,
+                )
+                with Image.open(reference) as loaded:
+                    image = loaded.convert("RGBA")
+            except Exception as error:
+                error_text = str(error)
+            results.put((image, error_text))
+
+        def poll() -> None:
+            if request != self._original_reference_request or slot != self.current_slot:
+                return
+            try:
+                image, error_text = results.get_nowait()
+            except queue.Empty:
+                try:
+                    self.root.after(50, poll)
+                except (tk.TclError, RuntimeError):
+                    pass
+                return
+            if image is not None:
+                self._original_reference_memory[key] = image.copy()
+                self.original_reference_image = image
+                self.original_reference_status = ""
+            else:
+                self.original_reference_image = None
+                if "no static original image" in error_text:
+                    self.original_reference_status = "该槽位由游戏动态 / 分层生成\n没有可直接导出的原版位图"
+                elif "native backup" in error_text:
+                    self.original_reference_status = "原版备份不可用\n请先取消部署或修复游戏文件"
+                else:
+                    self.original_reference_status = f"原版参考不可用\n{error_text}"
+            self._render_original_preview()
+
+        threading.Thread(
+            target=worker,
+            name=f"original-slot-reference-{slot}",
+            daemon=True,
+        ).start()
+        self.root.after(50, poll)
 
     def _show_mode_rows(self) -> None:
         layered = self.mode_var.get() == "layered"
@@ -1044,6 +1149,130 @@ class ManualSlotEditor:
             (height + display_size[1]) // 2,
             outline=COLORS["accent"],
             width=2,
+        )
+        left = (width - display_size[0]) // 2
+        top = (height - display_size[1]) // 2
+        right = (width + display_size[0]) // 2
+        bottom = (height + display_size[1]) // 2
+        canvas.create_line(
+            width // 2,
+            top,
+            width // 2,
+            bottom,
+            fill=COLORS["muted"],
+            dash=(3, 6),
+        )
+        canvas.create_line(
+            left,
+            height // 2,
+            right,
+            height // 2,
+            fill=COLORS["muted"],
+            dash=(3, 6),
+        )
+
+    def _render_original_preview(self) -> None:
+        canvas = self.original_canvas
+        width = max(1, canvas.winfo_width())
+        height = max(1, canvas.winfo_height())
+        if width < 30 or height < 30:
+            return
+        canvas.delete("all")
+        if not self.current_slot:
+            canvas.create_text(
+                width // 2,
+                height // 2,
+                text="选择槽位",
+                fill=COLORS["muted"],
+            )
+            return
+        if self.original_reference_image is None:
+            canvas.create_text(
+                width // 2,
+                height // 2,
+                text=self.original_reference_status,
+                fill=COLORS["muted"],
+                width=max(100, width - 30),
+                justify="center",
+            )
+            return
+
+        source = self.original_reference_image.copy()
+        output_size = self.slot_sizes[self.current_slot]
+        if source.size != output_size:
+            source = _fit_layer(
+                source,
+                output_size,
+                LayerState(),
+                fit="contain",
+                anchor_bottom=self.current_slot == STANDING_SLOT,
+            )
+        if self.current_slot in PORTRAIT_PREVIEW_SLOTS:
+            clip = self._portrait_clip_declaration(self.current_slot)
+            if clip:
+                source.alpha_composite(
+                    portrait_frame_preview_overlay(source.size, clip)
+                )
+
+        margin = 14
+        scale = min(
+            (width - margin * 2) / source.width,
+            (height - margin * 2) / source.height,
+        )
+        display_size = (
+            max(1, round(source.width * scale)),
+            max(1, round(source.height * scale)),
+        )
+        preview = source.resize(display_size, Image.Resampling.LANCZOS)
+        checker = Image.new("RGBA", display_size, (218, 224, 231, 255))
+        tile = 14
+        for y in range(0, display_size[1], tile):
+            for x in range(0, display_size[0], tile):
+                if (x // tile + y // tile) % 2:
+                    checker.paste(
+                        (177, 187, 199, 255),
+                        (
+                            x,
+                            y,
+                            min(display_size[0], x + tile),
+                            min(display_size[1], y + tile),
+                        ),
+                    )
+        checker.alpha_composite(preview)
+        self.original_preview_photo = ImageTk.PhotoImage(checker)
+        canvas.create_image(
+            width // 2,
+            height // 2,
+            image=self.original_preview_photo,
+            anchor="center",
+        )
+        left = (width - display_size[0]) // 2
+        top = (height - display_size[1]) // 2
+        right = (width + display_size[0]) // 2
+        bottom = (height + display_size[1]) // 2
+        canvas.create_rectangle(
+            left,
+            top,
+            right,
+            bottom,
+            outline=COLORS["accent"],
+            width=2,
+        )
+        canvas.create_line(
+            width // 2,
+            top,
+            width // 2,
+            bottom,
+            fill=COLORS["muted"],
+            dash=(3, 6),
+        )
+        canvas.create_line(
+            left,
+            height // 2,
+            right,
+            height // 2,
+            fill=COLORS["muted"],
+            dash=(3, 6),
         )
 
     def _drag_start(self, event: tk.Event) -> None:

@@ -34,6 +34,7 @@ from bazaar_skin_manager import (
     atomic_copy_tree,
     detect_installs,
     explicit_install,
+    existing_install_record,
     install,
     install_many,
     installation_diagnostics,
@@ -202,6 +203,125 @@ def _visual_template_map(target: dict) -> dict[str, dict]:
         replacement["slot"]: replacement
         for replacement in manifest["visual_replacements"]
     }
+
+
+def _verified_original_bundle(
+    game_dir: Path,
+    deployment: dict,
+) -> Path:
+    """Return the native bundle, preferring the manager's verified backup.
+
+    The live Addressables bundle may already contain a deployed skin.  Showing
+    that file as an "original" reference is actively misleading, so only a
+    recorded native backup or a bundle whose hash is accepted by the adapter
+    is eligible here.
+    """
+
+    relative = str(deployment.get("target") or "").replace("/", os.sep)
+    if not relative:
+        raise ValueError("Original visual deployment has no bundle target.")
+    live = (game_dir / relative).resolve()
+    record = existing_install_record() or {}
+    for patch in record.get("native_patches") or []:
+        try:
+            recorded_target = Path(str(patch.get("target") or "")).resolve()
+        except (OSError, ValueError):
+            continue
+        if recorded_target != live:
+            continue
+        backup = Path(str(patch.get("backup") or ""))
+        original_sha256 = str(patch.get("original_sha256") or "").casefold()
+        if (
+            backup.is_file()
+            and original_sha256
+            and sha256_file(backup).casefold() == original_sha256
+        ):
+            return backup
+
+    if not live.is_file():
+        raise FileNotFoundError(live)
+    supported = {
+        str(value).casefold()
+        for value in deployment.get("supported_original_sha256") or []
+    }
+    if supported and sha256_file(live).casefold() not in supported:
+        raise ValueError(
+            "The live game bundle is modified and its verified native backup "
+            "is unavailable; original reference was not guessed."
+        )
+    return live
+
+
+def _original_visual_deployment(adapter: AdapterRecord, slot: str) -> dict:
+    templates = {
+        str(item.get("slot") or ""): item
+        for item in adapter.payload.get("visual_replacements") or []
+    }
+    template = templates.get(slot) or {}
+    deployment = deepcopy(template.get("deployment") or {})
+    if deployment:
+        return deployment
+
+    # Runtime-only portrait slots still point at a real Texture2D in the
+    # hero's skin bundle.  Reuse that bundle contract for read-only preview.
+    match_names = [str(value) for value in template.get("match_names") or []]
+    if not match_names or not slot.startswith("portrait_"):
+        raise ValueError(
+            f"Slot {slot} has no static original image; it is supplied by the "
+            "game as a layered or animated asset."
+        )
+    skin_deployment = next(
+        (
+            deepcopy(item.get("deployment") or {})
+            for item in templates.values()
+            if Path(str((item.get("deployment") or {}).get("target") or "")).name.startswith("skin_")
+            and str((item.get("deployment") or {}).get("target") or "").endswith("_assets_all.bundle")
+        ),
+        None,
+    )
+    if not skin_deployment:
+        raise ValueError(f"Slot {slot} has no verified original bundle.")
+    skin_deployment["asset_name"] = match_names[0]
+    skin_deployment.pop("target_size", None)
+    return skin_deployment
+
+
+def export_original_visual_reference(
+    target: dict,
+    slot: str,
+    *,
+    game_dir: Path | None = None,
+    output: Path | None = None,
+) -> Path:
+    """Export and cache one verified native slot image for authoring reference."""
+
+    adapter = _adapter_for_target(target)
+    game = preferred_game_install(game_dir)
+    if not adapter.supports_build(game.build_id):
+        raise ValueError(
+            f"Adapter {adapter.adapter_id} is not verified for Steam build "
+            f"{game.build_id or 'unknown'}."
+        )
+    deployment = _original_visual_deployment(adapter, slot)
+    source = _verified_original_bundle(game.game_dir, deployment)
+    destination = output or (
+        manager_root()
+        / "original-slot-previews"
+        / adapter.adapter_id
+        / (game.build_id or "unknown-build")
+        / f"{slot}.png"
+    )
+    if destination.is_file() and destination.stat().st_mtime_ns >= source.stat().st_mtime_ns:
+        return destination
+    expected = deployment.get("target_size")
+    export_texture_bundle(
+        source,
+        destination,
+        asset_name=str(deployment["asset_name"]),
+        unity_version=str(deployment["unity_version"]),
+        target_size=(tuple(int(value) for value in expected) if expected else None),
+    )
+    return destination
 
 
 def _all_visual_slot_ids() -> set[str]:
@@ -553,28 +673,13 @@ class StudioWorkspace:
         game_dir: Path | None = None,
     ) -> Path:
         """Export a verified original Texture2D for side-by-side preview."""
-        template = _visual_template_map(self.state["target"]).get(slot)
-        deployment = (template or {}).get("deployment")
-        if not deployment:
-            raise ValueError(
-                f"Slot {slot} has no verified read-only Texture2D preview target."
-            )
-        game = preferred_game_install(game_dir)
-        adapter = _adapter_for_target(self.state["target"])
-        if not adapter.supports_build(game.build_id):
-            raise ValueError(
-                f"Adapter {adapter.adapter_id} is not verified for Steam "
-                f"build {game.build_id or 'unknown'}."
-            )
         output = self.directory / "authoring" / "original-previews" / f"{slot}.png"
-        export_texture_bundle(
-            game.game_dir / deployment["target"],
-            output,
-            asset_name=deployment["asset_name"],
-            unity_version=deployment["unity_version"],
-            target_size=tuple(deployment["target_size"]),
+        return export_original_visual_reference(
+            self.state["target"],
+            slot,
+            game_dir=game_dir,
+            output=output,
         )
-        return output
 
     def clear_visual(self, slot: str) -> None:
         path = self.visual_path(slot)

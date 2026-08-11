@@ -1136,6 +1136,7 @@ class SkinManagerV12:
             catalog=self.catalog,
             on_import=self._manual_slot_import_complete,
             on_choose_asset=self._manual_slot_choose_asset,
+            game_dir_provider=lambda: self.game_dir_override,
         )
         self.creation_modes.bind("<<NotebookTabChanged>>", self._creation_mode_changed)
 

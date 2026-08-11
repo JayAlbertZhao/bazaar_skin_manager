@@ -19,6 +19,9 @@ from bazaar_skin_manager import validate_pack  # noqa: E402
 from mod_studio_core import (  # noqa: E402
     PREVIEW_SIZE,
     StudioWorkspace,
+    _adapter_for_target,
+    _original_visual_deployment,
+    _verified_original_bundle,
     compose_image_preview,
     materialized_pack_id,
     remove_color_screen,
@@ -36,6 +39,52 @@ def write_runtime_wav(path: Path) -> None:
 
 
 class ModStudioTests(unittest.TestCase):
+    def test_original_reference_prefers_verified_native_backup(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            game = root / "game"
+            relative = Path("bundles") / "skin.bundle"
+            live = game / relative
+            backup = root / "native.bundle"
+            live.parent.mkdir(parents=True)
+            live.write_bytes(b"deployed skin")
+            backup.write_bytes(b"native game bundle")
+            original_hash = sha256_file(backup)
+            record = {
+                "native_patches": [
+                    {
+                        "target": str(live),
+                        "backup": str(backup),
+                        "original_sha256": original_hash,
+                    }
+                ]
+            }
+
+            with mock.patch(
+                "mod_studio_core.existing_install_record", return_value=record
+            ):
+                resolved = _verified_original_bundle(
+                    game,
+                    {
+                        "target": relative.as_posix(),
+                        "supported_original_sha256": [original_hash],
+                    },
+                )
+
+            self.assertEqual(backup, resolved)
+
+    def test_runtime_portrait_can_use_verified_skin_bundle_for_reference(self):
+        adapter = _adapter_for_target(
+            {"hero": "Dooley", "skin": "Skin_DOO_01/A"}
+        )
+
+        portrait = _original_visual_deployment(adapter, "portrait_gameplay")
+
+        self.assertEqual("Skin_DOO_01a_Portrait", portrait["asset_name"])
+        self.assertTrue(portrait["target"].endswith("skin_doo_01_assets_all.bundle"))
+        with self.assertRaisesRegex(ValueError, "no static original image"):
+            _original_visual_deployment(adapter, "standing_overlay")
+
     def test_original_preview_uses_verified_read_only_texture_export(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
@@ -48,10 +97,16 @@ class ModStudioTests(unittest.TestCase):
 
             game = SimpleNamespace(game_dir=root / "game", build_id="24001960")
             with mock.patch("mod_studio_core.preferred_game_install", return_value=game):
-                with mock.patch(
-                    "mod_studio_core.export_texture_bundle",
-                    side_effect=fake_export,
-                ) as exporter:
+                with (
+                    mock.patch(
+                        "mod_studio_core._verified_original_bundle",
+                        return_value=root / "native.bundle",
+                    ),
+                    mock.patch(
+                        "mod_studio_core.export_texture_bundle",
+                        side_effect=fake_export,
+                    ) as exporter,
+                ):
                     output = workspace.export_original_visual("hero_select")
             self.assertTrue(output.is_file())
             with Image.open(output) as loaded:
