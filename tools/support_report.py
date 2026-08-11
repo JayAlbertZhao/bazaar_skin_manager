@@ -7,14 +7,10 @@ import os
 import platform
 import re
 import sys
-import urllib.parse
 from datetime import datetime, timezone
 from pathlib import Path
 
 
-GITHUB_NEW_ISSUE_URL = (
-    "https://github.com/JayAlbertZhao/bazaar_skin_manager/issues/new"
-)
 MAX_ERROR_LOG_CHARS = 48 * 1024
 MAX_REPORT_CHARS = 64 * 1024
 MAX_STORED_LOG_CHARS = 256 * 1024
@@ -123,16 +119,3 @@ def build_diagnostic_report(
     if len(sanitized) > MAX_REPORT_CHARS:
         sanitized = sanitized[:MAX_REPORT_CHARS] + "\n[report truncated]\n"
     return sanitized.rstrip() + "\n"
-
-
-def github_issue_url(manager_version: str) -> str:
-    query = urllib.parse.urlencode(
-        {
-            "title": f"[v{manager_version}] 错误反馈",
-            "body": (
-                "请描述触发步骤、预期结果和实际结果。\n\n"
-                "诊断报告已经复制到剪贴板，请在下方粘贴后检查内容再提交：\n\n"
-            ),
-        }
-    )
-    return f"{GITHUB_NEW_ISSUE_URL}?{query}"

@@ -6,7 +6,6 @@ import json
 import sys
 import tempfile
 import unittest
-import urllib.parse
 from pathlib import Path
 from unittest import mock
 
@@ -113,6 +112,14 @@ class UpdateServiceTests(unittest.TestCase):
 
 
 class SupportReportTests(unittest.TestCase):
+    def test_ui_checks_each_launch_and_only_copies_feedback(self) -> None:
+        ui = (TOOLS / "bazaar_skin_manager_ui_v12.py").read_text(encoding="utf-8")
+        self.assertIn("self._check_for_updates(manual=False)", ui)
+        self.assertNotIn("last_update_check_utc", ui)
+        self.assertNotIn("_copy_and_open_feedback", ui)
+        self.assertNotIn("github_issue_url", ui)
+        self.assertIn("复制脱敏诊断", ui)
+
     def test_report_redacts_local_identity_and_credentials(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
@@ -149,15 +156,6 @@ class SupportReportTests(unittest.TestCase):
             text = log.read_text(encoding="utf-8")
             self.assertIn("first", text)
             self.assertIn("second", text)
-
-    def test_issue_url_prefills_version_but_not_the_log(self) -> None:
-        url = support_report.github_issue_url("1.4.4")
-        parsed = urllib.parse.urlparse(url)
-        query = urllib.parse.parse_qs(parsed.query)
-        self.assertEqual(parsed.netloc, "github.com")
-        self.assertIn("v1.4.4", query["title"][0])
-        self.assertIn("粘贴", query["body"][0])
-
 
 if __name__ == "__main__":
     unittest.main()

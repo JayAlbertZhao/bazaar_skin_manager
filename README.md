@@ -66,9 +66,8 @@ files goes through its verified, reversible deployment transaction.
 - Checks the public GitHub Releases feed for stable manager updates and only
   launches a version-matched installer after its published SHA-256 and size
   have been verified.
-- Builds a local, redacted diagnostic report for one-click copying and opens a
-  prefilled GitHub Issue only when the user explicitly requests feedback; logs
-  are never uploaded silently.
+- Builds a local, redacted diagnostic report for one-click copying so users can
+  paste it into IM feedback; logs are never uploaded by the application.
 - Restores manager-owned changes during undeploy or uninstall.
 - Starts the game through Steam.
 
@@ -196,13 +195,13 @@ Build the runtime and manager:
 
 ```powershell
 .\build.ps1 -Configuration Release
-.\build.ps1 -Version 1.4.4
-.\build-manager.ps1 -Version 1.4.4
-.\build-asset-generator.ps1 -Version 1.4.4
-.\build-spine-manager.ps1 -Version 1.4.4
-.\build-installer.ps1 -Version 1.4.4
-.\package-manager-portable.ps1 -Version 1.4.4
-.\package-asset-generator-portable.ps1 -Version 1.4.4
+.\build.ps1 -Version 1.4.5
+.\build-manager.ps1 -Version 1.4.5
+.\build-asset-generator.ps1 -Version 1.4.5
+.\build-spine-manager.ps1 -Version 1.4.5
+.\build-installer.ps1 -Version 1.4.5
+.\package-manager-portable.ps1 -Version 1.4.5
+.\package-asset-generator-portable.ps1 -Version 1.4.5
 ```
 
 Useful source commands:

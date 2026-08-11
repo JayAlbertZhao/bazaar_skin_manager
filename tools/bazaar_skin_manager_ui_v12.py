@@ -16,9 +16,7 @@ import struct
 import tempfile
 import threading
 import traceback
-import webbrowser
 import zipfile
-from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
@@ -52,7 +50,6 @@ from skin_library_core import AssetLibrary, classify_file
 from support_report import (
     append_error_log,
     build_diagnostic_report,
-    github_issue_url,
 )
 from update_service import (
     download_release_installer,
@@ -1520,8 +1517,8 @@ class SkinManagerV12:
         ttk.Label(
             feedback,
             text=(
-                "反馈报告会先在本机生成并脱敏；只有点击按钮后才复制到剪贴板或打开 GitHub。"
-                "软件不会静默上传日志。"
+                "反馈报告会先在本机生成并脱敏；只有点击按钮后才复制到剪贴板。"
+                "复制后可直接粘贴到 IM 发给维护者；软件不会上传日志。"
             ),
             style="Muted.TLabel",
             wraplength=850,
@@ -1533,14 +1530,9 @@ class SkinManagerV12:
         ).grid(row=0, column=1, padx=(10, 0))
         ttk.Button(
             feedback,
-            text="复制并打开反馈页",
-            command=self._copy_and_open_feedback,
-        ).grid(row=0, column=2, padx=(8, 0))
-        ttk.Button(
-            feedback,
             text="打开日志目录",
             command=self._open_error_log_directory,
-        ).grid(row=0, column=3, padx=(8, 0))
+        ).grid(row=0, column=2, padx=(8, 0))
 
     def _refresh_settings_status(self) -> None:
         self.game_path_var.set(str(self.game_dir_override or ""))
@@ -1562,22 +1554,8 @@ class SkinManagerV12:
         self._save_settings()
 
     def _auto_check_for_updates(self) -> None:
-        if not bool(self.settings.get("auto_check_updates", True)):
-            return
-        previous = str(self.settings.get("last_update_check_utc") or "")
-        try:
-            checked = datetime.fromisoformat(previous)
-            if checked.tzinfo is None:
-                checked = checked.replace(tzinfo=timezone.utc)
-            if datetime.now(timezone.utc) - checked < timedelta(hours=6):
-                self.update_status.configure(
-                    text=f"当前版本：v{MANAGER_VERSION} · 六小时内已检查 GitHub",
-                    foreground=COLORS["muted"],
-                )
-                return
-        except (TypeError, ValueError):
-            pass
-        self._check_for_updates(manual=False)
+        if bool(self.settings.get("auto_check_updates", True)):
+            self._check_for_updates(manual=False)
 
     def _check_for_updates(self, *, manual: bool) -> None:
         if self.update_check_running:
@@ -1624,8 +1602,6 @@ class SkinManagerV12:
             return
         assert release is not None
         self.latest_release = release
-        self.settings["last_update_check_utc"] = datetime.now(timezone.utc).isoformat()
-        self._save_settings()
         if not release.get("update_available"):
             self.install_update_button.configure(state="disabled")
             self.update_status.configure(
@@ -1730,25 +1706,10 @@ class SkinManagerV12:
         if popup:
             messagebox.showinfo(
                 "诊断已复制",
-                "脱敏诊断报告已复制到剪贴板。提交前仍请检查内容。",
+                "脱敏诊断报告已复制到剪贴板，可以直接粘贴到 IM 发给维护者。",
                 parent=self.root,
             )
         return report
-
-    def _copy_and_open_feedback(self) -> None:
-        try:
-            self._copy_diagnostic_report(popup=False)
-            opened = webbrowser.open(github_issue_url(MANAGER_VERSION), new=2)
-            if not opened:
-                raise RuntimeError("系统未能打开默认浏览器")
-        except Exception as error:
-            messagebox.showerror("无法打开反馈页", str(error), parent=self.root)
-            return
-        messagebox.showinfo(
-            "反馈页已打开",
-            "诊断报告已复制。请在 GitHub 页面粘贴、检查并提交。",
-            parent=self.root,
-        )
 
     def _open_error_log_directory(self) -> None:
         self.error_log_path.parent.mkdir(parents=True, exist_ok=True)
@@ -2054,11 +2015,11 @@ class SkinManagerV12:
         self.launch_button.configure(state="normal")
         self._show_error("操作失败", error, details=details)
         if messagebox.askyesno(
-            "反馈这个错误？",
-            "是否复制脱敏诊断报告并打开 GitHub 反馈页？\n\n软件不会自动上传日志。",
+            "复制错误诊断？",
+            "是否复制脱敏诊断报告？复制后可以直接粘贴到 IM 发给维护者。\n\n软件不会上传日志。",
             parent=self.root,
         ):
-            self._copy_and_open_feedback()
+            self._copy_diagnostic_report(popup=False)
         self._refresh_global_status()
 
     def _finish_action(self, title: str, text: str, *, popup: bool = True) -> None:
