@@ -54,6 +54,46 @@ class ManualSlotEditorTests(unittest.TestCase):
         ui._render_output_canvas.assert_called_once_with("store_image", override)
         ui.live_renderer.render.assert_not_called()
 
+    def test_empty_dirty_slot_does_not_hide_generated_default_preview(self) -> None:
+        editor = ManualSlotEditor.__new__(ManualSlotEditor)
+        editor.current_slot = ""
+        editor._loading_controls = False
+        editor.dirty_slots = {"portrait_gameplay"}
+        editor.slot_states = {"portrait_gameplay": SlotState()}
+        editor.slot_sizes = {"portrait_gameplay": (64, 64)}
+        editor.slot_preview_cache = {}
+
+        overrides = editor.commit_for_mode_switch({"portrait_gameplay"})
+
+        self.assertEqual({}, overrides)
+        self.assertFalse(editor.has_overrides())
+        self.assertEqual(0, editor.override_count())
+
+    def test_missing_override_source_falls_back_but_transparent_file_is_valid(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            transparent = Path(temporary) / "transparent.png"
+            Image.new("RGBA", (16, 16), (0, 0, 0, 0)).save(transparent)
+            editor = ManualSlotEditor.__new__(ManualSlotEditor)
+            editor.current_slot = ""
+            editor._loading_controls = False
+            editor.dirty_slots = {"missing", "transparent"}
+            editor.slot_states = {
+                "missing": SlotState(
+                    direct=LayerState(str(Path(temporary) / "missing.png"))
+                ),
+                "transparent": SlotState(direct=LayerState(str(transparent))),
+            }
+            editor.slot_sizes = {"missing": (16, 16), "transparent": (16, 16)}
+            editor.slot_preview_cache = {}
+
+            overrides = editor.commit_for_mode_switch()
+
+            self.assertEqual({"transparent"}, editor.effective_override_slots())
+
+        self.assertNotIn("missing", overrides)
+        self.assertIn("transparent", overrides)
+        self.assertIsNone(overrides["transparent"].getbbox())
+
     @staticmethod
     def _create_badge_template(root: Path) -> Path:
         directory = root / "badge-templates" / "hero-select-gold"

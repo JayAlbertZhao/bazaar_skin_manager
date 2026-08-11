@@ -916,11 +916,42 @@ class ManualSlotEditor:
             f"草稿已修改：{len(self.dirty_slots)} 个槽位覆盖默认模式；切换模式不会重新生成"
         )
 
+    @staticmethod
+    def _state_has_renderable_input(state: SlotState) -> bool:
+        """Return whether an override still has a source that can be rendered.
+
+        A dirty marker is only metadata; it must never turn a generated base
+        slot into a transparent bitmap after the user clears an input or a
+        cached source disappears.  Existing transparent PNGs remain valid
+        overrides because the source file itself is still present.
+        """
+
+        layer_ids = (
+            ("background", "character")
+            if state.mode == "layered"
+            else ("direct",)
+        )
+        return any(
+            bool(layer.path) and Path(layer.path).is_file()
+            for layer_id in layer_ids
+            for layer in (state.layer(layer_id),)
+        )
+
+    def effective_override_slots(self) -> set[str]:
+        """Return sparse overrides that can safely shadow the automatic base."""
+
+        return {
+            slot
+            for slot in getattr(self, "dirty_slots", set())
+            if slot in self.slot_states
+            and self._state_has_renderable_input(self.slot_states[slot])
+        }
+
     def has_overrides(self) -> bool:
-        return bool(self.dirty_slots)
+        return bool(self.effective_override_slots())
 
     def override_count(self) -> int:
-        return len(self.dirty_slots)
+        return len(self.effective_override_slots())
 
     def current_pack_id(self) -> str:
         return self.pack_id
@@ -937,17 +968,9 @@ class ManualSlotEditor:
 
         self._commit_controls()
         overrides: dict[str, Image.Image] = {}
-        requested = self.dirty_slots & preview_slots if preview_slots is not None else self.dirty_slots
+        effective = self.effective_override_slots()
+        requested = effective & preview_slots if preview_slots is not None else effective
         for slot in requested:
-            if slot not in self.slot_states:
-                continue
-            if not self.slot_states[slot].has_input():
-                overrides[slot] = Image.new(
-                    "RGBA",
-                    self.slot_sizes[slot],
-                    (0, 0, 0, 0),
-                )
-                continue
             cached = self.slot_preview_cache.get(slot)
             if cached is None:
                 foreground, background = self._render_slot(slot)
@@ -1564,7 +1587,7 @@ class ManualSlotEditor:
             slot_states=deepcopy(self.slot_states),
             slot_sizes=dict(self.slot_sizes),
             automatic_authoring=deepcopy(getattr(self, "automatic_authoring", {})),
-            dirty_slots=set(getattr(self, "dirty_slots", set())),
+            dirty_slots=self.effective_override_slots(),
             workspace=self.editing_workspace,
         )
 

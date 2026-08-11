@@ -1,5 +1,5 @@
 #ifndef MyAppVersion
-  #define MyAppVersion "1.4.8"
+  #define MyAppVersion "1.4.9"
 #endif
 #ifndef SourceRoot
   #define SourceRoot ".."
