@@ -504,6 +504,68 @@ class ManualSlotEditorTests(unittest.TestCase):
                 editor.slot_states["store_image"].direct.path,
             )
 
+    def test_dynamic_generated_source_is_frozen_before_repeated_transform(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            workspace = StudioWorkspace.create(
+                "local.dooley.idempotent-transform",
+                root=root,
+                name="Idempotent transform",
+                version="1.4.8",
+                hero="Dooley",
+                skin="Skin_DOO_01/A",
+            )
+            workspace.import_pil_image(
+                "store_image",
+                Image.new("RGBA", (64, 64), (20, 80, 220, 255)),
+            )
+            generated = workspace.visual_path("store_image")
+            assert generated is not None
+
+            editor = ManualSlotEditor.__new__(ManualSlotEditor)
+            editor.current_slot = ""
+            editor.current_layer = "direct"
+            editor._loading_controls = False
+            editor.editing_workspace = workspace
+            editor.automatic_authoring = {}
+            editor.pack_id = "local.dooley.idempotent-transform"
+            editor.name_var = mock.Mock(get=mock.Mock(return_value="Idempotent transform"))
+            editor.version_var = mock.Mock(get=mock.Mock(return_value="1.4.8"))
+            editor.slot_names = {"store_image": "Store image"}
+            editor.slot_sizes = {"store_image": (64, 64)}
+            editor.slot_states = {
+                "store_image": SlotState(
+                    mode="direct",
+                    direct=LayerState(str(generated), x=4, y=-3, scale=0.5),
+                )
+            }
+            editor.dirty_slots = set()
+            editor.slot_preview_cache = {}
+            editor.status_var = mock.Mock()
+            editor._adapter = lambda: SimpleNamespace(
+                hero="Dooley",
+                skin="Skin_DOO_01/A",
+                skin_name_contains="Default",
+            )
+
+            editor._mark_dirty("store_image")
+            frozen = Path(editor.slot_states["store_image"].direct.path)
+            self.assertIn("authoring\\manual_drafts\\store_image", str(frozen))
+            self.assertNotEqual(generated, frozen)
+
+            # Simulate automatic mode replacing its mutable generated output.
+            Image.new("RGBA", (64, 64), (230, 30, 20, 255)).save(generated)
+            first = editor._materialize_workspace(editor._build_snapshot())
+            first_pixels = first.visual_path("store_image").read_bytes()
+            second = editor._materialize_workspace(editor._build_snapshot())
+            second_pixels = second.visual_path("store_image").read_bytes()
+
+            self.assertEqual(first_pixels, second_pixels)
+            with Image.open(second.visual_path("store_image")) as rendered:
+                rgba = rendered.convert("RGBA")
+                self.assertEqual((20, 80, 220, 255), rgba.getpixel((36, 29)))
+                self.assertEqual((20, 13, 52, 45), rgba.getbbox())
+
     def test_v132_creation_modes_switch_live_and_share_the_manager_cache(self) -> None:
         source = (ROOT / "tools" / "bazaar_skin_manager_ui_v12.py").read_text(encoding="utf-8")
         generator = (ROOT / "tools" / "asset_generator_ui.py").read_text(encoding="utf-8")

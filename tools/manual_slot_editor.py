@@ -864,10 +864,52 @@ class ManualSlotEditor:
             return "未提供"
         return "分层" if state.mode == "layered" else "成品图"
 
+    def _freeze_dynamic_slot_sources(self, slot: str) -> None:
+        """Detach an override from generated ``assets`` before editing it.
+
+        Generated slot files are mutable outputs: the automatic pipeline and
+        manual materialization both replace them in place.  Keeping one of
+        those files as the source of a non-identity transform would bake the
+        transform into the file and apply it again on the next edit (scale is
+        squared and offsets accumulate).  The first edit therefore snapshots
+        every generated layer used by that slot into immutable authoring
+        storage.  Subsequent renders always start from that same source.
+        """
+
+        workspace = self.editing_workspace
+        state = self.slot_states.get(slot)
+        if workspace is None or state is None:
+            return
+        dynamic_root = (workspace.directory / "assets").resolve()
+        for layer_id in ("direct", "background", "character"):
+            layer = state.layer(layer_id)
+            if not layer.path:
+                continue
+            source = Path(layer.path).resolve()
+            if not source.is_file():
+                continue
+            try:
+                source.relative_to(dynamic_root)
+            except ValueError:
+                continue
+            destination = (
+                workspace.directory
+                / "authoring"
+                / "manual_drafts"
+                / slot
+                / f"{layer_id}{source.suffix.casefold()}"
+            )
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source, destination)
+            layer.path = str(destination.resolve())
+            if slot == self.current_slot and hasattr(self, "path_vars"):
+                self.path_vars[layer_id].set(layer.path)
+
     def _mark_dirty(self, slot: str | None = None) -> None:
         selected = slot or self.current_slot
         if not selected:
             return
+        self._freeze_dynamic_slot_sources(selected)
         self.dirty_slots.add(selected)
         self.slot_preview_cache.pop(selected, None)
         self.status_var.set(
