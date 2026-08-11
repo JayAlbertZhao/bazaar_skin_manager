@@ -84,7 +84,8 @@ Download the software artifacts from
 - `TheBazaarModManager-Portable-<version>.zip`
 
 The installer and portable ZIP contain a single manager executable. Skin creation
-and Spine animation import are already integrated into that executable.
+and Spine animation import are already integrated into that executable. The animation
+page accepts complete Spine 4.1/4.2 ZIP packages, including multi-page atlases.
 
 The installer is per-user and does not require administrator rights. If a
 release is unsigned, Windows may display a reputation warning; verify the
@@ -188,13 +189,13 @@ Build the runtime and manager:
 
 ```powershell
 .\build.ps1 -Configuration Release
-.\build.ps1 -Version 1.4.1
-.\build-manager.ps1 -Version 1.4.1
-.\build-asset-generator.ps1 -Version 1.4.1
-.\build-spine-manager.ps1 -Version 1.4.1
-.\build-installer.ps1 -Version 1.4.1
-.\package-manager-portable.ps1 -Version 1.4.1
-.\package-asset-generator-portable.ps1 -Version 1.4.1
+.\build.ps1 -Version 1.4.2
+.\build-manager.ps1 -Version 1.4.2
+.\build-asset-generator.ps1 -Version 1.4.2
+.\build-spine-manager.ps1 -Version 1.4.2
+.\build-installer.ps1 -Version 1.4.2
+.\package-manager-portable.ps1 -Version 1.4.2
+.\package-asset-generator-portable.ps1 -Version 1.4.2
 ```
 
 Useful source commands:

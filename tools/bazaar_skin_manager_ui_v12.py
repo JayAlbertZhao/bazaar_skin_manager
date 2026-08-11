@@ -1369,7 +1369,7 @@ class SkinManagerV12:
         ttk.Label(form, text="兼容目标").grid(row=4, column=0, sticky="w", pady=5)
         self.spine_target_box = ttk.Combobox(form, textvariable=self.spine_target, state="readonly", width=34)
         self.spine_target_box.grid(row=4, column=1, sticky="ew", padx=(10, 0), pady=5)
-        ttk.Button(form, text="选择 JSON、ATLAS 和纹理…", command=self._browse_spine_files).grid(row=5, column=0, columnspan=2, sticky="ew", pady=(12, 5))
+        ttk.Button(form, text="选择 Spine ZIP 或散文件…", command=self._browse_spine_files).grid(row=5, column=0, columnspan=2, sticky="ew", pady=(12, 5))
         ttk.Button(form, text="清空输入", command=self._clear_spine_inputs).grid(row=6, column=0, sticky="ew", pady=5)
         ttk.Button(form, text="导入为一级素材", style="Accent.TButton", command=self._import_spine_asset).grid(row=6, column=1, sticky="ew", padx=(8, 0), pady=5)
 
@@ -1381,17 +1381,24 @@ class SkinManagerV12:
         self.spine_files_label.grid(row=0, column=0, sticky="ew", pady=(0, 8))
         self.spine_preview = tk.Label(preview, bg=COLORS["empty"], text="选择 Spine 文件后显示纹理预览", fg=COLORS["muted"])
         self.spine_preview.grid(row=1, column=0, sticky="nsew")
-        ttk.Label(preview, text="导入会校验骨骼、Atlas 和纹理引用；成功后进入皮肤管理 → 一级素材管理。", style="Alt.TLabel").grid(row=2, column=0, sticky="w", pady=(8, 0))
+        ttk.Label(preview, text="ZIP 可包含多页 Atlas、嵌套源图和 Spine 工程；导入时会自动校验并归一化。", style="Alt.TLabel").grid(row=2, column=0, sticky="w", pady=(8, 0))
 
     def _browse_spine_files(self) -> None:
         values = filedialog.askopenfilenames(
             parent=self.root,
             title="选择 Spine 动画源",
-            filetypes=(("Spine files", "*.json *.atlas *.png"), ("All files", "*.*")),
+            filetypes=(("Spine package", "*.zip"), ("Spine files", "*.json *.atlas *.png"), ("All files", "*.*")),
         )
         if not values:
             return
         self.spine_files = [Path(value).resolve() for value in values]
+        archives = [path for path in self.spine_files if path.suffix.casefold() == ".zip"]
+        if archives and len(self.spine_files) != 1:
+            self.spine_files = []
+            self._show_error("动画导入失败", ValueError("Spine ZIP 必须单独选择，不能与散文件混合导入。"))
+            return
+        if len(self.spine_files) == 1 and self.spine_name.get().strip() in {"", "新 Spine 动画"}:
+            self.spine_name.set(self.spine_files[0].stem)
         self.spine_files_label.configure(text=" · ".join(ellipsize(path.name, 28) for path in self.spine_files))
         texture = next((path for path in self.spine_files if path.suffix.casefold() == ".png"), None)
         self._set_preview(self.spine_preview, texture, (640, 520), "spine-import")
@@ -1402,6 +1409,9 @@ class SkinManagerV12:
         self._set_preview(self.spine_preview, None, (640, 520), "spine-import")
 
     def _import_spine_asset(self) -> None:
+        if not self.spine_files:
+            self._show_error("动画导入失败", ValueError("请先选择 Spine ZIP，或 JSON、ATLAS 和纹理文件。"))
+            return
         target_value = self.spine_target.get()
         target_map = {label: target for _key, label, target in self._target_records()}
         try:
@@ -1416,6 +1426,7 @@ class SkinManagerV12:
         except Exception as error:
             self._show_error("动画导入失败", error)
             return
+        self.spine_runtime.set(str((record.get("metadata") or {}).get("runtime_version") or self.spine_runtime.get())[:3])
         self.selected_asset_id = record["id"]
         self.pages.select(self.management_page)
         self.management_tabs.select(self.asset_tab)

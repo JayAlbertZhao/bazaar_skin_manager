@@ -197,6 +197,66 @@ class FirstClassAssetLibraryTests(unittest.TestCase):
             self.assertEqual(record["metadata"]["animations"], ["idle"])
             self.assertEqual(len(library.record_files(record)), 3)
 
+    def test_spine_zip_auto_detects_41_and_normalizes_multi_page_atlas(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / "source"
+            (source / "images").mkdir(parents=True)
+            (source / "Velina.json").write_text(
+                json.dumps(
+                    {
+                        "skeleton": {"spine": "4.1.24"},
+                        "bones": [{"name": "root"}],
+                        "skins": [{"name": "default", "attachments": {}}],
+                        "animations": {"loop": {}},
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (source / "Velina.atlas").write_text(
+                "Velina_1.png\nsize:8,8\nfilter:Linear,Linear\nscale:0.33\n"
+                "first\nbounds:0,0,8,8\n\n"
+                "Velina_2.png\nsize:8,6\nfilter:Linear,Linear\nscale:0.33\n"
+                "second\nbounds:0,0,8,6\n",
+                encoding="utf-8",
+            )
+            Image.new("RGBA", (8, 8), (255, 0, 0, 255)).save(source / "Velina_1.png")
+            Image.new("RGBA", (8, 6), (0, 255, 0, 255)).save(source / "Velina_2.png")
+            Image.new("RGBA", (4, 4), (0, 0, 255, 255)).save(source / "images" / "source.png")
+            (source / "维琳娜.spine").write_bytes(b"source project is intentionally ignored")
+            archive = root / "维琳娜.zip"
+            with zipfile.ZipFile(archive, "w") as output:
+                for path in source.rglob("*"):
+                    if path.is_file():
+                        output.write(path, path.relative_to(source).as_posix())
+
+            library = AssetLibrary(root / "library")
+            record = library.import_spine(
+                [archive],
+                name="维琳娜",
+                runtime_version="4.2",
+            )
+
+            self.assertEqual(record["metadata"]["runtime_version"], "4.1.24")
+            self.assertEqual(record["metadata"]["animations"], ["loop"])
+            self.assertEqual(record["metadata"]["skins"], ["default"])
+            self.assertEqual(record["metadata"]["atlas_scale"], 0.33)
+            self.assertEqual(record["metadata"]["image_size"], [8, 14])
+            self.assertEqual(record["metadata"]["package_format"], "zip")
+            self.assertEqual(record["source"], str(archive.resolve()))
+            source_files = record["metadata"]["source_files"]
+            self.assertEqual(len(source_files), 1)
+            self.assertEqual(source_files[0]["name"], archive.name)
+            self.assertRegex(source_files[0]["sha256"], r"^[0-9a-f]{64}$")
+            files = {path.suffix.casefold(): path for path in library.record_files(record)}
+            self.assertEqual(set(files), {".json", ".atlas", ".png"})
+            atlas_text = files[".atlas"].read_text(encoding="utf-8")
+            self.assertEqual(atlas_text.splitlines()[0], "skeleton.png")
+            self.assertNotIn("Velina_2.png", atlas_text)
+            with Image.open(files[".png"]) as image:
+                self.assertEqual(image.size, (8, 14))
+                self.assertEqual(image.getpixel((0, 13)), (0, 255, 0, 255))
+
     def test_pack_export_round_trips_first_class_assets_and_references(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -241,6 +301,18 @@ class FirstClassAssetLibraryTests(unittest.TestCase):
 
 
 class ManagerV12SurfaceTests(unittest.TestCase):
+    def test_integrated_animation_page_accepts_spine_zip(self) -> None:
+        ui = (ROOT / "tools" / "bazaar_skin_manager_ui_v12.py").read_text(
+            encoding="utf-8"
+        )
+        entry = (ROOT / "tools" / "bazaar_skin_manager_ui.py").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn('text="选择 Spine ZIP 或散文件…"', ui)
+        self.assertIn('("Spine package", "*.zip")', ui)
+        self.assertIn('suffix.casefold() == ".zip"', ui)
+        self.assertIn('"--smoke-spine-import"', entry)
+
     def test_every_catalog_hero_has_an_original_target_preview(self) -> None:
         catalog = json.loads(
             (ROOT / "manager" / "hero-catalog.json").read_text(

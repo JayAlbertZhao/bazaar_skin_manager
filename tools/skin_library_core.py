@@ -234,6 +234,14 @@ class AssetLibrary:
         license_text: str = "",
     ) -> dict:
         sources = [Path(path).resolve() for path in files]
+        if len(sources) == 1 and sources[0].suffix.casefold() == ".zip":
+            return self.import_spine_package(
+                sources[0],
+                name=name,
+                target=target,
+                author=author,
+                license_text=license_text,
+            )
         unsupported = [
             path.name
             for path in sources
@@ -256,7 +264,7 @@ class AssetLibrary:
         # Reuse the already verified Spine 4.1/4.2 importer instead of adding a
         # second, weaker atlas parser here.  Store a normalized one-page group
         # so later workspace references remain valid after content-addressing.
-        from spine_manager_core import _rewrite_atlas, import_spine_package
+        from spine_manager_core import import_spine_package
 
         with tempfile.TemporaryDirectory() as temporary:
             temporary_root = Path(temporary)
@@ -273,41 +281,113 @@ class AssetLibrary:
                 raise ValueError(
                     f"填写的 Spine 版本 {declared} 与资源版本 {package.version} 不一致。"
                 )
-            normalized = temporary_root / "portable"
-            normalized.mkdir()
-            json_path = normalized / "skeleton.json"
-            atlas_path = normalized / "skeleton.atlas"
-            texture_path = normalized / "skeleton.png"
-            shutil.copy2(package.json_path, json_path)
-            atlas_text = package.atlas_path.read_text(encoding="utf-8-sig")
-            atlas_path.write_text(
-                _rewrite_atlas(atlas_text, texture_path.name),
-                encoding="utf-8",
-            )
-            shutil.copy2(package.texture_path, texture_path)
-            return self.import_files(
-                [json_path, atlas_path, texture_path],
-                asset_type="spine",
+            return self._store_spine_package(
+                package,
+                sources=sources,
                 name=name,
-                metadata={
-                    "runtime_version": package.version,
-                    "target": target or {},
-                    "author": author.strip(),
-                    "license": license_text.strip(),
-                    "animations": list(package.animations),
-                    "skins": list(package.skins),
-                    "image_size": [package.width, package.height],
-                    "atlas_scale": package.atlas_scale,
-                    "source_files": [
-                        {
-                            "name": source_file.name,
-                            "sha256": sha256_file(source_file),
-                        }
-                        for source_file in sources
-                    ],
-                },
+                target=target,
+                author=author,
+                license_text=license_text,
+                temporary_root=temporary_root,
                 source=str(sources[0].parent),
             )
+
+    def import_spine_package(
+        self,
+        source: Path,
+        *,
+        name: str,
+        target: dict | None = None,
+        author: str = "",
+        license_text: str = "",
+    ) -> dict:
+        """Validate and import a portable Spine ZIP or extracted directory.
+
+        Runtime version, atlas pages and texture names come from the package
+        itself. Multi-page atlases are normalized to the same portable
+        one-page representation used by the manual file importer.
+        """
+        source = Path(source).resolve()
+        if not source.exists():
+            raise FileNotFoundError(source)
+        if source.is_file() and source.suffix.casefold() != ".zip":
+            raise ValueError("Spine package must be a ZIP archive or directory.")
+
+        from spine_manager_core import import_spine_package
+
+        with tempfile.TemporaryDirectory() as temporary:
+            temporary_root = Path(temporary)
+            package = import_spine_package(
+                source,
+                workspace=temporary_root / "validated",
+            )
+            source_files = [source] if source.is_file() else sorted(
+                (path for path in source.rglob("*") if path.is_file()),
+                key=lambda path: path.relative_to(source).as_posix().casefold(),
+            )
+            return self._store_spine_package(
+                package,
+                sources=source_files,
+                name=name,
+                target=target,
+                author=author,
+                license_text=license_text,
+                temporary_root=temporary_root,
+                source=str(source),
+                package_format="zip" if source.is_file() else "directory",
+            )
+
+    def _store_spine_package(
+        self,
+        package,
+        *,
+        sources: list[Path],
+        name: str,
+        target: dict | None,
+        author: str,
+        license_text: str,
+        temporary_root: Path,
+        source: str,
+        package_format: str = "selected_files",
+    ) -> dict:
+        from spine_manager_core import _rewrite_atlas
+
+        normalized = temporary_root / "portable"
+        normalized.mkdir()
+        json_path = normalized / "skeleton.json"
+        atlas_path = normalized / "skeleton.atlas"
+        texture_path = normalized / "skeleton.png"
+        shutil.copy2(package.json_path, json_path)
+        atlas_text = package.atlas_path.read_text(encoding="utf-8-sig")
+        atlas_path.write_text(
+            _rewrite_atlas(atlas_text, texture_path.name),
+            encoding="utf-8",
+        )
+        shutil.copy2(package.texture_path, texture_path)
+        return self.import_files(
+            [json_path, atlas_path, texture_path],
+            asset_type="spine",
+            name=name,
+            metadata={
+                "runtime_version": package.version,
+                "target": target or {},
+                "author": author.strip(),
+                "license": license_text.strip(),
+                "animations": list(package.animations),
+                "skins": list(package.skins),
+                "image_size": [package.width, package.height],
+                "atlas_scale": package.atlas_scale,
+                "package_format": package_format,
+                "source_files": [
+                    {
+                        "name": source_file.name,
+                        "sha256": sha256_file(source_file),
+                    }
+                    for source_file in sources
+                ],
+            },
+            source=source,
+        )
 
     def register_workspace(self, workspace: StudioWorkspace) -> dict[str, str]:
         """Migrate authoring inputs and reusable outputs into the asset index."""

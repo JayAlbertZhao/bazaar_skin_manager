@@ -3473,6 +3473,36 @@ def main() -> int:
         except Exception:
             return 4
         return 0
+    if "--smoke-spine-import" in sys.argv:
+        try:
+            index = sys.argv.index("--smoke-spine-import")
+            source = Path(sys.argv[index + 1])
+            from skin_library_core import AssetLibrary
+
+            with tempfile.TemporaryDirectory() as temp:
+                library = AssetLibrary(Path(temp) / "library")
+                record = library.import_spine(
+                    [source],
+                    name=source.stem,
+                    runtime_version="",
+                )
+                metadata = record.get("metadata") or {}
+                if record.get("type") != "spine":
+                    return 11
+                if not str(metadata.get("runtime_version") or "").startswith(("4.1", "4.2")):
+                    return 11
+                if not metadata.get("animations") or "default" not in (metadata.get("skins") or []):
+                    return 11
+                if {path.suffix.casefold() for path in library.record_files(record)} != {".json", ".atlas", ".png"}:
+                    return 11
+        except Exception:
+            if os.environ.get("BAZAAR_SKIN_MANAGER_STUDIO_DEBUG") == "1":
+                Path(
+                    tempfile.gettempdir(),
+                    "bazaar-manager-smoke-spine-import.log",
+                ).write_text(traceback.format_exc(), encoding="utf-8")
+            return 11
+        return 0
     if "--smoke-deploy" in sys.argv:
         workspace = None
         deployed = False
