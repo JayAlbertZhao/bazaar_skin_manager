@@ -49,7 +49,7 @@ from spine_static_preview import (
 )
 
 
-APP_VERSION = "1.4.3"
+APP_VERSION = "1.4.4"
 PROJECT_ROOT = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parents[1]))
 PREVIEW_BACKGROUND_PATH = (
     PROJECT_ROOT / "manager" / "spine-preview" / "hero-select-background.jpg"

@@ -45,7 +45,7 @@ from skin_pack_builder import (
 PROFILE_SCHEMA = 1
 AUTHORING_RECIPE_ID = "deterministic-raster-v1"
 AUTHORING_RECIPE_VERSION = 2
-ASSET_GENERATOR_VERSION = "1.4.3"
+ASSET_GENERATOR_VERSION = "1.4.4"
 ProgressCallback = Callable[[str, str], None]
 
 

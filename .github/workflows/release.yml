@@ -9,7 +9,7 @@ on:
       version:
         description: "Version without v prefix"
         required: true
-        default: "1.4.3"
+        default: "1.4.4"
 
 permissions:
   contents: write
@@ -47,7 +47,7 @@ jobs:
       - name: Validate release surface
         shell: pwsh
         run: |
-          python -m py_compile tools/bazaar_skin_manager.py tools/mod_studio_core.py tools/bazaar_skin_manager_ui.py tools/adapter_registry.py tools/skin_pack_builder.py tools/asset_generator_core.py tools/asset_generator_ui.py tools/manual_slot_editor.py tools/badge_pipeline.py tools/spine_manager_core.py tools/spine_static_preview.py tools/bazaar_spine_manager_ui.py
+          python -m py_compile tools/bazaar_skin_manager.py tools/mod_studio_core.py tools/bazaar_skin_manager_ui.py tools/bazaar_skin_manager_ui_v12.py tools/update_service.py tools/support_report.py tools/adapter_registry.py tools/skin_pack_builder.py tools/asset_generator_core.py tools/asset_generator_ui.py tools/manual_slot_editor.py tools/badge_pipeline.py tools/spine_manager_core.py tools/spine_static_preview.py tools/bazaar_spine_manager_ui.py
           New-Item -ItemType Directory -Force dist/runtime | Out-Null
           Copy-Item manager/runtime/BazaarSkinManager.Runtime.dll dist/runtime/BazaarSkinManager.Runtime.dll
           Copy-Item manager/runtime/runtime-build.json dist/runtime/runtime-build.json

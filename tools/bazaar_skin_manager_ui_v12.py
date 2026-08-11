@@ -16,7 +16,9 @@ import struct
 import tempfile
 import threading
 import traceback
+import webbrowser
 import zipfile
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
@@ -47,6 +49,16 @@ from mod_studio_core import (
     materialized_pack_id,
 )
 from skin_library_core import AssetLibrary, classify_file
+from support_report import (
+    append_error_log,
+    build_diagnostic_report,
+    github_issue_url,
+)
+from update_service import (
+    download_release_installer,
+    fetch_latest_release,
+    launch_verified_installer,
+)
 
 try:
     from tkinterdnd2 import DND_FILES, TkinterDnD
@@ -340,12 +352,15 @@ class SkinManagerV12:
         self.pending_manual_mode_switch = False
         self.creation_mode_guard = False
         self.spine_files: list[Path] = []
+        self.latest_release: dict | None = None
+        self.update_check_running = False
         self._configure_style()
         self._load_library_state()
         if auto_located:
             self._save_settings()
         self._build_ui()
         self._refresh_everything()
+        self.root.after(1500, self._auto_check_for_updates)
 
     # ---------- persisted state ----------
 
@@ -1465,6 +1480,68 @@ class SkinManagerV12:
         self.compatibility_status = ttk.Label(data, text="", style="Muted.TLabel", wraplength=900)
         self.compatibility_status.grid(row=3, column=0, columnspan=3, sticky="w", pady=(12, 0))
 
+        updates = ttk.LabelFrame(page, text="软件更新", padding=16)
+        updates.grid(row=2, column=0, sticky="ew", pady=(14, 0))
+        updates.columnconfigure(0, weight=1)
+        self.update_status = ttk.Label(
+            updates,
+            text=f"当前版本：v{MANAGER_VERSION}",
+            style="Muted.TLabel",
+            wraplength=850,
+        )
+        self.update_status.grid(row=0, column=0, sticky="w")
+        self.auto_update_var = tk.BooleanVar(
+            value=bool(self.settings.get("auto_check_updates", True))
+        )
+        ttk.Checkbutton(
+            updates,
+            text="启动时自动检查 GitHub 正式版",
+            variable=self.auto_update_var,
+            command=self._save_update_preference,
+        ).grid(row=1, column=0, sticky="w", pady=(10, 0))
+        self.check_update_button = ttk.Button(
+            updates,
+            text="检查更新",
+            command=lambda: self._check_for_updates(manual=True),
+        )
+        self.check_update_button.grid(row=0, column=1, padx=(10, 0))
+        self.install_update_button = ttk.Button(
+            updates,
+            text="下载并安装",
+            command=self._download_available_update,
+            state="disabled",
+        )
+        self.install_update_button.grid(row=0, column=2, padx=(8, 0))
+
+        feedback = ttk.LabelFrame(page, text="错误日志与反馈", padding=16)
+        feedback.grid(row=3, column=0, sticky="ew", pady=(14, 0))
+        feedback.columnconfigure(0, weight=1)
+        self.error_log_path = manager_root() / "ui-error.log"
+        ttk.Label(
+            feedback,
+            text=(
+                "反馈报告会先在本机生成并脱敏；只有点击按钮后才复制到剪贴板或打开 GitHub。"
+                "软件不会静默上传日志。"
+            ),
+            style="Muted.TLabel",
+            wraplength=850,
+        ).grid(row=0, column=0, sticky="w")
+        ttk.Button(
+            feedback,
+            text="复制脱敏诊断",
+            command=self._copy_diagnostic_report,
+        ).grid(row=0, column=1, padx=(10, 0))
+        ttk.Button(
+            feedback,
+            text="复制并打开反馈页",
+            command=self._copy_and_open_feedback,
+        ).grid(row=0, column=2, padx=(8, 0))
+        ttk.Button(
+            feedback,
+            text="打开日志目录",
+            command=self._open_error_log_directory,
+        ).grid(row=0, column=3, padx=(8, 0))
+
     def _refresh_settings_status(self) -> None:
         self.game_path_var.set(str(self.game_dir_override or ""))
         steam = find_steam_executable()
@@ -1479,6 +1556,203 @@ class SkinManagerV12:
         )
         detected = len(self._target_records())
         self.compatibility_status.configure(text=f"当前 Steam build：{self.catalog.get('steam_build') or '未知'} · 已发现 {detected} 个职业皮肤目标 · 已验证适配 {supported} 个。")
+
+    def _save_update_preference(self) -> None:
+        self.settings["auto_check_updates"] = bool(self.auto_update_var.get())
+        self._save_settings()
+
+    def _auto_check_for_updates(self) -> None:
+        if not bool(self.settings.get("auto_check_updates", True)):
+            return
+        previous = str(self.settings.get("last_update_check_utc") or "")
+        try:
+            checked = datetime.fromisoformat(previous)
+            if checked.tzinfo is None:
+                checked = checked.replace(tzinfo=timezone.utc)
+            if datetime.now(timezone.utc) - checked < timedelta(hours=6):
+                self.update_status.configure(
+                    text=f"当前版本：v{MANAGER_VERSION} · 六小时内已检查 GitHub",
+                    foreground=COLORS["muted"],
+                )
+                return
+        except (TypeError, ValueError):
+            pass
+        self._check_for_updates(manual=False)
+
+    def _check_for_updates(self, *, manual: bool) -> None:
+        if self.update_check_running:
+            return
+        self.update_check_running = True
+        self.check_update_button.configure(state="disabled")
+        self.update_status.configure(text="正在检查 GitHub 正式版…", foreground=COLORS["warning"])
+
+        def worker() -> None:
+            try:
+                release = fetch_latest_release(MANAGER_VERSION)
+            except Exception as error:
+                self.root.after(
+                    0,
+                    lambda caught=error: self._finish_update_check(
+                        None, caught, manual=manual
+                    ),
+                )
+            else:
+                self.root.after(
+                    0,
+                    lambda result=release: self._finish_update_check(
+                        result, None, manual=manual
+                    ),
+                )
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _finish_update_check(
+        self,
+        release: dict | None,
+        error: Exception | None,
+        *,
+        manual: bool,
+    ) -> None:
+        self.update_check_running = False
+        self.check_update_button.configure(state="normal")
+        if error is not None:
+            self.update_status.configure(
+                text=f"更新检查失败：{error}", foreground=COLORS["warning"]
+            )
+            if manual:
+                self._show_error("更新检查失败", error)
+            return
+        assert release is not None
+        self.latest_release = release
+        self.settings["last_update_check_utc"] = datetime.now(timezone.utc).isoformat()
+        self._save_settings()
+        if not release.get("update_available"):
+            self.install_update_button.configure(state="disabled")
+            self.update_status.configure(
+                text=f"当前已是最新正式版：v{MANAGER_VERSION}",
+                foreground=COLORS["accent"],
+            )
+            if manual:
+                messagebox.showinfo(
+                    "没有可用更新",
+                    f"当前 v{MANAGER_VERSION} 已是 GitHub 最新正式版。",
+                    parent=self.root,
+                )
+            return
+        version = str(release["version"])
+        self.install_update_button.configure(state="normal")
+        self.update_status.configure(
+            text=f"发现正式版 v{version}；安装包会在下载后校验 SHA-256。",
+            foreground=COLORS["accent"],
+        )
+        already_notified = str(self.settings.get("last_notified_version") or "")
+        if not manual and already_notified != version:
+            self.settings["last_notified_version"] = version
+            self._save_settings()
+            if messagebox.askyesno(
+                "发现软件更新",
+                f"GitHub 已发布 v{version}。现在下载、校验并安装吗？",
+                parent=self.root,
+            ):
+                self._download_available_update(confirm=False)
+
+    def _download_available_update(self, *, confirm: bool = True) -> None:
+        release = self.latest_release
+        if not release or not release.get("update_available"):
+            self._check_for_updates(manual=True)
+            return
+        version = str(release["version"])
+        if confirm and not messagebox.askyesno(
+            "安装软件更新",
+            f"下载 GitHub 正式版 v{version}，校验 SHA-256 后关闭当前程序并升级？",
+            parent=self.root,
+        ):
+            return
+        update_root = manager_root() / "updates"
+        self._background(
+            f"正在下载并校验 v{version}…",
+            lambda: download_release_installer(release, update_root),
+            self._launch_downloaded_update,
+        )
+
+    def _launch_downloaded_update(self, result: dict) -> None:
+        try:
+            launch_verified_installer(Path(result["path"]))
+        except Exception as error:
+            self._background_error(error, traceback.format_exc())
+            return
+        self.global_status.configure(
+            text=f"v{result['version']} 安装程序已启动；正在关闭当前版本…",
+            foreground=COLORS["accent"],
+        )
+        self.root.after(400, self.root.destroy)
+
+    def _diagnostic_report(self) -> str:
+        game = {
+            "path": str(self.game_dir_override or ""),
+            "steam_build": self.catalog.get("steam_build"),
+            "catalog_source": self.catalog.get("source"),
+        }
+        loader: dict = {}
+        if self.game_dir_override:
+            try:
+                loader = bepinex_status(self.game_dir_override)
+            except Exception as error:
+                loader = {"status_error": str(error)}
+        try:
+            raw_deployment = installation_diagnostics()
+            deployment = {
+                key: raw_deployment.get(key)
+                for key in (
+                    "installed",
+                    "healthy",
+                    "state",
+                    "update_required",
+                    "checks",
+                    "compatibility_errors",
+                )
+            }
+        except Exception as error:
+            deployment = {"status_error": str(error)}
+        return build_diagnostic_report(
+            manager_version=MANAGER_VERSION,
+            error_log=self.error_log_path,
+            game=game,
+            loader=loader,
+            deployment=deployment,
+        )
+
+    def _copy_diagnostic_report(self, *, popup: bool = True) -> str:
+        report = self._diagnostic_report()
+        self.root.clipboard_clear()
+        self.root.clipboard_append(report)
+        self.root.update_idletasks()
+        if popup:
+            messagebox.showinfo(
+                "诊断已复制",
+                "脱敏诊断报告已复制到剪贴板。提交前仍请检查内容。",
+                parent=self.root,
+            )
+        return report
+
+    def _copy_and_open_feedback(self) -> None:
+        try:
+            self._copy_diagnostic_report(popup=False)
+            opened = webbrowser.open(github_issue_url(MANAGER_VERSION), new=2)
+            if not opened:
+                raise RuntimeError("系统未能打开默认浏览器")
+        except Exception as error:
+            messagebox.showerror("无法打开反馈页", str(error), parent=self.root)
+            return
+        messagebox.showinfo(
+            "反馈页已打开",
+            "诊断报告已复制。请在 GitHub 页面粘贴、检查并提交。",
+            parent=self.root,
+        )
+
+    def _open_error_log_directory(self) -> None:
+        self.error_log_path.parent.mkdir(parents=True, exist_ok=True)
+        os.startfile(self.error_log_path.parent)
 
     def _auto_locate_game(self) -> None:
         complete = [install for install in detect_installs() if install.complete]
@@ -1778,10 +2052,13 @@ class SkinManagerV12:
         self.busy = False
         self.deploy_button.configure(state="normal")
         self.launch_button.configure(state="normal")
-        log = manager_root() / "ui-error.log"
-        log.parent.mkdir(parents=True, exist_ok=True)
-        log.write_text(details, encoding="utf-8")
-        self._show_error("操作失败", error)
+        self._show_error("操作失败", error, details=details)
+        if messagebox.askyesno(
+            "反馈这个错误？",
+            "是否复制脱敏诊断报告并打开 GitHub 反馈页？\n\n软件不会自动上传日志。",
+            parent=self.root,
+        ):
+            self._copy_and_open_feedback()
         self._refresh_global_status()
 
     def _finish_action(self, title: str, text: str, *, popup: bool = True) -> None:
@@ -1888,7 +2165,17 @@ class SkinManagerV12:
         self._refresh_asset_gallery()
         self._refresh_settings_status()
 
-    def _show_error(self, title: str, error: Exception) -> None:
+    def _show_error(
+        self,
+        title: str,
+        error: Exception,
+        *,
+        details: str | None = None,
+    ) -> None:
+        trace = details or "".join(
+            traceback.format_exception(type(error), error, error.__traceback__)
+        )
+        append_error_log(manager_root() / "ui-error.log", title, trace)
         messagebox.showerror(title, str(error), parent=self.root)
 
     def self_test_layout(self) -> None:
