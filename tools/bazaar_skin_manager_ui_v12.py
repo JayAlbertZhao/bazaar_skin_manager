@@ -47,6 +47,19 @@ from mod_studio_core import (
     materialized_pack_id,
 )
 from skin_library_core import AssetLibrary, classify_file
+from spine_manager_core import import_spine_package, targets as spine_targets
+from spine_static_preview import (
+    HERO_ROOT_X,
+    HERO_ROOT_Y,
+    READY_CENTER_X,
+    READY_CENTER_Y,
+    READY_HEIGHT,
+    READY_WIDTH,
+    REFERENCE_HEIGHT,
+    REFERENCE_WIDTH,
+    calculate_preview_metrics,
+    render_setup_pose,
+)
 from support_report import (
     append_error_log,
     build_diagnostic_report,
@@ -937,6 +950,13 @@ class SkinManagerV12:
         self.pack_use.pack(side="left")
         self.pack_edit = ttk.Button(actions, text="编辑", command=self._edit_pack, state="disabled")
         self.pack_edit.pack(side="left", padx=(8, 0))
+        self.pack_spine = ttk.Button(
+            actions,
+            text="Spine 调节",
+            command=self._edit_pack_spine,
+            state="disabled",
+        )
+        self.pack_spine.pack(side="left", padx=(8, 0))
         self.pack_export = ttk.Button(actions, text="导出 ZIP", command=self._export_pack, state="disabled")
         self.pack_export.pack(side="left", padx=(8, 0))
         self.pack_delete = ttk.Button(actions, text="删除", style="Danger.TButton", command=self._delete_pack, state="disabled")
@@ -1050,6 +1070,12 @@ class SkinManagerV12:
         state = "normal" if workspace else "disabled"
         for button in (self.pack_use, self.pack_edit, self.pack_export, self.pack_delete):
             button.configure(state=state)
+        has_spine = bool(
+            workspace
+            and (workspace.state.get("animation") or {}).get("mode") == "spine"
+            and (workspace.state.get("animation") or {}).get("files")
+        )
+        self.pack_spine.configure(state="normal" if has_spine else "disabled")
         if workspace:
             pack = workspace.state.get("pack") or {}
             text = f"{ellipsize(pack.get('name'), 45)} · {ellipsize(pack.get('id'), 42)} · v{ellipsize(pack.get('version'), 16)} · {ellipsize(path, 70)}"
@@ -1877,6 +1903,22 @@ class SkinManagerV12:
         except Exception as error:
             self._show_error("无法编辑皮肤包", error)
 
+    def _edit_pack_spine(self) -> None:
+        workspace = self.workspaces.get(self.selected_pack_path or "")
+        if not workspace:
+            return
+        animation = workspace.state.get("animation") or {}
+        if animation.get("mode") != "spine" or not animation.get("files"):
+            messagebox.showinfo(
+                "没有 Spine 引用",
+                "请先为该皮肤引用一个 Spine 一级素材。",
+                parent=self.root,
+            )
+            return
+        dialog = PackEditorDialog(self, workspace)
+        dialog.show()
+        dialog.tabs.select(2)
+
     def _export_pack(self) -> None:
         workspace = self.workspaces.get(self.selected_pack_path or "")
         if not workspace:
@@ -2282,6 +2324,14 @@ class PackEditorDialog:
         self.window.minsize(820, 560)
         self.window.configure(bg=COLORS["window"])
         self.preview_photo = None
+        self.spine_preview_photo = None
+        self.spine_package = None
+        self.spine_preview_pose = None
+        self.spine_preview_metrics = None
+        self.spine_preview_job = None
+        self.spine_preview_canvas_scale = 0.0
+        self.spine_preview_game_pixels_per_unit = 0.0
+        self.spine_drag_origin = None
         self.window.protocol("WM_DELETE_WINDOW", self._close_requested)
 
     def show(self) -> None:
@@ -2296,12 +2346,15 @@ class PackEditorDialog:
         self.tabs.pack(fill="both", expand=True)
         visual = ttk.Frame(self.tabs, padding=12)
         audio = ttk.Frame(self.tabs, padding=12)
+        animation = ttk.Frame(self.tabs, padding=12)
         info = ttk.Frame(self.tabs, padding=12)
         self.tabs.add(visual, text="图像槽位")
         self.tabs.add(audio, text="音频")
+        self.tabs.add(animation, text="Spine 动画")
         self.tabs.add(info, text="皮肤包信息与日志")
         self._build_visual(visual)
         self._build_audio(audio)
+        self._build_animation(animation)
         self.name_var = tk.StringVar(value=pack.get("name") or "")
         self.version_var = tk.StringVar(value=pack.get("version") or "0.1.0")
         self.name_var.trace_add("write", lambda *_: setattr(self, "dirty", True))
@@ -2319,6 +2372,310 @@ class PackEditorDialog:
         ttk.Button(footer, text="导出 ZIP", command=lambda: self.app._export_workspace(self.workspace)).pack(side="left", padx=(8, 0))
         self.window.transient(self.app.root)
         self.window.grab_set()
+
+    def _build_animation(self, parent: ttk.Frame) -> None:
+        parent.columnconfigure(1, weight=1)
+        parent.rowconfigure(0, weight=1)
+        controls = ttk.LabelFrame(parent, text="位置与缩放", padding=12)
+        controls.grid(row=0, column=0, sticky="nsw", padx=(0, 12))
+        animation = self.workspace.state.get("animation") or {}
+        placement = animation.get("placement") or {}
+        self.spine_animation_var = tk.StringVar(
+            value=str(placement.get("animation") or "")
+        )
+        self.spine_x_var = tk.DoubleVar(
+            value=float(placement.get("root_x_offset", 0.0))
+        )
+        self.spine_y_var = tk.DoubleVar(
+            value=float(placement.get("root_y_offset", 300.0))
+        )
+        self.spine_scale_var = tk.DoubleVar(
+            value=float(placement.get("scale_multiplier", 1.0))
+        )
+        self.spine_status_var = tk.StringVar(value="正在读取 Spine 素材…")
+        ttk.Label(controls, text="动画").grid(row=0, column=0, sticky="w", pady=5)
+        self.spine_animation_box = ttk.Combobox(
+            controls,
+            textvariable=self.spine_animation_var,
+            state="readonly",
+            width=24,
+        )
+        self.spine_animation_box.grid(row=0, column=1, sticky="ew", pady=5)
+        for row, (label, variable, start, end, increment) in enumerate(
+            (
+                ("X 位置", self.spine_x_var, -500, 500, 5),
+                ("Y 位置", self.spine_y_var, -500, 500, 5),
+                ("缩放", self.spine_scale_var, 0.1, 4.0, 0.05),
+            ),
+            start=1,
+        ):
+            ttk.Label(controls, text=label).grid(row=row, column=0, sticky="w", pady=5)
+            ttk.Spinbox(
+                controls,
+                from_=start,
+                to=end,
+                increment=increment,
+                textvariable=variable,
+                width=14,
+            ).grid(row=row, column=1, sticky="ew", pady=5)
+        ttk.Button(
+            controls,
+            text="恢复推荐值",
+            command=self._reset_spine_placement,
+        ).grid(row=4, column=0, columnspan=2, sticky="ew", pady=(12, 5))
+        ttk.Label(
+            controls,
+            text=(
+                "拖动右侧角色可调整 X/Y。\n"
+                "Y 增大时角色上移；缩放 1.0 为原始倍率。"
+            ),
+            style="Muted.TLabel",
+            wraplength=220,
+        ).grid(row=5, column=0, columnspan=2, sticky="w", pady=(8, 0))
+
+        preview = ttk.Frame(parent, style="Alt.TFrame", padding=10)
+        preview.grid(row=0, column=1, sticky="nsew")
+        preview.columnconfigure(0, weight=1)
+        preview.rowconfigure(0, weight=1)
+        self.spine_preview_canvas = tk.Canvas(
+            preview,
+            bg=COLORS["empty"],
+            highlightthickness=0,
+            cursor="fleur",
+        )
+        self.spine_preview_canvas.grid(row=0, column=0, sticky="nsew")
+        self.spine_preview_canvas.bind("<Configure>", self._schedule_spine_preview)
+        self.spine_preview_canvas.bind("<ButtonPress-1>", self._spine_drag_start)
+        self.spine_preview_canvas.bind("<B1-Motion>", self._spine_drag_motion)
+        self.spine_preview_canvas.bind("<ButtonRelease-1>", self._spine_drag_end)
+        ttk.Label(
+            preview,
+            textvariable=self.spine_status_var,
+            style="Alt.TLabel",
+        ).grid(row=1, column=0, sticky="w", pady=(8, 0))
+        for variable in (
+            self.spine_animation_var,
+            self.spine_x_var,
+            self.spine_y_var,
+            self.spine_scale_var,
+        ):
+            variable.trace_add("write", self._spine_parameter_changed)
+        self.window.after_idle(self._prepare_spine_preview)
+
+    def _spine_target(self):
+        target = self.workspace.state.get("target") or {}
+        hero = str(target.get("hero") or "").casefold()
+        skin = str(target.get("skin") or "").casefold()
+        return next(
+            (
+                item
+                for item in spine_targets()
+                if item.hero.casefold() == hero and item.skin.casefold() == skin
+            ),
+            None,
+        )
+
+    def _prepare_spine_preview(self) -> None:
+        animation = self.workspace.state.get("animation") or {}
+        if animation.get("mode") != "spine" or not animation.get("files"):
+            self.spine_status_var.set("当前皮肤没有引用 Spine 一级素材。")
+            self._schedule_spine_preview()
+            return
+        try:
+            preview_root = self.workspace.directory.parent / "spine-preview-normalized"
+            self.spine_package = import_spine_package(
+                self.workspace.directory / "animation",
+                workspace=preview_root,
+            )
+            animations = list(self.spine_package.animations)
+            self.spine_animation_box.configure(values=animations)
+            selected = self.spine_animation_var.get().strip()
+            if selected not in animations:
+                self.spine_animation_var.set(
+                    "idle" if "idle" in animations else animations[0]
+                )
+            self.spine_preview_pose = render_setup_pose(self.spine_package)
+            target = self._spine_target()
+            if target is None:
+                raise ValueError("当前皮肤目标没有可用的 Spine 适配器。")
+            game = preferred_game_install(self.app.game_dir_override)
+            self.spine_preview_metrics = calculate_preview_metrics(
+                game,
+                self.spine_package,
+                target,
+            )
+            self.spine_status_var.set(
+                f"Spine {self.spine_package.version} · 拖动角色调整位置"
+            )
+        except Exception as error:
+            self.spine_package = None
+            self.spine_preview_pose = None
+            self.spine_preview_metrics = None
+            self.spine_status_var.set(f"预览不可用：{error}")
+        self._schedule_spine_preview()
+
+    def _spine_parameter_changed(self, *_args) -> None:
+        self.dirty = True
+        self._schedule_spine_preview()
+
+    def _schedule_spine_preview(self, *_args) -> None:
+        if not hasattr(self, "spine_preview_canvas"):
+            return
+        if self.spine_preview_job is not None:
+            self.window.after_cancel(self.spine_preview_job)
+        self.spine_preview_job = self.window.after(35, self._render_spine_preview)
+
+    def _render_spine_preview(self) -> None:
+        self.spine_preview_job = None
+        canvas = self.spine_preview_canvas
+        width = max(1, canvas.winfo_width())
+        height = max(1, canvas.winfo_height())
+        if width < 80 or height < 80:
+            return
+        display_width = min(width, round(height * 16 / 9))
+        display_height = min(height, round(width * 9 / 16))
+        origin_x = (width - display_width) // 2
+        origin_y = (height - display_height) // 2
+        frame_scale = display_width / REFERENCE_WIDTH
+        frame = Image.new("RGBA", (width, height), (17, 21, 28, 255))
+        background_path = (
+            PROJECT_ROOT / "manager" / "spine-preview" / "hero-select-background.jpg"
+        )
+        if background_path.is_file():
+            with Image.open(background_path) as loaded:
+                background = loaded.convert("RGBA").resize(
+                    (display_width, display_height),
+                    Image.Resampling.LANCZOS,
+                )
+            frame.alpha_composite(background, (origin_x, origin_y))
+        draw = ImageDraw.Draw(frame, "RGBA")
+        pose = self.spine_preview_pose
+        metrics = self.spine_preview_metrics
+        try:
+            root_x_offset = float(self.spine_x_var.get())
+            root_y_offset = float(self.spine_y_var.get())
+            scale_multiplier = float(self.spine_scale_var.get())
+        except (tk.TclError, ValueError):
+            root_x_offset, root_y_offset, scale_multiplier = 0.0, 300.0, 1.0
+        if pose is not None and metrics is not None:
+            game_pixels_per_unit = (
+                metrics.reference_pixels_per_spine_unit * scale_multiplier
+            )
+            self.spine_preview_game_pixels_per_unit = game_pixels_per_unit
+            self.spine_preview_canvas_scale = frame_scale
+            pose_scale = (
+                game_pixels_per_unit / pose.pixels_per_spine_unit * frame_scale
+            )
+            pose_image = pose.image.resize(
+                (
+                    max(1, round(pose.image.width * pose_scale)),
+                    max(1, round(pose.image.height * pose_scale)),
+                ),
+                Image.Resampling.LANCZOS,
+            )
+            root_x = origin_x + (
+                HERO_ROOT_X + root_x_offset * game_pixels_per_unit
+            ) * frame_scale
+            root_y = origin_y + (
+                REFERENCE_HEIGHT - HERO_ROOT_Y - root_y_offset * game_pixels_per_unit
+            ) * frame_scale
+            image_x = round(
+                root_x + pose.min_x * game_pixels_per_unit * frame_scale
+            )
+            image_y = round(
+                root_y - pose.max_y * game_pixels_per_unit * frame_scale
+            )
+            frame.alpha_composite(pose_image, (image_x, image_y))
+            ready_center_x = origin_x + READY_CENTER_X * frame_scale
+            ready_center_y = origin_y + (
+                REFERENCE_HEIGHT - READY_CENTER_Y
+            ) * frame_scale
+            ready_width = READY_WIDTH * frame_scale
+            ready_height = READY_HEIGHT * frame_scale
+            draw.rounded_rectangle(
+                (
+                    ready_center_x - ready_width / 2,
+                    ready_center_y - ready_height / 2,
+                    ready_center_x + ready_width / 2,
+                    ready_center_y + ready_height / 2,
+                ),
+                radius=max(8, round(ready_height * 0.42)),
+                fill=(14, 102, 166, 240),
+                outline=(255, 207, 91, 255),
+                width=max(2, round(5 * frame_scale)),
+            )
+            draw.text(
+                (ready_center_x, ready_center_y),
+                "READY UI",
+                anchor="mm",
+                fill=(255, 255, 255, 255),
+            )
+        else:
+            self.spine_preview_canvas_scale = 0.0
+            self.spine_preview_game_pixels_per_unit = 0.0
+            draw.text(
+                (width / 2, height / 2),
+                "为当前皮肤引用 Spine 一级素材后可预览",
+                anchor="mm",
+                fill=(255, 255, 255, 230),
+            )
+        self.spine_preview_photo = ImageTk.PhotoImage(frame)
+        canvas.delete("all")
+        canvas.create_image(0, 0, image=self.spine_preview_photo, anchor="nw")
+
+    def _spine_drag_start(self, event: tk.Event) -> None:
+        if (
+            self.spine_preview_canvas_scale <= 0
+            or self.spine_preview_game_pixels_per_unit <= 0
+        ):
+            return
+        self.spine_drag_origin = (
+            event.x,
+            event.y,
+            float(self.spine_x_var.get()),
+            float(self.spine_y_var.get()),
+        )
+
+    def _spine_drag_motion(self, event: tk.Event) -> None:
+        if self.spine_drag_origin is None:
+            return
+        start_x, start_y, root_x, root_y = self.spine_drag_origin
+        denominator = (
+            self.spine_preview_canvas_scale
+            * self.spine_preview_game_pixels_per_unit
+        )
+        if denominator <= 0:
+            return
+        self.spine_x_var.set(
+            round(max(-500, min(500, root_x + (event.x - start_x) / denominator)), 1)
+        )
+        self.spine_y_var.set(
+            round(max(-500, min(500, root_y - (event.y - start_y) / denominator)), 1)
+        )
+
+    def _spine_drag_end(self, _event: tk.Event) -> None:
+        self.spine_drag_origin = None
+
+    def _reset_spine_placement(self) -> None:
+        self.spine_x_var.set(0.0)
+        self.spine_y_var.set(300.0)
+        self.spine_scale_var.set(1.0)
+
+    def _store_spine_placement(self) -> None:
+        animation = self.workspace.state.get("animation") or {}
+        if animation.get("mode") != "spine" or not animation.get("files"):
+            return
+        scale = float(self.spine_scale_var.get())
+        if scale < 0.1 or scale > 4.0:
+            raise ValueError("Spine 缩放必须在 0.1 到 4.0 之间。")
+        animation["placement"] = {
+            "animation": self.spine_animation_var.get().strip(),
+            "root_x_offset": float(self.spine_x_var.get()),
+            "root_y_offset": float(self.spine_y_var.get()),
+            "scale_multiplier": scale,
+        }
+        self.workspace.state["animation"] = animation
+        self.workspace.save()
 
     def _build_visual(self, parent: ttk.Frame) -> None:
         parent.columnconfigure(0, weight=1)
@@ -2662,6 +3019,11 @@ class PackEditorDialog:
         self._reload_audio_rows()
 
     def _save(self) -> None:
+        try:
+            self._store_spine_placement()
+        except (tk.TclError, ValueError) as error:
+            messagebox.showerror("Spine 参数错误", str(error), parent=self.window)
+            return
         pack = self.workspace.state.get("pack") or {}
         self.workspace.set_pack_metadata(pack_id=pack.get("id") or "local.skin", name=self.name_var.get(), version=self.version_var.get())
         atomic_copy_tree(self.workspace.directory, self.original_workspace.directory)

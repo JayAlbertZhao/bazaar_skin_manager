@@ -156,6 +156,28 @@ namespace BazaarSkinManager.TheBazaar
                 {
                     throw new InvalidDataException("Replacement slot or file is missing.");
                 }
+                bool suppressedByAnimation = false;
+                if (manifest.Animation != null &&
+                    manifest.Animation.RuntimeReady &&
+                    manifest.Animation.SuppressVisualSlots != null)
+                {
+                    foreach (string suppressedSlot in
+                        manifest.Animation.SuppressVisualSlots)
+                    {
+                        if (string.Equals(
+                            suppressedSlot,
+                            replacement.Slot,
+                            StringComparison.OrdinalIgnoreCase))
+                        {
+                            suppressedByAnimation = true;
+                            break;
+                        }
+                    }
+                }
+                if (suppressedByAnimation)
+                {
+                    continue;
+                }
                 if (!AssetNameMatcher.IsValidMode(replacement.MatchMode))
                 {
                     throw new InvalidDataException(

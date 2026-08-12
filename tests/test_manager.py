@@ -601,6 +601,135 @@ class ManagerTests(unittest.TestCase):
                 self.assertFalse(plugin.exists())
                 self.assertFalse(deployed_pack.exists())
 
+    def test_spine_success_suppresses_static_slot_but_keeps_fallback_payload(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            pack = write_pack(root)
+            manifest_path = pack / "mod.json"
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            manifest["adapter"] = {"id": "mak-default", "version": 1}
+            manifest["animation"] = {
+                "mode": "spine",
+                "files": [],
+                "runtime_ready": False,
+            }
+            manifest["visual_replacements"].append(
+                {
+                    "slot": "standing_overlay",
+                    "file": "assets/hero_select.png",
+                    "direct_only": True,
+                    "match_names": [],
+                }
+            )
+            manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+            game = write_game(root)
+            runtime = root / "BazaarSkinManager.Runtime.dll"
+            runtime.write_bytes(b"runtime")
+            request = {
+                "schema_version": 1,
+                "adapter_id": "mak-default",
+                "suppress_visual_slots": ["standing_overlay"],
+            }
+            spine = mock.Mock()
+            spine.prepare_spine_native_patches.return_value = ([], [request])
+            with (
+                mock.patch.dict(
+                    "os.environ", {"LOCALAPPDATA": str(root / "local")}
+                ),
+                mock.patch.object(manager, "validate_pack", return_value=[]),
+                mock.patch.object(
+                    manager, "spine_patch_plan_issues", return_value=[]
+                ),
+                mock.patch.object(
+                    manager, "prepare_native_patches_many", return_value=[]
+                ) as prepare,
+                mock.patch.object(manager, "_spine_module", return_value=spine),
+            ):
+                record = manager.install_many(
+                    runtime,
+                    [pack],
+                    manager.explicit_install(game),
+                    spine_requests=[request],
+                )
+            deployed = json.loads(
+                (Path(record["pack"]["path"]) / "mod.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            self.assertTrue(deployed["animation"]["runtime_ready"])
+            self.assertEqual(
+                deployed["animation"]["suppress_visual_slots"],
+                ["standing_overlay"],
+            )
+            self.assertIn(
+                "standing_overlay",
+                {item["slot"] for item in deployed["visual_replacements"]},
+            )
+            self.assertTrue(prepare.call_args.kwargs["excluded_slots_by_pack"])
+
+    def test_spine_failure_reenables_static_slot_in_same_deployment(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            pack = write_pack(root)
+            manifest_path = pack / "mod.json"
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            manifest["adapter"] = {"id": "mak-default", "version": 1}
+            manifest["animation"] = {
+                "mode": "spine",
+                "files": [],
+                "runtime_ready": False,
+            }
+            manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+            game = write_game(root)
+            runtime = root / "BazaarSkinManager.Runtime.dll"
+            runtime.write_bytes(b"runtime")
+            request = {
+                "schema_version": 1,
+                "adapter_id": "mak-default",
+                "suppress_visual_slots": ["standing_overlay"],
+            }
+            spine = mock.Mock()
+            spine.prepare_spine_native_patches.side_effect = RuntimeError(
+                "Spine contract changed"
+            )
+            with (
+                mock.patch.dict(
+                    "os.environ", {"LOCALAPPDATA": str(root / "local")}
+                ),
+                mock.patch.object(manager, "validate_pack", return_value=[]),
+                mock.patch.object(
+                    manager, "spine_patch_plan_issues", return_value=[]
+                ),
+                mock.patch.object(
+                    manager, "prepare_native_patches_many", side_effect=[[], []]
+                ) as prepare,
+                mock.patch.object(manager, "_spine_module", return_value=spine),
+            ):
+                record = manager.install_many(
+                    runtime,
+                    [pack],
+                    manager.explicit_install(game),
+                    spine_requests=[request],
+                )
+            deployed = json.loads(
+                (Path(record["pack"]["path"]) / "mod.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            self.assertFalse(deployed["animation"]["runtime_ready"])
+            self.assertEqual(prepare.call_count, 2)
+            self.assertNotIn(
+                "excluded_slots_by_pack", prepare.call_args_list[1].kwargs
+            )
+            self.assertTrue(
+                any(
+                    "Spine contract changed" in warning
+                    for warning in record["deployment_warnings"]
+                )
+            )
+
     def test_runtime_metadata_version_is_independent_from_pack(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)

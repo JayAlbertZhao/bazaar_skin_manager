@@ -46,6 +46,12 @@ from bazaar_skin_manager import (
     uninstall,
     validate_pack,
 )
+from spine_manager_core import (
+    SpinePlacement,
+    import_spine_package,
+    serialize_spine_request,
+    targets as spine_targets,
+)
 
 
 PROJECT_ROOT = Path(
@@ -909,9 +915,12 @@ class StudioWorkspace:
         return accepted
 
     def clear_animation(self) -> None:
-        root = self.directory / "animation"
-        if root.is_dir():
-            shutil.rmtree(root)
+        for root in (
+            self.directory / "animation",
+            self.directory / "animation-runtime",
+        ):
+            if root.is_dir():
+                shutil.rmtree(root)
         self.state["animation"] = {
             "mode": "none",
             "files": [],
@@ -1289,6 +1298,44 @@ class StudioWorkspace:
         self.save()
         return self.directory
 
+    def _spine_request(self, package_root: Path) -> dict | None:
+        animation = self.state.get("animation") or {}
+        if animation.get("mode") != "spine" or not animation.get("files"):
+            return None
+        target = self.state.get("target") or {}
+        adapter = _adapter_for_target(target)
+        spine_target = next(
+            (item for item in spine_targets() if item.adapter_id == adapter.adapter_id),
+            None,
+        )
+        if spine_target is None:
+            raise ValueError(
+                f"Target adapter {adapter.adapter_id} does not support Spine deployment."
+            )
+        package = import_spine_package(
+            package_root / "animation",
+            # Keep normalized files beside the durable authoring workspace.
+            # Deployment records must never point into deploy_many's temporary
+            # staging directory, which disappears as soon as this call returns.
+            workspace=package_root / "animation-runtime",
+        )
+        placement_record = animation.get("placement") or {}
+        animation_name = str(placement_record.get("animation") or "").strip()
+        if not animation_name:
+            animation_name = "idle" if "idle" in package.animations else package.animations[0]
+        placement = SpinePlacement(
+            animation=animation_name,
+            root_x_offset=float(placement_record.get("root_x_offset", 0.0)),
+            root_y_offset=float(placement_record.get("root_y_offset", 300.0)),
+            scale_multiplier=float(placement_record.get("scale_multiplier", 1.0)),
+            preview_x=float(placement_record.get("preview_x", 0.0)),
+            preview_y=float(placement_record.get("preview_y", -180.0)),
+            preview_scale=float(placement_record.get("preview_scale", 1.0)),
+        )
+        request = serialize_spine_request(package, spine_target, placement)
+        request["suppress_visual_slots"] = ["standing_overlay"]
+        return request
+
     def _declared_payload_paths(self, manifest: dict) -> list[Path]:
         relatives: set[str] = set()
         for replacement in manifest.get("visual_replacements") or []:
@@ -1505,6 +1552,7 @@ class StudioWorkspace:
         # must never be copied into the managed mods directory.
         with tempfile.TemporaryDirectory() as temp:
             staged_packs: list[Path] = []
+            spine_requests: list[dict] = []
             for index, workspace in enumerate(workspaces):
                 manifest = _read_json(workspace.directory / "mod.json")
                 staged = Path(temp) / f"pack-{index:02d}"
@@ -1520,8 +1568,16 @@ class StudioWorkspace:
                     destination = staged / relative
                     destination.parent.mkdir(parents=True, exist_ok=True)
                     shutil.copy2(source, destination)
+                spine_request = workspace._spine_request(workspace.directory)
+                if spine_request is not None:
+                    spine_requests.append(spine_request)
                 staged_packs.append(staged)
-            return install_many(DEFAULT_RUNTIME, staged_packs, game)
+            return install_many(
+                DEFAULT_RUNTIME,
+                staged_packs,
+                game,
+                spine_requests=spine_requests,
+            )
 
     def undeploy(self) -> list[str]:
         return uninstall()

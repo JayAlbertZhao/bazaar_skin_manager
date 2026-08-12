@@ -39,6 +39,9 @@ COMPATIBILITY = (
 RUNTIME_ASSETS = (
     ROOT / "src" / "BazaarSkinManager.Runtime" / "RuntimeAssets.cs"
 ).read_text(encoding="utf-8")
+PACK_MANIFEST = (
+    ROOT / "src" / "BazaarSkinManager.Runtime" / "PackManifest.cs"
+).read_text(encoding="utf-8")
 VISUAL_OWNERSHIP = (
     ROOT / "src" / "BazaarSkinManager.Runtime" / "VisualOwnership.cs"
 ).read_text(encoding="utf-8")
@@ -55,6 +58,14 @@ DOOLEY_ADAPTER = json.loads(
 
 
 class RuntimeStructureTests(unittest.TestCase):
+    def test_spine_suppression_is_conditional_and_manifest_driven(self) -> None:
+        self.assertIn("public PackAnimation Animation", PACK_MANIFEST)
+        self.assertIn("public bool RuntimeReady", PACK_MANIFEST)
+        self.assertIn("public List<string> SuppressVisualSlots", PACK_MANIFEST)
+        self.assertIn("manifest.Animation.RuntimeReady", RUNTIME_ASSETS)
+        self.assertIn("manifest.Animation.SuppressVisualSlots", RUNTIME_ASSETS)
+        self.assertIn("suppressedByAnimation", RUNTIME_ASSETS)
+
     def test_hero_button_patch_changes_only_content_icon(self) -> None:
         self.assertIn(
             "HeroSelectIconReconciler.Reconcile(__instance);",

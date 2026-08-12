@@ -898,6 +898,13 @@ def prepare_spine_native_patches(
     for request_index, request in enumerate(requests):
         package, target, placement = _load_spine_request(request)
         normalized = serialize_spine_request(package, target, placement)
+        suppressed_slots = [
+            str(slot)
+            for slot in request.get("suppress_visual_slots") or []
+            if str(slot)
+        ]
+        if suppressed_slots:
+            normalized["suppress_visual_slots"] = suppressed_slots
         deployed_bundles = []
         for bundle_index, contract in enumerate(_bundle_contracts(target)):
             target_path = _bundle_path(game, contract)

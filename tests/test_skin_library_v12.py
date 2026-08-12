@@ -18,6 +18,7 @@ from mod_studio_core import StudioWorkspace
 from asset_generator_ui import PREVIEW_SLOTS
 from bazaar_skin_manager_ui_v12 import (
     EMBEDDED_LIBRARY_INDEX,
+    PackEditorDialog,
     SkinManagerV12,
     export_pack_with_library_assets,
     import_embedded_library_assets,
@@ -324,6 +325,49 @@ class ManagerV12SurfaceTests(unittest.TestCase):
         self.assertIn('("Spine package", "*.zip")', ui)
         self.assertIn('suffix.casefold() == ".zip"', ui)
         self.assertIn('"--smoke-spine-import"', entry)
+
+    def test_pack_manager_exposes_spine_placement_editor(self) -> None:
+        ui = (ROOT / "tools" / "bazaar_skin_manager_ui_v12.py").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn('text="Spine 调节"', ui)
+        self.assertIn('self.tabs.add(animation, text="Spine 动画")', ui)
+        self.assertIn('text="恢复推荐值"', ui)
+        self.assertIn("_spine_drag_motion", ui)
+
+    def test_spine_placement_is_saved_to_workspace_state(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            workspace = StudioWorkspace.create(
+                "test.spine.placement",
+                root=Path(temporary),
+            )
+            workspace.state["animation"] = {
+                "mode": "spine",
+                "files": ["animation/skeleton.json"],
+                "runtime_ready": False,
+            }
+            dialog = PackEditorDialog.__new__(PackEditorDialog)
+            dialog.workspace = workspace
+            dialog.spine_animation_var = mock.Mock()
+            dialog.spine_animation_var.get.return_value = "wave"
+            dialog.spine_x_var = mock.Mock()
+            dialog.spine_x_var.get.return_value = 12.5
+            dialog.spine_y_var = mock.Mock()
+            dialog.spine_y_var.get.return_value = 345.0
+            dialog.spine_scale_var = mock.Mock()
+            dialog.spine_scale_var.get.return_value = 0.75
+
+            dialog._store_spine_placement()
+
+            self.assertEqual(
+                workspace.state["animation"]["placement"],
+                {
+                    "animation": "wave",
+                    "root_x_offset": 12.5,
+                    "root_y_offset": 345.0,
+                    "scale_multiplier": 0.75,
+                },
+            )
 
     def test_every_catalog_hero_has_an_original_target_preview(self) -> None:
         catalog = json.loads(
