@@ -13,6 +13,13 @@ from pathlib import Path
 from PIL import Image, ImageChops
 
 
+BC7_MEAN_ERROR_LIMIT = 8.0
+BC7_LARGE_ERROR_THRESHOLD = 64
+BC7_LARGE_ERROR_FRACTION_LIMIT = 0.04
+BC7_SEVERE_ERROR_THRESHOLD = 128
+BC7_SEVERE_ERROR_FRACTION_LIMIT = 0.01
+
+
 def sha256_file(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as stream:
@@ -65,6 +72,40 @@ def bundle_crc32(environment) -> int:
         data = node.reader.bytes if hasattr(node, "reader") else node.bytes
         checksum = zlib.crc32(data, checksum)
     return checksum & 0xFFFFFFFF
+
+
+def bc7_error_metrics(difference: Image.Image) -> dict:
+    """Measure lossy BC7 error without treating one edge texel as corruption."""
+    histogram = difference.histogram()
+    sample_count = difference.width * difference.height * len(difference.getbands())
+    absolute_sum = sum(
+        count * (index % 256) for index, count in enumerate(histogram)
+    )
+    large_count = sum(
+        count
+        for index, count in enumerate(histogram)
+        if index % 256 > BC7_LARGE_ERROR_THRESHOLD
+    )
+    severe_count = sum(
+        count
+        for index, count in enumerate(histogram)
+        if index % 256 > BC7_SEVERE_ERROR_THRESHOLD
+    )
+    extrema = difference.getextrema()
+    return {
+        "maximum_channel_error": max(channel[1] for channel in extrema),
+        "mean_absolute_error": absolute_sum / sample_count,
+        "large_error_fraction": large_count / sample_count,
+        "severe_error_fraction": severe_count / sample_count,
+    }
+
+
+def bc7_error_is_acceptable(metrics: dict) -> bool:
+    return (
+        metrics["mean_absolute_error"] <= BC7_MEAN_ERROR_LIMIT
+        and metrics["large_error_fraction"] <= BC7_LARGE_ERROR_FRACTION_LIMIT
+        and metrics["severe_error_fraction"] <= BC7_SEVERE_ERROR_FRACTION_LIMIT
+    )
 
 
 def export_texture_bundle(
@@ -221,27 +262,28 @@ def patch_texture_bundle_many(
             ),
         )
         difference = ImageChops.difference(expected_rendered, actual_rendered)
-        extrema = difference.getextrema()
-        maximum_error = max(channel[1] for channel in extrema)
-        histogram = difference.histogram()
-        absolute_sum = sum(
-            count * (index % 256) for index, count in enumerate(histogram)
-        )
-        mean_error = absolute_sum / (target_size[0] * target_size[1] * 4)
-        if maximum_error > 224 or mean_error > 8.0:
+        metrics = bc7_error_metrics(difference)
+        if not bc7_error_is_acceptable(metrics):
             output_bundle.unlink(missing_ok=True)
             raise RuntimeError(
                 "Saved Texture2D verification exceeded the BC7 error bound "
-                f"for {asset_name!r}: max={maximum_error}, "
-                f"mean={mean_error:.3f}."
+                f"for {asset_name!r}: "
+                f"max={metrics['maximum_channel_error']}, "
+                f"mean={metrics['mean_absolute_error']:.3f}, "
+                f">64={metrics['large_error_fraction']:.3%}, "
+                f">128={metrics['severe_error_fraction']:.3%}."
             )
         measurements.append(
             {
                 "asset_name": asset_name,
                 "width": target_size[0],
                 "height": target_size[1],
-                "maximum_channel_error": maximum_error,
-                "mean_absolute_error": round(mean_error, 6),
+                "maximum_channel_error": metrics["maximum_channel_error"],
+                "mean_absolute_error": round(metrics["mean_absolute_error"], 6),
+                "large_error_fraction": round(metrics["large_error_fraction"], 8),
+                "severe_error_fraction": round(
+                    metrics["severe_error_fraction"], 8
+                ),
             }
         )
 
