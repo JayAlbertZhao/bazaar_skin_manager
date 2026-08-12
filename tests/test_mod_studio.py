@@ -20,6 +20,7 @@ from mod_studio_core import (  # noqa: E402
     PREVIEW_SIZE,
     StudioWorkspace,
     _adapter_for_target,
+    _coalesce_shared_native_images,
     _original_visual_deployment,
     _verified_original_bundle,
     compose_image_preview,
@@ -39,6 +40,64 @@ def write_runtime_wav(path: Path) -> None:
 
 
 class ModStudioTests(unittest.TestCase):
+    def test_shared_native_texture_uses_adapter_canonical_slot_image(self):
+        replacements = _coalesce_shared_native_images(
+            [
+                {
+                    "slot": "store_image",
+                    "file": "assets/store.png",
+                    "deployment": {
+                        "mode": "preload_unity_texture2d",
+                        "target": "bundles/skin.bundle",
+                        "asset_name": "StoreImage",
+                    },
+                },
+                {
+                    "slot": "marketplace_details",
+                    "file": "assets/details.png",
+                    "deployment": {
+                        "mode": "preload_unity_texture2d",
+                        "target": "bundles/skin.bundle",
+                        "asset_name": "StoreImage",
+                    },
+                },
+            ]
+        )
+
+        self.assertEqual("assets/store.png", replacements[0]["file"])
+        self.assertEqual("assets/store.png", replacements[1]["file"])
+
+    def test_vanessa_pack_coalesces_independently_edited_native_aliases(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            workspace = StudioWorkspace.create(
+                "test.vanessa.shared-native",
+                root=Path(temporary),
+                hero="Vanessa",
+                skin="Skin_VAN_01/A",
+                skin_name_contains="VAN_01a",
+            )
+            colours = {
+                "store_image": (255, 0, 0, 255),
+                "marketplace_details": (0, 255, 0, 255),
+                "collection_list": (0, 0, 255, 255),
+                "daily_weekly": (255, 255, 0, 255),
+            }
+            for slot, colour in colours.items():
+                workspace.import_pil_image(slot, Image.new("RGBA", (32, 32), colour))
+
+            workspace.build_pack()
+            manifest = json.loads(
+                (workspace.directory / "mod.json").read_text(encoding="utf-8")
+            )
+            files = {
+                item["slot"]: item["file"]
+                for item in manifest["visual_replacements"]
+            }
+
+            self.assertEqual(files["store_image"], files["marketplace_details"])
+            self.assertEqual(files["collection_list"], files["daily_weekly"])
+            self.assertEqual([], validate_pack(workspace.directory))
+
     def test_original_reference_prefers_verified_native_backup(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)

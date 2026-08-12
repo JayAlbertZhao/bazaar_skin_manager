@@ -736,6 +736,129 @@ class ManagerTests(unittest.TestCase):
                  "install-manifest.json").is_file()
             )
 
+    def test_redeploy_retires_transaction_fully_rebased_by_steam(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            pack, game, runtime = self._native_patch_fixture(root)
+            target = game / "TheBazaar_Data" / "native-icon.bundle"
+            catalog = (
+                game / "TheBazaar_Data" / "StreamingAssets" / "aa" / "catalog.bin"
+            )
+            local = root / "local"
+
+            def fake_patcher(_source, output, _image, **_kwargs):
+                output.write_bytes(b"prepatched-unity-bundle")
+                return {
+                    "output_sha256": manager.sha256_file(output),
+                    "source_crc32": "11111111",
+                    "output_crc32": "22222222",
+                }
+
+            with (
+                mock.patch.dict("os.environ", {"LOCALAPPDATA": str(local)}),
+                mock.patch.object(
+                    manager,
+                    "_load_bundle_patcher",
+                    return_value=fake_patcher,
+                ),
+            ):
+                record = manager.install(
+                    runtime,
+                    pack,
+                    manager.explicit_install(game),
+                )
+                backup = Path(record["native_patches"][0]["backup"])
+                catalog_backup = Path(record["native_catalog_patch"]["backup"])
+                updated_bundle = b"steam-updated-official-bundle"
+                updated_catalog = b"steam-updated-official-catalog"
+                target.write_bytes(updated_bundle)
+                catalog.write_bytes(updated_catalog)
+                manifest_path = pack / "mod.json"
+                manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+                deployment = next(
+                    item["deployment"]
+                    for item in manifest["visual_replacements"]
+                    if item.get("deployment")
+                )
+                deployment["supported_original_sha256"].append(
+                    hashlib.sha256(updated_bundle).hexdigest()
+                )
+                manifest_path.write_text(
+                    json.dumps(manifest, indent=2) + "\n",
+                    encoding="utf-8",
+                )
+                # Steam also changes an executable fingerprint during a real
+                # update, which authorizes the rebased-transaction check.
+                (game / "TheBazaar.exe").write_bytes(b"steam-updated-executable")
+
+                removed = manager.retire_rebased_deployment(
+                    manager.GameInstall(game, None, "24570932", True),
+                    [pack],
+                )
+
+            self.assertTrue(removed)
+            self.assertEqual(updated_bundle, target.read_bytes())
+            self.assertEqual(updated_catalog, catalog.read_bytes())
+            self.assertFalse(backup.exists())
+            self.assertFalse(catalog_backup.exists())
+            self.assertFalse(
+                (local / "BazaarSkinManager" / "TheBazaar" / "manager" /
+                 "install-manifest.json").exists()
+            )
+
+    def test_rebased_bundle_with_old_patched_catalog_still_fails_closed(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            pack, game, runtime = self._native_patch_fixture(root)
+            target = game / "TheBazaar_Data" / "native-icon.bundle"
+            local = root / "local"
+
+            def fake_patcher(_source, output, _image, **_kwargs):
+                output.write_bytes(b"prepatched-unity-bundle")
+                return {
+                    "output_sha256": manager.sha256_file(output),
+                    "source_crc32": "11111111",
+                    "output_crc32": "22222222",
+                }
+
+            with (
+                mock.patch.dict("os.environ", {"LOCALAPPDATA": str(local)}),
+                mock.patch.object(
+                    manager,
+                    "_load_bundle_patcher",
+                    return_value=fake_patcher,
+                ),
+            ):
+                manager.install(runtime, pack, manager.explicit_install(game))
+                updated_bundle = b"steam-updated-official-bundle"
+                target.write_bytes(updated_bundle)
+                manifest_path = pack / "mod.json"
+                manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+                deployment = next(
+                    item["deployment"]
+                    for item in manifest["visual_replacements"]
+                    if item.get("deployment")
+                )
+                deployment["supported_original_sha256"].append(
+                    hashlib.sha256(updated_bundle).hexdigest()
+                )
+                manifest_path.write_text(
+                    json.dumps(manifest, indent=2) + "\n",
+                    encoding="utf-8",
+                )
+                (game / "TheBazaar.exe").write_bytes(b"steam-updated-executable")
+
+                removed = manager.retire_rebased_deployment(
+                    manager.GameInstall(game, None, "24570932", True),
+                    [pack],
+                )
+
+            self.assertEqual([], removed)
+            self.assertTrue(
+                (local / "BazaarSkinManager" / "TheBazaar" / "manager" /
+                 "install-manifest.json").is_file()
+            )
+
     def test_install_preserves_unrelated_bepinex_plugins(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)

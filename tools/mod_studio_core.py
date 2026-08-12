@@ -205,6 +205,51 @@ def _visual_template_map(target: dict) -> dict[str, dict]:
     }
 
 
+def _shared_native_asset_key(deployment: dict | None) -> tuple[str, str] | None:
+    if not deployment or deployment.get("mode") != "preload_unity_texture2d":
+        return None
+    target = str(deployment.get("target") or "").replace("\\", "/").casefold()
+    asset_name = str(deployment.get("asset_name") or "").casefold()
+    return (target, asset_name) if target and asset_name else None
+
+
+def _coalesce_shared_native_images(replacements: list[dict]) -> list[dict]:
+    """Use one bitmap for logical slots backed by one physical Texture2D.
+
+    Several Bazaar UI concepts are aliases of the same Texture2D (for example
+    store/marketplace images and collection/daily previews).  Per-slot editing
+    may leave those logical slots with different files, but the game has only
+    one physical destination.  The adapter order declares the canonical slot;
+    every later alias is materialized with that same file so validation and
+    deployment describe the hardware truth instead of producing a conflict.
+    """
+
+    canonical_files: dict[tuple[str, str], str] = {}
+    result: list[dict] = []
+    for source in replacements:
+        replacement = deepcopy(source)
+        deployments = []
+        if replacement.get("deployment"):
+            deployments.append(replacement["deployment"])
+        deployments.extend(replacement.get("additional_deployments") or [])
+        keys = [
+            key
+            for deployment in deployments
+            if (key := _shared_native_asset_key(deployment)) is not None
+        ]
+        inherited = next(
+            (canonical_files[key] for key in keys if key in canonical_files),
+            None,
+        )
+        selected_file = inherited or str(replacement.get("file") or "")
+        if selected_file:
+            replacement["file"] = selected_file
+            for key in keys:
+                canonical_files.setdefault(key, selected_file)
+        result.append(replacement)
+    return result
+
+
 def _verified_original_bundle(
     game_dir: Path,
     deployment: dict,
@@ -1209,22 +1254,22 @@ class StudioWorkspace:
 
     def build_pack(self) -> Path:
         adapter = _adapter_for_target(self.state["target"])
-        visual_templates = _visual_template_map(self.state["target"])
+        visual_slots = self.state.get("visual_slots") or {}
         replacements = []
-        for slot, relative in sorted(
-            (self.state.get("visual_slots") or {}).items()
-        ):
+        # Adapter order is meaningful: the first logical slot routed to a
+        # physical Texture2D is its canonical authoring slot.
+        for declared in adapter.payload.get("visual_replacements") or []:
+            slot = str(declared.get("slot") or "")
+            relative = visual_slots.get(slot)
+            if not relative:
+                continue
             path = self.directory / relative
             if not path.is_file():
                 continue
-            template = visual_templates.get(slot)
-            if template is None:
-                # Asset packs are reusable content collections. A deployment
-                # target consumes only the slots declared by its adapter.
-                continue
-            template = deepcopy(template)
+            template = deepcopy(declared)
             template["file"] = relative
             replacements.append(template)
+        replacements = _coalesce_shared_native_images(replacements)
 
         manifest = {
             "schema_version": 1,
@@ -1259,6 +1304,23 @@ class StudioWorkspace:
         for replacement in manifest.get("visual_replacements") or []:
             if replacement.get("file"):
                 relatives.add(str(replacement["file"]))
+        # A logical slot can share one physical Texture2D with another slot.
+        # The deployment manifest intentionally points every such alias at the
+        # adapter's canonical image, but the portable workspace must retain the
+        # user's independently authored slot images for later editing.
+        for relative in (self.state.get("visual_slots") or {}).values():
+            normalized = str(relative or "").replace("\\", "/").strip()
+            if not normalized:
+                continue
+            candidate = (self.directory / normalized).resolve()
+            try:
+                candidate.relative_to(self.directory)
+            except ValueError as error:
+                raise ValueError(
+                    f"Visual slot asset escapes the workspace: {relative}"
+                ) from error
+            if candidate.is_file():
+                relatives.add(normalized)
         # Deterministic generator packs keep their editable source material in
         # the workspace. Include those files in the portable pack whenever
         # they exist; older imported packs may carry provenance records without

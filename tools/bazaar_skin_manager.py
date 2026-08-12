@@ -21,7 +21,7 @@ from typing import Iterable
 
 
 APP_ID = "1617400"
-MANAGER_VERSION = "1.4.9"
+MANAGER_VERSION = "1.4.10"
 PROJECT_ROOT = Path(
     getattr(sys, "_MEIPASS", Path(__file__).resolve().parents[1])
 )
@@ -1085,6 +1085,119 @@ def native_patch_plan_issues(pack: Path, game: GameInstall) -> list[str]:
     return issues
 
 
+def _remove_managed_path(path: Path, removed: list[str]) -> None:
+    if path.is_file():
+        path.unlink()
+        removed.append(str(path))
+    elif path.is_dir():
+        shutil.rmtree(path)
+        removed.append(str(path))
+
+
+def retire_rebased_deployment(
+    game: GameInstall,
+    replacement_packs: list[Path],
+) -> list[str]:
+    """Retire a transaction that Steam has completely reset to verified files.
+
+    Steam may replace both Manager-patched bundles and ``catalog.bin`` during
+    an update or file verification.  Restoring the old backups over those new
+    official files would be wrong, while the ordinary uninstall correctly
+    refuses to discard an ambiguous mixed transaction.  Redeployment may
+    retire the stale record only when every previously managed live bundle is
+    now an original hash accepted by the current/installed pack contracts and
+    none of the old patched files (including the catalog) remains live.
+    """
+
+    record_path = manager_root() / "install-manifest.json"
+    if not record_path.is_file():
+        return []
+    record = json.loads(record_path.read_text(encoding="utf-8"))
+    previous = record.get("game_fingerprint") or {}
+    current = fingerprint(game)
+    if (
+        previous.get("build_id") == current.get("build_id")
+        and (previous.get("files") or {}) == (current.get("files") or {})
+    ):
+        return []
+
+    native_records = list(record.get("native_patches") or [])
+    if not native_records:
+        return []
+
+    supported_by_target: dict[str, set[str]] = {}
+    candidate_packs = list(replacement_packs)
+    for entry in record.get("packs") or []:
+        path = Path(str(entry.get("path") or ""))
+        if path.is_dir():
+            candidate_packs.append(path)
+    for pack in candidate_packs:
+        try:
+            specs = native_patch_specs(pack)
+        except (OSError, ValueError, TypeError, json.JSONDecodeError):
+            continue
+        for spec in specs:
+            deployment = spec["deployment"]
+            target = native_patch_target(game, deployment)
+            supported_by_target.setdefault(str(target).casefold(), set()).update(
+                str(value).casefold()
+                for value in deployment.get("supported_original_sha256") or []
+            )
+
+    rebased = False
+    for item in native_records:
+        target = Path(item["target"])
+        if not target.is_file():
+            return []
+        current_hash = sha256_file(target).casefold()
+        if current_hash == str(item.get("patched_sha256") or "").casefold():
+            # A partially reset transaction must still go through strict
+            # uninstall; mixing restored and Steam-updated files is unsafe.
+            return []
+        accepted = supported_by_target.get(str(target.resolve()).casefold(), set())
+        if current_hash not in accepted:
+            return []
+        if current_hash != str(item.get("original_sha256") or "").casefold():
+            rebased = True
+
+    catalog_patch = record.get("native_catalog_patch")
+    if catalog_patch:
+        catalog = Path(catalog_patch["target"])
+        if not catalog.is_file():
+            return []
+        catalog_hash = sha256_file(catalog).casefold()
+        if catalog_hash == str(catalog_patch.get("patched_sha256") or "").casefold():
+            return []
+        if catalog_hash != str(catalog_patch.get("original_sha256") or "").casefold():
+            rebased = True
+    if not rebased:
+        return []
+
+    removed: list[str] = []
+    # Preserve live game bundles/catalog. Only stale Manager-owned payloads,
+    # backups and authorization records are retired before the fresh install.
+    for item in native_records:
+        _remove_managed_path(Path(item["backup"]), removed)
+    if catalog_patch:
+        _remove_managed_path(Path(catalog_patch["backup"]), removed)
+    pack_entries = record.get("packs") or (
+        [record["pack"]] if record.get("pack") else []
+    )
+    for entry in [
+        record.get("plugin"),
+        record.get("runtime_compatibility"),
+        *pack_entries,
+    ]:
+        if entry and entry.get("path"):
+            _remove_managed_path(Path(entry["path"]), removed)
+    record_path.unlink()
+    removed.append(str(record_path))
+    compatibility = runtime_compatibility_path()
+    if compatibility.is_file():
+        _remove_managed_path(compatibility, removed)
+    return removed
+
+
 def prepare_native_patches_many(
     packs: list[Path],
     game: GameInstall,
@@ -1413,7 +1526,9 @@ def install_many(
     bepinex = ensure_bepinex(game.game_dir)
 
     if (manager_root() / "install-manifest.json").is_file():
-        uninstall()
+        retire_rebased_deployment(game, resolved_packs)
+        if (manager_root() / "install-manifest.json").is_file():
+            uninstall()
 
     compatibility_path = runtime_compatibility_path()
     if compatibility_path.exists():
