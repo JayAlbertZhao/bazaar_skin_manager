@@ -21,7 +21,7 @@ from typing import Iterable
 
 
 APP_ID = "1617400"
-MANAGER_VERSION = "1.4.10"
+MANAGER_VERSION = "1.4.11"
 PROJECT_ROOT = Path(
     getattr(sys, "_MEIPASS", Path(__file__).resolve().parents[1])
 )
@@ -1126,12 +1126,30 @@ def retire_rebased_deployment(
         return []
 
     supported_by_target: dict[str, set[str]] = {}
-    candidate_packs = list(replacement_packs)
-    for entry in record.get("packs") or []:
-        path = Path(str(entry.get("path") or ""))
-        if path.is_dir():
-            candidate_packs.append(path)
-    for pack in candidate_packs:
+    # The copied packs recorded by the old transaction preserve the adapter
+    # contract that existed when they were deployed.  After a Steam update
+    # those stale manifests cannot recognize the new official bundle hashes.
+    # Use the adapters shipped by the current Manager as the authority, plus
+    # the packs selected for this replacement deployment.
+    for adapter in _load_adapter_registry().records:
+        if not adapter.supports_build(game.build_id):
+            continue
+        for replacement in adapter.payload.get("visual_replacements") or []:
+            deployments = []
+            if replacement.get("deployment"):
+                deployments.append(replacement["deployment"])
+            deployments.extend(replacement.get("additional_deployments") or [])
+            for deployment in deployments:
+                if deployment.get("mode") != PRELOAD_TEXTURE_MODE:
+                    continue
+                target = native_patch_target(game, deployment)
+                supported_by_target.setdefault(
+                    str(target).casefold(), set()
+                ).update(
+                    str(value).casefold()
+                    for value in deployment.get("supported_original_sha256") or []
+                )
+    for pack in replacement_packs:
         try:
             specs = native_patch_specs(pack)
         except (OSError, ValueError, TypeError, json.JSONDecodeError):

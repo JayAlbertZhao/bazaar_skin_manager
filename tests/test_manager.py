@@ -806,6 +806,78 @@ class ManagerTests(unittest.TestCase):
                  "install-manifest.json").exists()
             )
 
+    def test_redeploy_uses_current_adapter_contract_for_stale_installed_pack(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            pack, game, runtime = self._native_patch_fixture(root)
+            target = game / "TheBazaar_Data" / "native-icon.bundle"
+            catalog = (
+                game / "TheBazaar_Data" / "StreamingAssets" / "aa" / "catalog.bin"
+            )
+            local = root / "local"
+
+            def fake_patcher(_source, output, _image, **_kwargs):
+                output.write_bytes(b"prepatched-unity-bundle")
+                return {
+                    "output_sha256": manager.sha256_file(output),
+                    "source_crc32": "11111111",
+                    "output_crc32": "22222222",
+                }
+
+            with (
+                mock.patch.dict("os.environ", {"LOCALAPPDATA": str(local)}),
+                mock.patch.object(
+                    manager,
+                    "_load_bundle_patcher",
+                    return_value=fake_patcher,
+                ),
+            ):
+                manager.install(runtime, pack, manager.explicit_install(game))
+                updated_bundle = b"steam-updated-official-bundle"
+                target.write_bytes(updated_bundle)
+                catalog.write_bytes(b"steam-updated-official-catalog")
+                (game / "TheBazaar.exe").write_bytes(b"steam-updated-executable")
+
+                adapter = mock.Mock()
+                adapter.supports_build.return_value = True
+                adapter.payload = {
+                    "visual_replacements": [
+                        {
+                            "slot": "store_image",
+                            "deployment": {
+                                "mode": manager.PRELOAD_TEXTURE_MODE,
+                                "target": "TheBazaar_Data/native-icon.bundle",
+                                "asset_name": "NativeIcon",
+                                "supported_original_sha256": [
+                                    hashlib.sha256(updated_bundle).hexdigest()
+                                ],
+                            },
+                        }
+                    ]
+                }
+                registry = mock.Mock(records=[adapter])
+                with mock.patch.object(
+                    manager,
+                    "_load_adapter_registry",
+                    return_value=registry,
+                ):
+                    # No replacement pack covers the previously deployed
+                    # target. This matches changing another hero after Steam
+                    # updated an older Mak deployment.
+                    removed = manager.retire_rebased_deployment(
+                        manager.GameInstall(game, None, "24570932", True),
+                        [],
+                    )
+
+            self.assertTrue(removed)
+            self.assertEqual(updated_bundle, target.read_bytes())
+            self.assertFalse(
+                (local / "BazaarSkinManager" / "TheBazaar" / "manager" /
+                 "install-manifest.json").exists()
+            )
+
     def test_rebased_bundle_with_old_patched_catalog_still_fails_closed(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
