@@ -924,7 +924,8 @@ class ManagerTests(unittest.TestCase):
                     [pack],
                 )
 
-            self.assertEqual([str(target)], restored)
+            self.assertEqual(1, len(restored))
+            self.assertTrue(Path(restored[0]).samefile(target))
             self.assertTrue(removed)
             self.assertEqual(original_bundle, target.read_bytes())
             self.assertEqual(updated_catalog, catalog.read_bytes())
