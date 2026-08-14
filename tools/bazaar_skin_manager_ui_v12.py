@@ -601,7 +601,10 @@ class SkinManagerV12:
                 key = f"{hero['id']}|{skin['id']}"
                 is_default = str(skin["id"]).endswith("01/A")
                 default = "（默认皮肤）" if is_default else ""
-                support = "" if skin.get("deployment_status") == "supported" else " · 未适配"
+                support = {
+                    "supported": "",
+                    "compatible_unverified": " · 自动兼容",
+                }.get(skin.get("deployment_status"), " · 通用运行")
                 skin_name = "默认皮肤" if is_default else (skin.get("display_name") or skin["id"])
                 label = f"{hero.get('display_name') or hero['id']} · {skin_name}{default}{support}"
                 records.append((key, label, target | {"deployment_status": skin.get("deployment_status"), "adapter_id": skin.get("adapter_id")}))
@@ -622,7 +625,10 @@ class SkinManagerV12:
                 skin_name = "默认皮肤" if is_default else str(
                     skin.get("display_name") or skin["id"]
                 )
-                support = "" if skin.get("deployment_status") == "supported" else " · 未适配"
+                support = {
+                    "supported": "",
+                    "compatible_unverified": " · 自动兼容",
+                }.get(skin.get("deployment_status"), " · 通用运行")
                 targets.append((key, f"{skin_name}{support}", target))
             targets.sort(key=lambda item: (not item[0].endswith("01/A"), item[1].casefold()))
             groups.append(
@@ -1600,8 +1606,19 @@ class SkinManagerV12:
             for _key, _label, target in self._target_records()
             if target.get("deployment_status") == "supported"
         )
+        compatible = sum(
+            1
+            for _key, _label, target in self._target_records()
+            if target.get("deployment_status") == "compatible_unverified"
+        )
         detected = len(self._target_records())
-        self.compatibility_status.configure(text=f"当前 Steam build：{self.catalog.get('steam_build') or '未知'} · 已发现 {detected} 个职业皮肤目标 · 已验证适配 {supported} 个。")
+        self.compatibility_status.configure(
+            text=(
+                f"当前 Steam build：{self.catalog.get('steam_build') or '未知'} · "
+                f"已发现 {detected} 个职业皮肤目标 · 已验证 {supported} 个 · "
+                f"自动兼容 {compatible} 个。"
+            )
+        )
 
     def _save_update_preference(self) -> None:
         self.settings["auto_check_updates"] = bool(self.auto_update_var.get())
@@ -1736,10 +1753,13 @@ class SkinManagerV12:
                 for key in (
                     "installed",
                     "healthy",
+                    "operational",
                     "state",
                     "update_required",
                     "checks",
                     "compatibility_errors",
+                    "deployment_warnings",
+                    "compatibility_notes",
                 )
             }
         except Exception as error:
@@ -2004,7 +2024,21 @@ class SkinManagerV12:
         self._background(
             "正在部署皮肤映射…",
             lambda: StudioWorkspace.deploy_assignments(assignments, self.game_dir_override),
-            lambda result: self._finish_action("部署完成", "已部署 " + "、".join(item["id"] for item in result.get("packs") or [])),
+            self._finish_deploy,
+        )
+
+    def _finish_deploy(self, result: dict) -> None:
+        packs = "、".join(item["id"] for item in result.get("packs") or [])
+        warnings = list(result.get("deployment_warnings") or [])
+        text = "已部署 " + packs
+        if warnings:
+            text += (
+                f"\n\n当前游戏版本有 {len(warnings)} 项兼容降级；"
+                "可用部分已继续部署，不兼容槽位保留游戏当前素材。"
+            )
+        self._finish_action(
+            "部署完成" if not warnings else "部署完成（兼容模式）",
+            text,
         )
 
     def _undeploy_all(self) -> None:
@@ -2165,7 +2199,13 @@ class SkinManagerV12:
             diagnostics = {"installed": False}
         build = self.catalog.get("steam_build") or "未知 build"
         if diagnostics.get("installed"):
-            text, color = f"已部署 · Steam {build}", COLORS["accent"]
+            if diagnostics.get("state") == "degraded":
+                text, color = (
+                    f"已部署（兼容模式） · Steam {build}",
+                    COLORS["warning"],
+                )
+            else:
+                text, color = f"已部署 · Steam {build}", COLORS["accent"]
         else:
             text, color = f"原版 / 未部署 · Steam {build}", COLORS["muted"]
         self.global_status.configure(text=text, foreground=color)

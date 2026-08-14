@@ -1437,7 +1437,8 @@ class ModManagerStudio:
         status = {
             "supported": "可部署",
             "detected_unmapped": "已检测・未适配",
-            "game_update_required": "需要更新适配器",
+            "compatible_unverified": "自动兼容模式",
+            "game_update_required": "自动兼容模式",
         }.get(skin.get("deployment_status"), "离线目录")
         return f"{skin['display_name']}  ·  {skin['id']}  ·  {status}"
 
@@ -1457,9 +1458,9 @@ class ModManagerStudio:
         else:
             status = selected.get("deployment_status")
             message = (
-                "检测到此皮肤，但尚无经过验证的适配器；导出和部署保持阻断。"
+                "检测到此皮肤；已有素材可继续编辑，缺少合同的槽位保留原版。"
                 if status == "detected_unmapped"
-                else "当前游戏版本与适配器不匹配；需要更新适配器。"
+                else "当前游戏版本进入自动兼容模式；不兼容槽位会保留原版。"
             )
             self.hero_support.configure(
                 text=message,

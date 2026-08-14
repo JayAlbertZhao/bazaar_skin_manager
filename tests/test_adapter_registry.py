@@ -216,14 +216,14 @@ class AdapterRegistryTests(unittest.TestCase):
             )
             self.assertTrue(all(item["detected_from_game"] for item in skins.values()))
 
-    def test_verified_adapter_fails_closed_on_game_build_change(self):
+    def test_known_adapter_enters_compatibility_mode_on_game_build_change(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             write_adapter(root / "one.json", "one", "HeroOne", "Skin_ONE_01/A")
             registry = AdapterRegistry.load(root)
             self.assertEqual(
                 registry.support_status("HeroOne", "Skin_ONE_01/A", "99999999"),
-                "game_update_required",
+                "compatible_unverified",
             )
 
 

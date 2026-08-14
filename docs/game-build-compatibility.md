@@ -4,6 +4,29 @@ This is the durable checklist and evidence log for adapting the Skin Manager
 after a Steam update. Adapter declarations remain the executable source of
 truth; this note records how their claims were established.
 
+## Availability policy from Manager 1.4.14
+
+Compatibility evidence remains graded, but it is no longer an availability
+switch. A known adapter on an unseen Steam build first attempts its exact
+on-disk contract: bundle path, unique Texture2D name, dimensions, Unity save
+round-trip, bounded BC7 error and Addressables CRC binding. A successful probe
+continues as a structurally compatible deployment even when the build id and
+source SHA-256 have not yet been published. Failed native or Spine probes keep
+those individual surfaces unchanged while runtime-safe slots continue.
+
+The runtime treats fingerprint differences the same way. It logs compatibility
+mode, installs each exact hook independently, and retains original game behavior
+for any missing method or field. Build ids, fingerprints and known source hashes
+still distinguish verified support from automatic compatibility; they no longer
+disable every feature in response to a content-only update.
+
+Transaction recovery is also per target. Exact Manager patches are restored
+when the current catalog requests their recorded original CRC. Steam-updated or
+externally modified files are preserved, and a stale transaction with no live
+Manager patch can be retired without first publishing the new hashes. This
+accepts partial cosmetic degradation in order to keep the game and utility
+usable, while retaining backups and warnings for later review.
+
 ## Build 24720155 (2026-08-14)
 
 ### Update evidence
@@ -216,5 +239,8 @@ Verified default-skin contract:
    field-compatible code can still be bypassed by a newly preferred visual
    route such as animated portraits.
 
-Unknown builds or hashes must stay blocked. A familiar filename is evidence to
-investigate, not permission to patch it.
+Unknown builds and hashes enter structural compatibility mode. A familiar
+filename alone is still insufficient: mutation requires the exact asset
+contract and a verified save/catalog round-trip. If that proof fails, only the
+affected surface falls back to the original instead of blocking the entire
+tool.

@@ -161,7 +161,10 @@ class AdapterRegistry:
         if adapter is None:
             return "detected_unmapped"
         if not adapter.supports_build(build_id):
-            return "game_update_required"
+            # Build ids are evidence, not an availability switch.  A known
+            # adapter can still prove its exact bundle/Texture2D contract on
+            # demand when a content-only Steam update changes fingerprints.
+            return "compatible_unverified"
         return "supported"
 
 
@@ -222,7 +225,8 @@ def enrich_catalog(
             )
         hero["skins"] = skins
         hero["runtime_supported"] = any(
-            item["deployment_status"] == "supported" for item in skins
+            item["deployment_status"] in {"supported", "compatible_unverified"}
+            for item in skins
         )
         hero["audio_supported"] = any(
             (
@@ -231,7 +235,8 @@ def enrich_catalog(
                     adapter.payload.get("audio_template")
                     or adapter.payload.get("audio_template_ref")
                 )
-                and item["deployment_status"] == "supported"
+                and item["deployment_status"]
+                in {"supported", "compatible_unverified"}
             )
             for item in skins
         )

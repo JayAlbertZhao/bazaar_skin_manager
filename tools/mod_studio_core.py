@@ -285,15 +285,10 @@ def _verified_original_bundle(
 
     if not live.is_file():
         raise FileNotFoundError(live)
-    supported = {
-        str(value).casefold()
-        for value in deployment.get("supported_original_sha256") or []
-    }
-    if supported and sha256_file(live).casefold() not in supported:
-        raise ValueError(
-            "The live game bundle is modified and its verified native backup "
-            "is unavailable; original reference was not guessed."
-        )
+    # When no verified backup exists, let the exporter prove the live bundle's
+    # exact Texture2D name and dimensions.  This may be a Steam-updated or
+    # third-party image, but a usable current reference is preferable to an
+    # empty editor on every new content hash.
     return live
 
 
@@ -342,11 +337,6 @@ def export_original_visual_reference(
 
     adapter = _adapter_for_target(target)
     game = preferred_game_install(game_dir)
-    if not adapter.supports_build(game.build_id):
-        raise ValueError(
-            f"Adapter {adapter.adapter_id} is not verified for Steam build "
-            f"{game.build_id or 'unknown'}."
-        )
     deployment = _original_visual_deployment(adapter, slot)
     source = _verified_original_bundle(game.game_dir, deployment)
     destination = output or (
@@ -1507,12 +1497,10 @@ class StudioWorkspace:
             if not installs:
                 raise ValueError("No complete Steam installation was detected.")
             game = installs[0]
-        for adapter in adapters:
-            if not adapter.supports_build(game.build_id):
-                raise ValueError(
-                    f"Adapter {adapter.adapter_id} is not verified for Steam "
-                    f"build {game.build_id or 'unknown'}."
-                )
+        # A new build id no longer blocks a known adapter.  Native payloads
+        # are attempted against their exact bundle path, object name, type and
+        # dimensions; incompatible preload slots degrade to original art while
+        # runtime-safe slots and the rest of the pack remain available.
         # Deploy the same exact payload surface as export_zip. Authoring inputs
         # must never be copied into the managed mods directory.
         with tempfile.TemporaryDirectory() as temp:

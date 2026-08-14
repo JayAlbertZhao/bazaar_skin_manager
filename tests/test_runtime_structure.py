@@ -224,8 +224,8 @@ class RuntimeStructureTests(unittest.TestCase):
             ROOT / "src" / "BazaarSkinManager.Runtime" / "AssemblyInfo.cs"
         ).read_text(encoding="utf-8")
 
-        self.assertIn('PluginVersion = "1.4.13"', plugin)
-        self.assertIn('AssemblyVersion("1.4.13.0")', assembly)
+        self.assertIn('PluginVersion = "1.4.14"', plugin)
+        self.assertIn('AssemblyVersion("1.4.14.0")', assembly)
 
     def test_runtime_self_test_exercises_local_portrait_route(self) -> None:
         diagnostics = (
@@ -531,7 +531,7 @@ class RuntimeStructureTests(unittest.TestCase):
             LOADER_COVERAGE,
         )
 
-    def test_runtime_compatibility_gate_precedes_every_activation_hook(
+    def test_runtime_compatibility_warning_precedes_best_effort_hooks(
         self,
     ) -> None:
         gate = PLUGIN.index("RuntimeCompatibility.ValidateCurrent(")
@@ -546,13 +546,15 @@ class RuntimeStructureTests(unittest.TestCase):
         self.assertLess(gate, pack_load)
         for hook in hook_calls:
             self.assertGreater(PLUGIN.index(hook), gate, hook)
-        fail_closed_block = PLUGIN[
+        compatibility_block = PLUGIN[
             gate:PLUGIN.index("string root =", gate)
         ]
-        self.assertIn("Logger.LogError(", fail_closed_block)
-        self.assertIn("return;", fail_closed_block)
-        self.assertIn("before loading its pack or ", fail_closed_block)
-        self.assertIn('"installing hooks: "', fail_closed_block)
+        self.assertIn("Logger.LogWarning(", compatibility_block)
+        self.assertNotIn("return;", compatibility_block)
+        self.assertIn("continuing in best-effort", compatibility_block)
+        self.assertIn("TryFeature(", PLUGIN)
+        self.assertIn("remaining skin", PLUGIN)
+        self.assertIn("keeps the original", PLUGIN)
         self.assertIn('"runtime-compatibility.json"', COMPATIBILITY)
         self.assertIn("Game file fingerprint changed:", COMPATIBILITY)
 

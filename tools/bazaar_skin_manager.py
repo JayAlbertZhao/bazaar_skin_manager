@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import copy
 import hashlib
 import importlib.util
 import json
@@ -21,7 +22,7 @@ from typing import Iterable
 
 
 APP_ID = "1617400"
-MANAGER_VERSION = "1.4.13"
+MANAGER_VERSION = "1.4.14"
 PROJECT_ROOT = Path(
     getattr(sys, "_MEIPASS", Path(__file__).resolve().parents[1])
 )
@@ -779,14 +780,9 @@ def validate_pack(pack_dir: Path) -> list[str]:
                     audio_target = audio_manifest.get("target") or {}
                     if audio_target.get("hero") != target.get("hero"):
                         errors.append("audio target.hero must match pack target.hero")
-                    if (
-                        adapter
-                        and str(audio_target.get("steam_build"))
-                        not in adapter.supported_builds
-                    ):
-                        errors.append(
-                            "audio target.steam_build is not verified by adapter"
-                        )
+                    # Exact FMOD GUID/selectors fail open to original audio at
+                    # runtime.  A stale informational Steam build must not
+                    # invalidate an otherwise well-formed community pack.
                     identities: set[tuple] = set()
                     for route in audio_manifest.get("routes") or []:
                         selectors = tuple(
@@ -1147,25 +1143,29 @@ def reconcile_catalog_reset_bundles(game: GameInstall) -> list[str]:
         target = Path(item["target"])
         backup = Path(item["backup"])
         if not target.is_file():
-            return []
+            # Steam may remove or rename one old target.  That target cannot
+            # be repaired, but it must not prevent recovery of the remaining
+            # exact Manager patches.
+            continue
         current_hash = sha256_file(target)
         if current_hash == item.get("original_sha256"):
-            pass
+            continue
         elif current_hash == item.get("patched_sha256"):
             if (
                 not backup.is_file()
                 or sha256_file(backup) != item.get("original_sha256")
             ):
-                return []
-            restore_records.append(item)
+                continue
+            if catalog_references_bundle_crc(
+                catalog_bytes,
+                target.name,
+                str(item.get("original_crc32") or ""),
+            ):
+                restore_records.append(item)
         else:
-            return []
-        if not catalog_references_bundle_crc(
-            catalog_bytes,
-            target.name,
-            str(item.get("original_crc32") or ""),
-        ):
-            return []
+            # Preserve Steam-updated or externally changed files. Recovery is
+            # intentionally per target instead of all-or-nothing.
+            continue
     if not restore_records:
         return []
 
@@ -1195,7 +1195,7 @@ def reconcile_catalog_reset_bundles(game: GameInstall) -> list[str]:
 
 def retire_rebased_deployment(
     game: GameInstall,
-    replacement_packs: list[Path],
+    _replacement_packs: list[Path],
 ) -> list[str]:
     """Retire a transaction that Steam has completely reset to verified files.
 
@@ -1203,9 +1203,9 @@ def retire_rebased_deployment(
     an update or file verification.  Restoring the old backups over those new
     official files would be wrong, while the ordinary uninstall correctly
     refuses to discard an ambiguous mixed transaction.  Redeployment may
-    retire the stale record only when every previously managed live bundle is
-    now an original hash accepted by the current/installed pack contracts and
-    none of the old patched files (including the catalog) remains live.
+    retire the stale record only when none of the old patched files (including
+    the catalog) remains live. Current Steam or externally supplied bytes are
+    preserved instead of being overwritten with an obsolete backup.
     """
 
     record_path = manager_root() / "install-manifest.json"
@@ -1224,58 +1224,23 @@ def retire_rebased_deployment(
     if not native_records:
         return []
 
-    supported_by_target: dict[str, set[str]] = {}
-    # The copied packs recorded by the old transaction preserve the adapter
-    # contract that existed when they were deployed.  After a Steam update
-    # those stale manifests cannot recognize the new official bundle hashes.
-    # Use the adapters shipped by the current Manager as the authority, plus
-    # the packs selected for this replacement deployment.
-    for adapter in _load_adapter_registry().records:
-        if not adapter.supports_build(game.build_id):
-            continue
-        for replacement in adapter.payload.get("visual_replacements") or []:
-            deployments = []
-            if replacement.get("deployment"):
-                deployments.append(replacement["deployment"])
-            deployments.extend(replacement.get("additional_deployments") or [])
-            for deployment in deployments:
-                if deployment.get("mode") != PRELOAD_TEXTURE_MODE:
-                    continue
-                target = native_patch_target(game, deployment)
-                supported_by_target.setdefault(
-                    str(target).casefold(), set()
-                ).update(
-                    str(value).casefold()
-                    for value in deployment.get("supported_original_sha256") or []
-                )
-    for pack in replacement_packs:
-        try:
-            specs = native_patch_specs(pack)
-        except (OSError, ValueError, TypeError, json.JSONDecodeError):
-            continue
-        for spec in specs:
-            deployment = spec["deployment"]
-            target = native_patch_target(game, deployment)
-            supported_by_target.setdefault(str(target).casefold(), set()).update(
-                str(value).casefold()
-                for value in deployment.get("supported_original_sha256") or []
-            )
-
     rebased = False
     for item in native_records:
         target = Path(item["target"])
         if not target.is_file():
-            return []
+            rebased = True
+            continue
         current_hash = sha256_file(target).casefold()
         if current_hash == str(item.get("patched_sha256") or "").casefold():
-            # A partially reset transaction must still go through strict
-            # uninstall; mixing restored and Steam-updated files is unsafe.
+            # At least one Manager patch remains live, so this is not a fully
+            # rebased transaction. Per-target catalog recovery gets the first
+            # chance to remove eligible residual patches.
             return []
-        accepted = supported_by_target.get(str(target.resolve()).casefold(), set())
-        if current_hash not in accepted:
-            return []
-        if current_hash != str(item.get("original_sha256") or "").casefold():
-            rebased = True
+        # Once no live file equals our recorded patch, preserve whatever Steam
+        # or another tool supplied.  Requiring the new bytes to appear in an
+        # already-published whitelist would turn every content update into an
+        # artificial outage.
+        rebased = True
 
     catalog_patch = record.get("native_catalog_patch")
     if catalog_patch:
@@ -1285,8 +1250,7 @@ def retire_rebased_deployment(
         catalog_hash = sha256_file(catalog).casefold()
         if catalog_hash == str(catalog_patch.get("patched_sha256") or "").casefold():
             return []
-        if catalog_hash != str(catalog_patch.get("original_sha256") or "").casefold():
-            rebased = True
+        rebased = True
     if not rebased:
         return []
 
@@ -1352,16 +1316,11 @@ def prepare_native_patches_many(
                 f"{target}"
             )
         original_sha256 = sha256_file(target)
-        supported = {
-            value.casefold()
-            for value in deployment["supported_original_sha256"]
-        }
-        if original_sha256.casefold() not in supported:
-            raise RuntimeError(
-                f"Native patch target hash is unsupported for "
-                f"{', '.join(slots)}: "
-                f"{original_sha256}. Steam may have updated the game."
-            )
+        # A hash outside the published evidence set enters compatibility mode.
+        # The patcher below remains strict about the exact bundle path,
+        # Texture2D name, type, dimensions, save round-trip and catalog CRC.
+        # Those structural checks are sufficient to attempt a content-only
+        # update without making the whole utility unavailable.
 
         output = staging / f"native-patch-{len(prepared):02d}.bundle"
         texture_replacements = []
@@ -1601,6 +1560,8 @@ def install_many(
     if not runtime.is_file():
         raise RuntimeError(f"runtime DLL not built: {runtime}")
     previous_record = existing_install_record() or {}
+    deployment_warnings: list[str] = []
+    compatibility_notes: list[str] = []
     if spine_requests is None:
         spine_requests = list(previous_record.get("spine_replacements") or [])
     else:
@@ -1636,17 +1597,33 @@ def install_many(
         native_issues.extend(native_patch_plan_issues(pack, game))
     native_issues.extend(spine_patch_plan_issues(spine_requests, game))
     if native_issues:
-        raise RuntimeError(
-            "native deployment is not ready: " + "; ".join(native_issues)
+        compatibility_notes.extend(
+            "Compatibility probe: " + issue for issue in native_issues
         )
 
     bepinex = ensure_bepinex(game.game_dir)
 
+    preserved_transaction: dict | None = None
     if (manager_root() / "install-manifest.json").is_file():
-        reconcile_catalog_reset_bundles(game)
-        retire_rebased_deployment(game, resolved_packs)
+        try:
+            reconcile_catalog_reset_bundles(game)
+            retire_rebased_deployment(game, resolved_packs)
+        except (OSError, RuntimeError, ValueError, json.JSONDecodeError) as error:
+            deployment_warnings.append(
+                "Pre-deployment recovery could not be completed; the existing "
+                "transaction will be preserved where necessary: " + str(error)
+            )
         if (manager_root() / "install-manifest.json").is_file():
-            uninstall()
+            try:
+                uninstall()
+            except (OSError, RuntimeError, ValueError, json.JSONDecodeError) as error:
+                preserved_transaction = existing_install_record() or previous_record
+                deployment_warnings.append(
+                    "Previous native transaction was kept because some game "
+                    "files changed independently. Runtime-safe replacements "
+                    "continue; preload slots keep their current images: "
+                    + str(error)
+                )
 
     compatibility_path = runtime_compatibility_path()
     if compatibility_path.exists():
@@ -1674,6 +1651,18 @@ def install_many(
                     "manifest_sha256": sha256_file(pack / "mod.json"),
                 }
             )
+        if preserved_transaction is not None:
+            active_destinations = {
+                str(path.resolve()).casefold() for path in pack_destinations
+            }
+            for old_entry in preserved_transaction.get("packs") or []:
+                old_path = Path(str(old_entry.get("path") or ""))
+                if (
+                    old_path.is_dir()
+                    and str(old_path.resolve()).casefold()
+                    not in active_destinations
+                ):
+                    shutil.rmtree(old_path)
         runtime_config = configure_runtime_mods_root(game)
     except Exception:
         if plugin_dest.is_file():
@@ -1685,32 +1674,70 @@ def install_many(
 
     applied_native_patches: list[dict] = []
     applied_catalog_patch: dict | None = None
+    normalized_spine_requests: list[dict] = []
     try:
-        with tempfile.TemporaryDirectory() as temp:
-            prepared = prepare_native_patches_many(
-                resolved_packs,
-                game,
-                Path(temp),
+        if preserved_transaction is not None:
+            applied_native_patches = list(
+                preserved_transaction.get("native_patches") or []
             )
-            normalized_spine_requests: list[dict] = []
-            if spine_requests:
-                prepared, normalized_spine_requests = (
-                    _spine_module().prepare_spine_native_patches(
-                        spine_requests,
+            applied_catalog_patch = preserved_transaction.get(
+                "native_catalog_patch"
+            )
+            normalized_spine_requests = list(
+                preserved_transaction.get("spine_replacements") or []
+            )
+        else:
+            with tempfile.TemporaryDirectory() as temp:
+                staging = Path(temp)
+                try:
+                    prepared = prepare_native_patches_many(
+                        resolved_packs,
                         game,
-                        Path(temp),
-                        prepared,
+                        staging,
                     )
+                except Exception as error:
+                    prepared = []
+                    deployment_warnings.append(
+                        "Native image slots kept their originals because the "
+                        "current game structure could not be patched: "
+                        + str(error)
+                    )
+                if spine_requests:
+                    visual_prepared = copy.deepcopy(prepared)
+                    try:
+                        prepared, normalized_spine_requests = (
+                            _spine_module().prepare_spine_native_patches(
+                                spine_requests,
+                                game,
+                                staging,
+                                prepared,
+                            )
+                        )
+                    except Exception as error:
+                        prepared = visual_prepared
+                        normalized_spine_requests = []
+                        deployment_warnings.append(
+                            "Spine slots kept their current visuals; other "
+                            "skin features continue: " + str(error)
+                        )
+                try:
+                    prepared_catalog = prepare_native_catalog_patch(
+                        prepared,
+                        game,
+                        staging,
+                    )
+                except Exception as error:
+                    prepared = []
+                    prepared_catalog = None
+                    normalized_spine_requests = []
+                    deployment_warnings.append(
+                        "Prepared native slots were skipped because the "
+                        "Addressables catalog contract changed: " + str(error)
+                    )
+                applied_native_patches = apply_native_patches(prepared)
+                applied_catalog_patch = apply_native_catalog_patch(
+                    prepared_catalog
                 )
-            prepared_catalog = prepare_native_catalog_patch(
-                prepared,
-                game,
-                Path(temp),
-            )
-            applied_native_patches = apply_native_patches(prepared)
-            applied_catalog_patch = apply_native_catalog_patch(
-                prepared_catalog
-            )
 
         compatibility = runtime_compatibility_payload(game)
         compatibility_text = serialized_json(compatibility)
@@ -1756,14 +1783,18 @@ def install_many(
             },
             "native_patches": applied_native_patches,
             "native_catalog_patch": applied_catalog_patch,
+            "deployment_warnings": deployment_warnings,
+            "compatibility_notes": compatibility_notes,
         }
     except Exception:
-        if applied_catalog_patch:
+        if applied_catalog_patch and preserved_transaction is None:
             backup = Path(applied_catalog_patch["backup"])
             target = Path(applied_catalog_patch["target"])
             if backup.is_file():
                 atomic_copy_file(backup, target)
-        for item in reversed(applied_native_patches):
+        for item in reversed(
+            applied_native_patches if preserved_transaction is None else []
+        ):
             backup = Path(item["backup"])
             target = Path(item["target"])
             if backup.is_file():
@@ -2023,7 +2054,22 @@ def installation_diagnostics() -> dict:
         for key, value in checks.items()
         if key != "game_update_detected"
     }
-    healthy = all(positive_checks.values()) and not update_detected
+    deployment_warnings = list(record.get("deployment_warnings") or [])
+    healthy = (
+        all(positive_checks.values())
+        and not update_detected
+        and not deployment_warnings
+    )
+    operational = all(
+        checks[key]
+        for key in (
+            "game_complete",
+            "bepinex_present",
+            "plugin_present",
+            "packs_present",
+            "packs_valid",
+        )
+    )
     update_required = (
         update_detected
         or not checks["runtime_compatibility_matches_current"]
@@ -2031,6 +2077,7 @@ def installation_diagnostics() -> dict:
     return {
         "installed": True,
         "healthy": healthy,
+        "operational": operational,
         "components": {
             "manager": record.get("manager") or {"version": None},
             "bepinex": {
@@ -2068,6 +2115,8 @@ def installation_diagnostics() -> dict:
         "state": (
             "healthy"
             if healthy
+            else "degraded"
+            if operational
             else "update_required"
             if update_required
             else "repair_required"
@@ -2075,6 +2124,8 @@ def installation_diagnostics() -> dict:
         "update_required": update_required,
         "checks": checks,
         "compatibility_errors": compatibility_errors,
+        "deployment_warnings": deployment_warnings,
+        "compatibility_notes": list(record.get("compatibility_notes") or []),
         "previous_fingerprint": previous,
         "current_fingerprint": current,
         "repair_command": (
@@ -2085,9 +2136,9 @@ def installation_diagnostics() -> dict:
             else None
         ),
         "action_required": (
-            "Game files differ from the authorized fingerprint. The runtime "
-            "will stay disabled. Review plan-install, then run install only "
-            "after confirming this runtime supports the current Steam build."
+            "Game files differ from the last verified fingerprint. Runtime "
+            "and structurally compatible slots continue in best-effort mode; "
+            "re-deploy to refresh the compatibility evidence when convenient."
             if update_required
             else "Repair the owned runtime/pack files with install."
             if not healthy
@@ -2105,11 +2156,9 @@ def uninstall() -> list[str]:
             return [str(compatibility)]
         return []
     record = json.loads(record_path.read_text(encoding="utf-8"))
-    # Native bundle and catalog restoration is one transaction.  If Steam (or
-    # another tool) changed any managed file while a skin was deployed, do not
-    # restore only the files that still match and then discard the backups.
-    # That can leave an original catalog pointing at a modified bundle (or the
-    # reverse), which makes Addressables loop at 100% during game startup.
+    # Recover every file whose provenance is still exact. Independently
+    # changed files are preserved instead of turning cancellation into a hard
+    # stop; their verified backups are retained in a detached recovery report.
     native_restore_issues: list[str] = []
     native_records = []
     catalog_patch = record.get("native_catalog_patch")
@@ -2139,16 +2188,8 @@ def uninstall() -> list[str]:
         native_restore_issues.append(
             f"{label}: file changed outside Skin Manager"
         )
-    if native_restore_issues:
-        raise RuntimeError(
-            "Cannot safely cancel deployment because managed game files no "
-            "longer form one verified transaction. No backups or install "
-            "records were removed. Verify The Bazaar's files in Steam, then "
-            "retry. Details: "
-            + "; ".join(native_restore_issues)
-        )
-
     removed: list[str] = []
+    retained_backups: list[str] = []
     if catalog_patch:
         target = Path(catalog_patch["target"])
         backup = Path(catalog_patch["backup"])
@@ -2164,8 +2205,17 @@ def uninstall() -> list[str]:
             atomic_copy_file(backup, target)
             removed.append(str(target))
         if backup.is_file():
-            backup.unlink()
-            removed.append(str(backup))
+            backup_valid = (
+                sha256_file(backup) == catalog_patch.get("original_sha256")
+            )
+            if current_hash == catalog_patch.get("original_sha256") or (
+                backup_valid
+                and current_hash in {None, catalog_patch.get("patched_sha256")}
+            ):
+                backup.unlink()
+                removed.append(str(backup))
+            else:
+                retained_backups.append(str(backup))
     for item in reversed(record.get("native_patches") or []):
         target = Path(item["target"])
         backup = Path(item["backup"])
@@ -2181,8 +2231,15 @@ def uninstall() -> list[str]:
             atomic_copy_file(backup, target)
             removed.append(str(target))
         if backup.is_file():
-            backup.unlink()
-            removed.append(str(backup))
+            backup_valid = sha256_file(backup) == item.get("original_sha256")
+            if current_hash == item.get("original_sha256") or (
+                backup_valid
+                and current_hash in {None, item.get("patched_sha256")}
+            ):
+                backup.unlink()
+                removed.append(str(backup))
+            else:
+                retained_backups.append(str(backup))
     pack_entries = record.get("packs") or (
         [record["pack"]] if record.get("pack") else []
     )
@@ -2204,6 +2261,25 @@ def uninstall() -> list[str]:
     if compatibility.is_file() and str(compatibility) not in removed:
         compatibility.unlink()
         removed.append(str(compatibility))
+    warning_path = manager_root() / "last-uninstall-warnings.json"
+    if native_restore_issues:
+        atomic_write_text(
+            warning_path,
+            serialized_json(
+                {
+                    "schema_version": 1,
+                    "message": (
+                        "Cancellation completed in best-effort mode. Files "
+                        "changed outside Skin Manager were preserved."
+                    ),
+                    "warnings": native_restore_issues,
+                    "retained_backups": retained_backups,
+                }
+            ),
+        )
+        removed.append(str(warning_path))
+    elif warning_path.is_file():
+        warning_path.unlink()
     return removed
 
 
@@ -2254,6 +2330,15 @@ def preferred_game_install(game_dir: Path | None = None) -> GameInstall:
 def launch_game(game_dir: Path | None = None) -> dict:
     """Start The Bazaar through Steam so Steam authentication is preserved."""
     selected = preferred_game_install(game_dir)
+    recovered: list[str] = []
+    recovery_warning = None
+    try:
+        recovered = reconcile_catalog_reset_bundles(selected)
+    except (OSError, RuntimeError, ValueError, json.JSONDecodeError) as error:
+        # Launch availability wins: an unsuccessful repair attempt never
+        # prevents Steam from starting the game. Runtime hooks independently
+        # fall back to original assets when a route no longer matches.
+        recovery_warning = str(error)
     steam = find_steam_executable()
     if steam:
         command = [str(steam), "-applaunch", APP_ID]
@@ -2263,6 +2348,8 @@ def launch_game(game_dir: Path | None = None) -> dict:
             "method": "steam_executable",
             "game_dir": str(selected.game_dir),
             "command": command,
+            "recovered_native_targets": recovered,
+            "recovery_warning": recovery_warning,
         }
 
     if sys.platform != "win32" or not hasattr(os, "startfile"):
@@ -2276,6 +2363,8 @@ def launch_game(game_dir: Path | None = None) -> dict:
         "method": "steam_protocol",
         "game_dir": str(selected.game_dir),
         "uri": uri,
+        "recovered_native_targets": recovered,
+        "recovery_warning": recovery_warning,
     }
 
 

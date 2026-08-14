@@ -694,7 +694,74 @@ class ManagerTests(unittest.TestCase):
             )
             self.assertFalse(Path(catalog_patch["backup"]).exists())
 
-    def test_uninstall_preserves_transaction_when_a_bundle_changed(self) -> None:
+    def test_unknown_bundle_hash_uses_exact_structural_compatibility(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            pack, game, runtime = self._native_patch_fixture(root)
+            target = game / "TheBazaar_Data" / "native-icon.bundle"
+            target.write_bytes(b"steam-content-update-with-same-structure")
+
+            def fake_patcher(_source, output, _image, **_kwargs):
+                output.write_bytes(b"compatibility-mode-patch")
+                return {
+                    "output_sha256": manager.sha256_file(output),
+                    "source_crc32": "11111111",
+                    "output_crc32": "22222222",
+                }
+
+            with (
+                mock.patch.dict(
+                    "os.environ", {"LOCALAPPDATA": str(root / "local")}
+                ),
+                mock.patch.object(
+                    manager, "_load_bundle_patcher", return_value=fake_patcher
+                ),
+            ):
+                record = manager.install(
+                    runtime, pack, manager.explicit_install(game)
+                )
+
+            self.assertEqual(target.read_bytes(), b"compatibility-mode-patch")
+            self.assertEqual(len(record["native_patches"]), 1)
+            self.assertTrue(record["compatibility_notes"])
+            self.assertEqual(record["deployment_warnings"], [])
+
+    def test_incompatible_native_structure_degrades_to_runtime_only(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            pack, game, runtime = self._native_patch_fixture(root)
+            target = game / "TheBazaar_Data" / "native-icon.bundle"
+            original = target.read_bytes()
+
+            with (
+                mock.patch.dict(
+                    "os.environ", {"LOCALAPPDATA": str(root / "local")}
+                ),
+                mock.patch.object(
+                    manager,
+                    "_load_bundle_patcher",
+                    return_value=mock.Mock(
+                        side_effect=RuntimeError("Texture2D contract changed")
+                    ),
+                ),
+            ):
+                record = manager.install(
+                    runtime, pack, manager.explicit_install(game)
+                )
+
+            self.assertEqual(target.read_bytes(), original)
+            self.assertEqual(record["native_patches"], [])
+            self.assertIsNone(record["native_catalog_patch"])
+            self.assertTrue(Path(record["plugin"]["path"]).is_file())
+            self.assertTrue(Path(record["pack"]["path"]).is_dir())
+            self.assertTrue(
+                any(
+                    "Texture2D contract changed" in warning
+                    for warning in record["deployment_warnings"]
+                )
+            )
+
+    def test_uninstall_completes_best_effort_when_a_bundle_changed(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             pack, game, runtime = self._native_patch_fixture(root)
@@ -724,17 +791,18 @@ class ManagerTests(unittest.TestCase):
                 )
                 backup = Path(record["native_patches"][0]["backup"])
                 target.write_bytes(b"steam-updated-bundle")
-                with self.assertRaisesRegex(
-                    RuntimeError,
-                    "Cannot safely cancel deployment",
-                ):
-                    manager.uninstall()
+                removed = manager.uninstall()
             self.assertEqual(target.read_bytes(), b"steam-updated-bundle")
             self.assertTrue(backup.exists())
-            self.assertTrue(
-                (local / "BazaarSkinManager" / "TheBazaar" / "manager" /
-                 "install-manifest.json").is_file()
+            manager_dir = (
+                local / "BazaarSkinManager" / "TheBazaar" / "manager"
             )
+            self.assertFalse((manager_dir / "install-manifest.json").exists())
+            warning = manager_dir / "last-uninstall-warnings.json"
+            self.assertIn(str(warning), removed)
+            payload = json.loads(warning.read_text(encoding="utf-8"))
+            self.assertTrue(payload["warnings"])
+            self.assertEqual(payload["retained_backups"], [str(backup)])
 
     def test_redeploy_retires_transaction_fully_rebased_by_steam(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
