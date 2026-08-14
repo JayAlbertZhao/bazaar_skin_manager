@@ -70,7 +70,7 @@ files retained.
 On Windows with Python 3.12 and `manager\requirements-build.txt` installed:
 
 ```powershell
-.\build-spine-manager.ps1 -Version 1.4.14
+.\build-spine-manager.ps1 -Version 1.5.0
 ```
 
 The executable is written to:

@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.5.0
+
+- 扩展 Spine 导入兼容范围：3.5–3.8、4.0 和 4.1 素材会通过随 Manager 发布并固定校验的转换器归一化为 4.2.43；4.2 素材继续直接使用。转换后会校验版本、JSON 结构与输出大小，避免把损坏结果送入部署。
+- 一级 Spine 素材现已接入 Manager 的统一部署事务。皮肤管理编辑器提供动画、根节点偏移、缩放与英雄选择界面预览，制作完成的 Spine 包不再停留在素材库而未进入游戏。
+- Spine 规范化结果保存在持久工作区，部署记录不再引用随操作结束即删除的临时目录。Spine 部署成功时仅条件抑制冲突的静态立绘；转换或原生补丁失败时保留静态立绘兜底，其余皮肤槽位继续运行。
+- 感谢社区贡献者 [ffffffklj](https://github.com/ffffffklj) 提交并共同完善 [#2](https://github.com/JayAlbertZhao/bazaar_skin_manager/pull/2) 与 [#3](https://github.com/JayAlbertZhao/bazaar_skin_manager/pull/3)。
+
 ## 1.4.14
 
 - 游戏更新后的兼容策略改为可用性优先：运行时指纹变化只进入兼容警告，不再停用整套皮肤；每个 Hook、扫描器和语音组件独立尝试，缺失接口只让对应槽位保留原版。
