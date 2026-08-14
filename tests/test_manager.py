@@ -878,6 +878,61 @@ class ManagerTests(unittest.TestCase):
                  "install-manifest.json").exists()
             )
 
+    def test_catalog_only_steam_reset_restores_verified_original_bundles(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            pack, game, runtime = self._native_patch_fixture(root)
+            target = game / "TheBazaar_Data" / "native-icon.bundle"
+            catalog = (
+                game / "TheBazaar_Data" / "StreamingAssets" / "aa" / "catalog.bin"
+            )
+            local = root / "local"
+            original_bundle = target.read_bytes()
+            original_catalog = catalog.read_bytes()
+
+            def fake_patcher(_source, output, _image, **_kwargs):
+                output.write_bytes(b"prepatched-unity-bundle")
+                return {
+                    "output_sha256": manager.sha256_file(output),
+                    "source_crc32": "11111111",
+                    "output_crc32": "22222222",
+                }
+
+            with (
+                mock.patch.dict("os.environ", {"LOCALAPPDATA": str(local)}),
+                mock.patch.object(
+                    manager,
+                    "_load_bundle_patcher",
+                    return_value=fake_patcher,
+                ),
+            ):
+                manager.install(runtime, pack, manager.explicit_install(game))
+                self.assertEqual(b"prepatched-unity-bundle", target.read_bytes())
+                # Steam publishes a changed catalog that again requests the
+                # original bundle CRC, but leaves the locally modified bundle.
+                updated_catalog = b"new-build\x00" + original_catalog
+                catalog.write_bytes(updated_catalog)
+                (game / "TheBazaar.exe").write_bytes(b"steam-updated-executable")
+
+                restored = manager.reconcile_catalog_reset_bundles(
+                    manager.GameInstall(game, None, "24720155", True)
+                )
+                removed = manager.retire_rebased_deployment(
+                    manager.GameInstall(game, None, "24720155", True),
+                    [pack],
+                )
+
+            self.assertEqual([str(target)], restored)
+            self.assertTrue(removed)
+            self.assertEqual(original_bundle, target.read_bytes())
+            self.assertEqual(updated_catalog, catalog.read_bytes())
+            self.assertFalse(
+                (local / "BazaarSkinManager" / "TheBazaar" / "manager" /
+                 "install-manifest.json").exists()
+            )
+
     def test_rebased_bundle_with_old_patched_catalog_still_fails_closed(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)

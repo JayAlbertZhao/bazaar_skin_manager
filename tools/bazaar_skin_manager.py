@@ -21,7 +21,7 @@ from typing import Iterable
 
 
 APP_ID = "1617400"
-MANAGER_VERSION = "1.4.12"
+MANAGER_VERSION = "1.4.13"
 PROJECT_ROOT = Path(
     getattr(sys, "_MEIPASS", Path(__file__).resolve().parents[1])
 )
@@ -1094,6 +1094,105 @@ def _remove_managed_path(path: Path, removed: list[str]) -> None:
         removed.append(str(path))
 
 
+def catalog_references_bundle_crc(
+    catalog_bytes: bytes,
+    bundle_name: str,
+    crc32: str,
+) -> bool:
+    """Return whether one catalog entry binds a bundle to the given CRC."""
+    if not re.fullmatch(r"[0-9a-fA-F]{8}", str(crc32 or "")):
+        return False
+    encoded_name = bundle_name.encode("utf-8")
+    name_positions = [
+        match.start()
+        for match in re.finditer(re.escape(encoded_name), catalog_bytes)
+    ]
+    if len(name_positions) != 1:
+        return False
+    search_start = name_positions[0] + len(encoded_name)
+    search_end = min(len(catalog_bytes), search_start + 128)
+    encoded_crc = struct.pack("<I", int(crc32, 16))
+    return catalog_bytes.find(encoded_crc, search_start, search_end) >= 0
+
+
+def reconcile_catalog_reset_bundles(game: GameInstall) -> list[str]:
+    """Restore verified originals when Steam resets only the catalog.
+
+    Steam can publish a new catalog while leaving locally modified, otherwise
+    unchanged bundles in place. The new catalog then requests each original
+    bundle CRC and Unity rejects the still-patched files. Restore only when the
+    live file is exactly our recorded patch, its backup is verified, and the
+    current catalog explicitly references that backup's recorded CRC.
+    """
+    record_path = manager_root() / "install-manifest.json"
+    if not record_path.is_file():
+        return []
+    record = json.loads(record_path.read_text(encoding="utf-8"))
+    catalog_patch = record.get("native_catalog_patch")
+    native_records = list(record.get("native_patches") or [])
+    if not catalog_patch or not native_records:
+        return []
+    catalog = Path(catalog_patch["target"])
+    if not catalog.is_file():
+        return []
+    catalog_hash = sha256_file(catalog)
+    if catalog_hash in {
+        catalog_patch.get("original_sha256"),
+        catalog_patch.get("patched_sha256"),
+    }:
+        return []
+    catalog_bytes = catalog.read_bytes()
+    restore_records: list[dict] = []
+    for item in native_records:
+        target = Path(item["target"])
+        backup = Path(item["backup"])
+        if not target.is_file():
+            return []
+        current_hash = sha256_file(target)
+        if current_hash == item.get("original_sha256"):
+            pass
+        elif current_hash == item.get("patched_sha256"):
+            if (
+                not backup.is_file()
+                or sha256_file(backup) != item.get("original_sha256")
+            ):
+                return []
+            restore_records.append(item)
+        else:
+            return []
+        if not catalog_references_bundle_crc(
+            catalog_bytes,
+            target.name,
+            str(item.get("original_crc32") or ""),
+        ):
+            return []
+    if not restore_records:
+        return []
+
+    restored: list[str] = []
+    with tempfile.TemporaryDirectory() as temp:
+        rollback: list[tuple[Path, Path]] = []
+        try:
+            for index, item in enumerate(restore_records):
+                target = Path(item["target"])
+                backup = Path(item["backup"])
+                patched_copy = Path(temp) / f"{index}-{target.name}"
+                atomic_copy_file(target, patched_copy)
+                rollback.append((target, patched_copy))
+                atomic_copy_file(backup, target)
+                if sha256_file(target) != item.get("original_sha256"):
+                    raise RuntimeError(
+                        f"Native catalog-reset recovery failed: {target}"
+                    )
+                restored.append(str(target))
+        except Exception:
+            for target, patched_copy in reversed(rollback):
+                if patched_copy.is_file():
+                    atomic_copy_file(patched_copy, target)
+            raise
+    return restored
+
+
 def retire_rebased_deployment(
     game: GameInstall,
     replacement_packs: list[Path],
@@ -1544,6 +1643,7 @@ def install_many(
     bepinex = ensure_bepinex(game.game_dir)
 
     if (manager_root() / "install-manifest.json").is_file():
+        reconcile_catalog_reset_bundles(game)
         retire_rebased_deployment(game, resolved_packs)
         if (manager_root() / "install-manifest.json").is_file():
             uninstall()

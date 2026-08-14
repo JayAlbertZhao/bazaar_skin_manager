@@ -74,10 +74,10 @@ class AdapterRegistryTests(unittest.TestCase):
             vanessa.payload["authoring_recipe"]["foreground"]["cast_shadow_lasso"]
         )
 
-    def test_build_24570932_and_the_dragons_default_are_declared(self):
+    def test_build_24720155_and_the_dragons_default_are_declared(self):
         registry = AdapterRegistry.load(ROOT / "manager" / "adapters")
         for record in registry.records:
-            self.assertIn("24570932", record.supported_builds)
+            self.assertIn("24720155", record.supported_builds)
 
         dragons = registry.find("Hero8", "Skin_DRA_01/A")
         self.assertIsNotNone(dragons)
@@ -108,7 +108,7 @@ class AdapterRegistryTests(unittest.TestCase):
             base_catalog,
             registry,
             game_dir=None,
-            build_id="24570932",
+            build_id="24720155",
         )
         self.assertTrue(all(hero["audio_supported"] for hero in enriched["heroes"]))
         route_catalog = json.loads(

@@ -206,7 +206,7 @@ class AudioManifestSemanticValidatorTests(unittest.TestCase):
         self.assertEqual(len(expected), 17)
         manifest = copy.deepcopy(EXAMPLE)
         manifest["target"]["hero"] = "Jules"
-        manifest["target"]["steam_build"] = "24570932"
+        manifest["target"]["steam_build"] = "24720155"
         manifest["logical_slots"] = [
             {
                 **copy.deepcopy(slot),

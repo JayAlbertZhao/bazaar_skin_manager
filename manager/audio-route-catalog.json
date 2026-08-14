@@ -2,13 +2,14 @@
   "schema_version": 1,
   "id": "hero-standard-v1",
   "source": {
-    "steam_build": "24570932",
+    "steam_build": "24720155",
     "hero_bank_bundle_sha256": "7d5ce9bcc10dabb8eb8a0db9b51bcde1c2b39c7b9468016ed8fc21555454f5af",
     "payload_policy": "route_metadata_only_no_game_audio"
   },
   "supported_builds": [
     "24001960",
-    "24570932"
+    "24570932",
+    "24720155"
   ],
   "audio_format": {
     "encoding": "wav_pcm16",

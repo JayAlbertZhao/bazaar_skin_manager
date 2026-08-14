@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.4.13
+
+- 适配 The Bazaar Steam build `24720155`：八个默认英雄适配器、英雄目录与已验证语音路由合同同步声明新 build；英雄 FMOD bank 哈希保持不变。
+- 修复 Steam 只更新 Addressables 目录、却保留旧管理器补丁 Bundle 时产生 CRC mismatch、游戏资源加载失败的问题；重新部署会在新目录逐项明确要求旧备份的原版 CRC 时，事务化恢复这些原版 Bundle，再基于新目录重新打补丁。
+- 未知 Bundle、无效备份、目录未明确引用原版 CRC 或混合来源仍严格拒绝自动恢复。
+
 ## 1.4.12
 
 - 修复 BC7 保存校验把极少数边缘/透明过渡 texel 的单点高误差当成整张纹理损坏，导致 `Icon_FlatRough_MAK_TUI` 等小图标在平均误差仅约 1.27 时仍被拒绝的问题。

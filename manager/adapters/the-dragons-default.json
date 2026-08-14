@@ -2,7 +2,7 @@
   "schema_version": 1,
   "id": "the-dragons-default",
   "adapter_version": 1,
-  "supported_builds": ["24570932"],
+  "supported_builds": ["24570932", "24720155"],
   "target": {
     "game": "the-bazaar",
     "hero": "Hero8",

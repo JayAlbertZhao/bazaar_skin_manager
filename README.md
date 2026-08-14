@@ -73,8 +73,9 @@ files goes through its verified, reversible deployment transaction.
 
 The current adapters have verified deployment support for the default skins
 of Mak, Vanessa, Pygmalien, Dooley, Jules, Stelle, Karnok, and The Dragons
-(Rin & Jin). The original seven adapters support Steam builds `24001960` and
-`24570932`; The Dragons first appears on build `24570932`.
+(Rin & Jin). All eight adapters support Steam build `24720155`; the original
+seven retain builds `24001960` and `24570932`, while The Dragons first appears
+on build `24570932`.
 Additional skins remain visible in the catalog but are disabled until their
 adapters have been verified.
 The update and adapter-verification procedure is recorded in
@@ -195,13 +196,13 @@ Build the runtime and manager:
 
 ```powershell
 .\build.ps1 -Configuration Release
-.\build.ps1 -Version 1.4.12
-.\build-manager.ps1 -Version 1.4.12
-.\build-asset-generator.ps1 -Version 1.4.12
-.\build-spine-manager.ps1 -Version 1.4.12
-.\build-installer.ps1 -Version 1.4.12
-.\package-manager-portable.ps1 -Version 1.4.12
-.\package-asset-generator-portable.ps1 -Version 1.4.12
+.\build.ps1 -Version 1.4.13
+.\build-manager.ps1 -Version 1.4.13
+.\build-asset-generator.ps1 -Version 1.4.13
+.\build-spine-manager.ps1 -Version 1.4.13
+.\build-installer.ps1 -Version 1.4.13
+.\package-manager-portable.ps1 -Version 1.4.13
+.\package-asset-generator-portable.ps1 -Version 1.4.13
 ```
 
 Useful source commands:

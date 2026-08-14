@@ -2,7 +2,7 @@
   "schema_version": 1,
   "id": "jules-default",
   "adapter_version": 2,
-  "supported_builds": ["24001960", "24570932"],
+  "supported_builds": ["24001960", "24570932", "24720155"],
   "target": {
     "game": "the-bazaar",
     "hero": "Jules",

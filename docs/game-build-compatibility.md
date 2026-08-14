@@ -4,6 +4,60 @@ This is the durable checklist and evidence log for adapting the Skin Manager
 after a Steam update. Adapter declarations remain the executable source of
 truth; this note records how their claims were established.
 
+## Build 24720155 (2026-08-14)
+
+### Update evidence
+
+- Steam appmanifest reports installed and target build `24720155`, state flag
+  `4`, with depot `1617402` manifest `1659813449616544004`.
+- `TheBazaar.exe` is unchanged from build `24570932`.
+- `TheBazaarRuntime.dll` and `catalog.hash` changed; the exact fingerprints are:
+
+| File | SHA-256 |
+|---|---|
+| `TheBazaar.exe` | `28d830d25fef1a5310a0356c851eeebcc8b255f59dd9e3f8ca742954deacf8db` |
+| `TheBazaar_Data/Managed/TheBazaarRuntime.dll` | `b528e1b3f05c0e316fb2dfd9442fe047eb2533c33e7587585cf687e53779a12b` |
+| `TheBazaar_Data/StreamingAssets/aa/catalog.hash` | `66687aadf862bd776c8fc18b8e9f8e20089714856ee233b3902a591d0d5f2925` |
+
+The eight default hero targets and the hero FMOD bank retain their prior
+physical contracts. The bank SHA-256 remains
+`7d5ce9bcc10dabb8eb8a0db9b51bcde1c2b39c7b9468016ed8fc21555454f5af`.
+Catalog discovery still exposes the same eight hero codes, including `DRA` and
+`KAR`, and every default `Skin_*_01/A` target remains present.
+
+### Partial Steam reset recovery
+
+This update exposed a third transaction state: Steam replaced `catalog.bin`
+and `catalog.hash`, but left locally modified bundles that were unchanged in
+the depot. The new catalog requested the original CRCs while the live bundles
+still contained the Manager-patched CRCs. `Player.log` consequently reported
+CRC mismatch and Addressables `RemoteProviderException` failures even though
+the managed runtime correctly disabled itself for the unknown build.
+
+Recovery is authorized only when every live bundle is exactly either the
+recorded patch or recorded original, every backup matches its original SHA-256,
+and the new catalog entry explicitly contains that bundle's recorded original
+CRC. The Manager then restores the affected originals transactionally, retires
+the stale deployment record, and creates a fresh catalog/Bundle transaction.
+This is narrower than trusting filenames or assuming all Steam updates reset
+the same files.
+
+### Runtime verification
+
+After reconciliation and fresh deployment, the Manager doctor reported a
+healthy transaction for build `24720155`: all twelve native bundle targets and
+the Addressables catalog were patched, every original backup remained valid,
+and the runtime compatibility fingerprint matched the installed game.
+
+A clean Steam launch loaded runtime `1.4.13`, discovered six enabled packs,
+predecoded 24 exact voice routes, and passed the in-game portrait self-test via
+`SkinAssetDataSO.LoadPortraitSpriteAsync` at `1024x1024`. Addressables completed
+initialization and the game loader reported 19 succeeded tasks with zero
+failures. The fresh BepInEx and `Player.log` outputs contained no CRC mismatch,
+`RemoteProviderException`, invalid bundle path, Harmony binding failure, or
+unknown-build disable message. The observed game client version was
+`1.0.11979-prod-windows-x64-d75a8ee9` on Unity `6000.3.11f1`.
+
 ## Build 24570932 (2026-08-06)
 
 ### Update evidence

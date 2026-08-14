@@ -5,7 +5,8 @@
   "default_authoring": true,
   "supported_builds": [
     "24001960",
-    "24570932"
+    "24570932",
+    "24720155"
   ],
   "target": {
     "game": "the-bazaar",
@@ -210,8 +211,8 @@
     "enabled": true,
     "target": {
       "game": "The Bazaar",
-      "steam_build": "24570932",
-      "supported_builds": ["24001960", "24570932"],
+      "steam_build": "24720155",
+      "supported_builds": ["24001960", "24570932", "24720155"],
       "hero": "Mak"
     },
     "fallback": "original",
