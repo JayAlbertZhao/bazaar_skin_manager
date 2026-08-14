@@ -1283,12 +1283,18 @@ def prepare_native_patches_many(
     packs: list[Path],
     game: GameInstall,
     staging: Path,
+    excluded_slots_by_pack: dict[str, set[str]] | None = None,
 ) -> list[dict]:
     patch_texture_bundle_many = _load_bundle_patcher()
     prepared: list[dict] = []
     grouped: dict[str, list[dict]] = {}
     for pack in packs:
+        excluded_slots = (excluded_slots_by_pack or {}).get(
+            str(pack.resolve()).casefold(), set()
+        )
         for replacement in native_patch_specs(pack):
+            if str(replacement.get("slot") or "") in excluded_slots:
+                continue
             target = native_patch_target(game, replacement["deployment"])
             item = dict(replacement)
             item["_pack"] = pack
@@ -1601,6 +1607,23 @@ def install_many(
             "Compatibility probe: " + issue for issue in native_issues
         )
 
+    suppressed_by_adapter: dict[str, set[str]] = {}
+    for request in spine_requests:
+        adapter_id = str(request.get("adapter_id") or "")
+        slots = {
+            str(slot)
+            for slot in request.get("suppress_visual_slots") or []
+            if str(slot)
+        }
+        if adapter_id and slots:
+            suppressed_by_adapter.setdefault(adapter_id, set()).update(slots)
+    excluded_slots_by_pack: dict[str, set[str]] = {}
+    for pack, manifest in zip(resolved_packs, manifests):
+        adapter_id = str((manifest.get("adapter") or {}).get("id") or "")
+        slots = suppressed_by_adapter.get(adapter_id)
+        if slots:
+            excluded_slots_by_pack[str(pack.resolve()).casefold()] = set(slots)
+
     bepinex = ensure_bepinex(game.game_dir)
 
     preserved_transaction: dict | None = None
@@ -1694,6 +1717,7 @@ def install_many(
                         resolved_packs,
                         game,
                         staging,
+                        excluded_slots_by_pack=excluded_slots_by_pack,
                     )
                 except Exception as error:
                     prepared = []
@@ -1715,6 +1739,19 @@ def install_many(
                         )
                     except Exception as error:
                         prepared = visual_prepared
+                        if excluded_slots_by_pack:
+                            try:
+                                prepared = prepare_native_patches_many(
+                                    resolved_packs,
+                                    game,
+                                    staging,
+                                )
+                            except Exception as fallback_error:
+                                deployment_warnings.append(
+                                    "Static visual fallback could not be "
+                                    "prepared; remaining compatible slots "
+                                    "continue: " + str(fallback_error)
+                                )
                         normalized_spine_requests = []
                         deployment_warnings.append(
                             "Spine slots kept their current visuals; other "
@@ -1738,6 +1775,37 @@ def install_many(
                 applied_catalog_patch = apply_native_catalog_patch(
                     prepared_catalog
                 )
+
+        requested_spine_adapters = {
+            str(item.get("adapter_id") or "") for item in spine_requests
+        }
+        successful_spine_adapters = {
+            str(item.get("adapter_id") or "")
+            for item in normalized_spine_requests
+        }
+        for pack_dest, pack_record, manifest in zip(
+            pack_destinations, pack_records, manifests
+        ):
+            adapter_id = str((manifest.get("adapter") or {}).get("id") or "")
+            if adapter_id not in requested_spine_adapters:
+                continue
+            installed_manifest_path = pack_dest / "mod.json"
+            installed_manifest = json.loads(
+                installed_manifest_path.read_text(encoding="utf-8")
+            )
+            animation = installed_manifest.get("animation") or {}
+            animation["runtime_ready"] = adapter_id in successful_spine_adapters
+            animation["suppress_visual_slots"] = sorted(
+                suppressed_by_adapter.get(adapter_id, set())
+            )
+            installed_manifest["animation"] = animation
+            atomic_write_text(
+                installed_manifest_path,
+                serialized_json(installed_manifest),
+            )
+            pack_record["manifest_sha256"] = sha256_file(
+                installed_manifest_path
+            )
 
         compatibility = runtime_compatibility_payload(game)
         compatibility_text = serialized_json(compatibility)

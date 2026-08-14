@@ -443,6 +443,82 @@ class ModStudioTests(unittest.TestCase):
             self.assertFalse(manifest["animation"]["runtime_ready"])
             self.assertEqual(len(manifest["animation"]["files"]), 2)
 
+    def test_deploy_many_passes_spine_request_without_destroying_static_fallback(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            workspace = StudioWorkspace.create(
+                "test.spine.deploy",
+                root=root / "work",
+            )
+            animation = root / "skeleton.json"
+            animation.write_text("{}", encoding="utf-8")
+            workspace.import_animation([animation], "spine")
+            (workspace.directory / "standing.png").write_bytes(b"standing")
+            request = {
+                "schema_version": 1,
+                "adapter_id": "mak-default",
+                "suppress_visual_slots": ["standing_overlay"],
+            }
+            game = SimpleNamespace(game_dir=root / "game", build_id="test", complete=True)
+            adapter = SimpleNamespace(
+                adapter_id="mak-default",
+                supports_build=lambda _build: True,
+            )
+
+            def inspect(_runtime, packs, _game, spine_requests=None):
+                manifest = json.loads(
+                    (packs[0] / "mod.json").read_text(encoding="utf-8")
+                )
+                self.assertFalse(manifest["animation"]["runtime_ready"])
+                self.assertIn(
+                    "standing_overlay",
+                    {
+                        item.get("slot")
+                        for item in manifest.get("visual_replacements") or []
+                    },
+                )
+                self.assertEqual(spine_requests, [request])
+                return {"packs": [manifest]}
+
+            with (
+                mock.patch("mod_studio_core.validate_pack", return_value=[]),
+                mock.patch(
+                    "mod_studio_core._adapter_for_target",
+                    return_value=adapter,
+                ),
+                mock.patch("mod_studio_core.explicit_install", return_value=game),
+                mock.patch.object(workspace, "build_pack"),
+                mock.patch.object(workspace, "_spine_request", return_value=request),
+                mock.patch("mod_studio_core.install_many", side_effect=inspect),
+            ):
+                (workspace.directory / "mod.json").write_text(
+                    json.dumps(
+                        {
+                            "schema_version": 1,
+                            "id": "test.spine.deploy",
+                            "name": "Spine",
+                            "version": "0.1.0",
+                            "enabled": True,
+                            "target": workspace.state["target"],
+                            "visual_replacements": [
+                                {
+                                    "slot": "standing_overlay",
+                                    "file": "standing.png",
+                                }
+                            ],
+                            "animation": workspace.state["animation"],
+                        }
+                    ),
+                    encoding="utf-8",
+                )
+                (workspace.directory / "asset-index.json").write_text(
+                    '{"schema_version": 1, "files": {}}',
+                    encoding="utf-8",
+                )
+                result = StudioWorkspace.deploy_many([workspace], root / "game")
+
+            self.assertEqual(result["packs"][0]["id"], "test.spine.deploy")
+
     def test_clear_loaded_assets_preserves_metadata_and_removes_all_payloads(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)

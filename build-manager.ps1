@@ -111,6 +111,11 @@ if (Test-Path -LiteralPath $managerAssets -PathType Container) {
 } else {
     Write-Warning "Game-derived manager previews are absent; building without optional preview assets."
 }
+$spinePreview = Join-Path $root "manager\spine-preview"
+$spinePreviewArguments = @()
+if (Test-Path -LiteralPath $spinePreview -PathType Container) {
+    $spinePreviewArguments = @("--add-data", "$spinePreview;manager\spine-preview")
+}
 
 & $python -m PyInstaller `
     --noconfirm `
@@ -133,6 +138,7 @@ if (Test-Path -LiteralPath $managerAssets -PathType Container) {
     --add-data "$root\manager\audio-route-catalog.json;manager" `
     --add-data "$root\manager\adapters;manager\adapters" `
     $managerAssetArguments `
+    $spinePreviewArguments `
     --add-data "$runtime;dist\runtime" `
     --add-data "$runtimeMetadata;dist\runtime" `
     --add-data "$bepInExArchive;third_party\BepInEx" `

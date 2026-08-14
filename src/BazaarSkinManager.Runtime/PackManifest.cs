@@ -29,6 +29,19 @@ namespace BazaarSkinManager.TheBazaar
 
         [DataMember(Name = "audio_manifest")]
         public string AudioManifest;
+
+        [DataMember(Name = "animation")]
+        public PackAnimation Animation;
+    }
+
+    [DataContract]
+    internal sealed class PackAnimation
+    {
+        [DataMember(Name = "runtime_ready")]
+        public bool RuntimeReady;
+
+        [DataMember(Name = "suppress_visual_slots")]
+        public List<string> SuppressVisualSlots;
     }
 
     [DataContract]
