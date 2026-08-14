@@ -370,6 +370,7 @@ class AssetLibrary:
             name=name,
             metadata={
                 "runtime_version": package.version,
+                "source_version": package.source_version,
                 "target": target or {},
                 "author": author.strip(),
                 "license": license_text.strip(),

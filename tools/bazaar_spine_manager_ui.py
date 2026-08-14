@@ -27,6 +27,7 @@ from spine_manager_core import (
     SpinePackage,
     SpinePlacement,
     SpineTarget,
+    _spine_converter_path,
     deploy,
     import_spine_package,
     installation_manifest,
@@ -144,7 +145,7 @@ class SpineManagerApp:
         ttk.Label(outer, text="The Bazaar Spine Manager", style="Title.TLabel").pack(anchor="w")
         ttk.Label(
             outer,
-            text="导入 Spine 4.1/4.2 JSON 资源包（支持多页 Atlas）；部署、备份和恢复统一交给皮肤管理器事务处理。",
+            text="导入 Spine 3.5–3.8、4.0–4.2 JSON 资源包（支持多页 Atlas）；旧版本会转换为 4.2.43，部署、备份和恢复统一交给皮肤管理器事务处理。",
         ).pack(anchor="w", pady=(3, 14))
 
         actions = ttk.Frame(outer)
@@ -193,7 +194,7 @@ class SpineManagerApp:
         ttk.Button(page, text="导入并验证", command=self._import).grid(row=3, column=2, padx=(8, 0), pady=7)
         self.package_info = ttk.Label(
             page,
-            text="尚未导入。要求：一个 JSON、一个 atlas、Atlas 声明的 PNG 页面，Spine 4.1/4.2，包含 default skin。",
+            text="尚未导入。要求：一个 JSON、一个 atlas、Atlas 声明的 PNG 页面，Spine 3.5–4.2，包含 default skin。",
             wraplength=760,
             justify="left",
         )
@@ -309,9 +310,14 @@ class SpineManagerApp:
             self.animation_combo.configure(values=values)
             preferred = self.settings.get("animation")
             self.animation_var.set(preferred if preferred in values else ("a" if "a" in values else values[0]))
+            conversion = (
+                f"（由 Spine {self.package.source_version} 自动转换）"
+                if self.package.source_version
+                else ""
+            )
             self.package_info.configure(
                 text=(
-                    f"已导入：Spine {self.package.version}；纹理 {self.package.width}×{self.package.height}；"
+                    f"已导入：Spine {self.package.version}{conversion}；纹理 {self.package.width}×{self.package.height}；"
                     f"动画 {', '.join(values)}；skins {', '.join(self.package.skins)}"
                 )
             )
@@ -685,7 +691,16 @@ def self_test() -> int:
     with Image.open(PREVIEW_BACKGROUND_PATH) as background:
         if background.size != (1920, 1080):
             raise RuntimeError("Bundled preview background has an unexpected size.")
-    print(json.dumps({"version": APP_VERSION, "targets": len(available)}))
+    converter = _spine_converter_path()
+    print(
+        json.dumps(
+            {
+                "version": APP_VERSION,
+                "targets": len(available),
+                "spine_converter": converter.name,
+            }
+        )
+    )
     return 0
 
 
