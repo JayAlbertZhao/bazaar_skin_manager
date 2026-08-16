@@ -16,6 +16,11 @@ namespace BazaarSkinManager.TheBazaar
         private static AudioSource _source;
         private static object _voiceOwner;
         private static bool _voicePlayback;
+        private static float _currentPackGain;
+        private static MethodInfo _getPreferencesData;
+        private static PropertyInfo _volumeMaster;
+        private static PropertyInfo _volumeVoiceover;
+        private static bool _volumeReadFailureReported;
         private static bool _installed;
         private static PvpResultVoiceSide _pvpResultVoiceSide;
         private static readonly System.Random PvpVoiceRandom =
@@ -95,12 +100,16 @@ namespace BazaarSkinManager.TheBazaar
                 MethodInfo finishCombat = AccessTools.Method(
                     soundEventListener,
                     "OnFinishCombat");
+                Type soundManager = RequireType("SoundManager");
+                MethodInfo setVolume = FindSetVolume(soundManager);
+                BindGameVoiceVolume();
                 if (playVo == null ||
                     state == null ||
                     setHero == null ||
                     equip == null ||
                     playSfx == null ||
-                    finishCombat == null)
+                    finishCombat == null ||
+                    setVolume == null)
                 {
                     throw new MissingMethodException(
                         "One or more exact audio interception methods are absent.");
@@ -154,10 +163,16 @@ namespace BazaarSkinManager.TheBazaar
                     finalizer: new HarmonyMethod(
                         typeof(RuntimeAudioReplacement),
                         nameof(FinalizeExperimentalPvpResultVoice)));
+                harmony.Patch(
+                    setVolume,
+                    postfix: new HarmonyMethod(
+                        typeof(RuntimeAudioReplacement),
+                        nameof(RefreshExternalVoiceVolume)));
                 _installed = true;
                 Plugin.Log.LogInfo(
                     "External voice replacement enabled for exact per-hero, " +
-                    "merchant, and menu routes.");
+                    "merchant, and menu routes; playback follows the game's " +
+                    "Master and Voiceover volume controls.");
             }
             catch (Exception exception)
             {
@@ -177,6 +192,11 @@ namespace BazaarSkinManager.TheBazaar
             _source = null;
             _voiceOwner = null;
             _voicePlayback = false;
+            _currentPackGain = 0f;
+            _getPreferencesData = null;
+            _volumeMaster = null;
+            _volumeVoiceover = null;
+            _volumeReadFailureReported = false;
             _installed = false;
             _pvpResultVoiceSide = PvpResultVoiceSide.None;
             ReportedRoutes.Clear();
@@ -677,7 +697,12 @@ namespace BazaarSkinManager.TheBazaar
 
             _source.Stop();
             _source.clip = variant.Clip;
-            _source.volume = pack.Audio.Gain;
+            if (!TryApplyGameVoiceVolume(pack.Audio.Gain))
+            {
+                _source.clip = null;
+                return false;
+            }
+            _currentPackGain = pack.Audio.Gain;
             _source.Play();
             if (!_source.isPlaying)
             {
@@ -687,6 +712,116 @@ namespace BazaarSkinManager.TheBazaar
             _voiceOwner = voiceOwner;
             _voicePlayback = voicePlayback;
             return true;
+        }
+
+        private static void BindGameVoiceVolume()
+        {
+            Type playerPreferences = RequireType("PlayerPreferences");
+            PropertyInfo data = AccessTools.Property(
+                playerPreferences,
+                "Data");
+            if (data == null ||
+                data.GetGetMethod(true) == null ||
+                !data.GetGetMethod(true).IsStatic)
+            {
+                throw new MissingMemberException(
+                    "PlayerPreferences.Data is not an exact readable static property.");
+            }
+
+            PropertyInfo master = AccessTools.Property(
+                data.PropertyType,
+                "VolumeMaster");
+            PropertyInfo voiceover = AccessTools.Property(
+                data.PropertyType,
+                "VolumeVoiceover");
+            if (!IsReadableFloatProperty(master) ||
+                !IsReadableFloatProperty(voiceover))
+            {
+                throw new MissingMemberException(
+                    "The exact Master/Voiceover preference properties are absent.");
+            }
+
+            _getPreferencesData = data.GetGetMethod(true);
+            _volumeMaster = master;
+            _volumeVoiceover = voiceover;
+        }
+
+        private static bool IsReadableFloatProperty(PropertyInfo property)
+        {
+            return property != null &&
+                property.PropertyType == typeof(float) &&
+                property.GetGetMethod(true) != null;
+        }
+
+        private static MethodInfo FindSetVolume(Type soundManager)
+        {
+            foreach (MethodInfo candidate in soundManager.GetMethods(
+                BindingFlags.Static |
+                BindingFlags.Public |
+                BindingFlags.NonPublic))
+            {
+                ParameterInfo[] parameters = candidate.GetParameters();
+                if (candidate.Name == "SetVolume" &&
+                    candidate.ReturnType == typeof(void) &&
+                    parameters.Length == 2 &&
+                    parameters[0].ParameterType.FullName ==
+                        "SoundManager+VolumeType" &&
+                    parameters[1].ParameterType == typeof(float))
+                {
+                    return candidate;
+                }
+            }
+            return null;
+        }
+
+        private static void RefreshExternalVoiceVolume()
+        {
+            if (_source == null || !_source.isPlaying)
+            {
+                return;
+            }
+            TryApplyGameVoiceVolume(_currentPackGain);
+        }
+
+        private static bool TryApplyGameVoiceVolume(float packGain)
+        {
+            try
+            {
+                if (_source == null ||
+                    _getPreferencesData == null ||
+                    _volumeMaster == null ||
+                    _volumeVoiceover == null)
+                {
+                    return false;
+                }
+                object preferences = _getPreferencesData.Invoke(null, null);
+                if (preferences == null)
+                {
+                    return false;
+                }
+                float master = Convert.ToSingle(
+                    _volumeMaster.GetValue(preferences, null),
+                    CultureInfo.InvariantCulture);
+                float voiceover = Convert.ToSingle(
+                    _volumeVoiceover.GetValue(preferences, null),
+                    CultureInfo.InvariantCulture);
+                _source.volume = packGain *
+                    Mathf.Clamp01(master) *
+                    Mathf.Clamp01(voiceover);
+                return true;
+            }
+            catch (Exception exception)
+            {
+                if (!_volumeReadFailureReported)
+                {
+                    _volumeReadFailureReported = true;
+                    Plugin.Log.LogWarning(
+                        "External voice volume could not follow the game's " +
+                        "Master/Voiceover controls; new replacements will " +
+                        "fail open to FMOD: " + exception.Message);
+                }
+                return false;
+            }
         }
 
         private static void ReportFirstPlayback(LoadedAudioRoute route)

@@ -218,6 +218,19 @@ Verified default-skin contract:
 - default skin bundle SHA-256:
   `a09837c424b3412706f888f4f70efceeab9bbfdd8ef70f6cc9a7753a6f541748`.
 
+### Steam launch requirement
+
+The Bazaar must be started through Steam. Use the Manager's **Start Game**
+action (`steam.exe -applaunch 1617400`) or launch it from the Steam Library.
+Running `TheBazaar.exe` directly does not establish the required Steam session
+and cannot open the game normally, so the Manager must not use direct EXE
+execution as a fallback.
+
+A direct-EXE run may progress far enough for BepInEx to load plugins and write
+startup logs. That only proves early loader initialization; it is not evidence
+that the game opened successfully or that an end-to-end compatibility check
+passed. Release and compatibility verification must use a Steam launch.
+
 ### Repeatable compatibility procedure
 
 1. Read `appmanifest_1617400.acf` before updating; record installed and target
@@ -233,7 +246,8 @@ Verified default-skin contract:
 6. Keep direct runtime matching generic: exact hero id or asset code, exact skin
    token, local-player ownership checks, and original-asset fallback.
 7. Re-run registry, pack validation, native patch, runtime structure, full test,
-   frozen UI, deploy/undeploy, and game-log checks before claiming support.
+   frozen UI, deploy/undeploy, and game-log checks from a Steam launch before
+   claiming support. A direct `TheBazaar.exe` startup log is insufficient.
 8. Re-audit `IPortraitAssetData` precedence and all callers of
    `LoadPortrait`, `LoadPortraitSpriteAsync`, and `GenerateEncounterData`;
    field-compatible code can still be bypassed by a newly preferred visual

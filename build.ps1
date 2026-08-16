@@ -2,7 +2,7 @@ param(
     [string]$BepInExDir = "D:\SteamLibrary\steamapps\common\The Bazaar\BepInEx",
     [string]$UnityEditorDir = "D:\Program Files\Unity 2022.3.57f1c2\Editor",
     [string]$Configuration = "Release",
-    [string]$Version = "1.5.0"
+    [string]$Version = "1.5.1"
 )
 
 $ErrorActionPreference = "Stop"

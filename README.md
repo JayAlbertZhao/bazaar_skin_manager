@@ -115,6 +115,11 @@ Existing compatible BepInEx installations and unrelated plugins are preserved.
 7. Select **Deploy**.
 8. Use **Start Game** or launch the game from Steam.
 
+The game must be started through Steam. Use the Manager's **Start Game**
+action, which runs `steam.exe -applaunch 1617400`, or launch it from the Steam
+Library. Running `TheBazaar.exe` directly does not provide the required Steam
+session and cannot open the game normally; it is not a supported fallback.
+
 Use **Undeploy / restore original** before removing a pack or when returning to
 the unmodified game.
 
@@ -198,13 +203,13 @@ Build the runtime and manager:
 
 ```powershell
 .\build.ps1 -Configuration Release
-.\build.ps1 -Version 1.5.0
-.\build-manager.ps1 -Version 1.5.0
-.\build-asset-generator.ps1 -Version 1.5.0
-.\build-spine-manager.ps1 -Version 1.5.0
-.\build-installer.ps1 -Version 1.5.0
-.\package-manager-portable.ps1 -Version 1.5.0
-.\package-asset-generator-portable.ps1 -Version 1.5.0
+.\build.ps1 -Version 1.5.1
+.\build-manager.ps1 -Version 1.5.1
+.\build-asset-generator.ps1 -Version 1.5.1
+.\build-spine-manager.ps1 -Version 1.5.1
+.\build-installer.ps1 -Version 1.5.1
+.\package-manager-portable.ps1 -Version 1.5.1
+.\package-asset-generator-portable.ps1 -Version 1.5.1
 ```
 
 Useful source commands:

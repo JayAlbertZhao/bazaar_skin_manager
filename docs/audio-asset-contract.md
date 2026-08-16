@@ -36,6 +36,15 @@ A runtime route is identified by:
 Filename matching alone is not sufficient. If validation, decoding, selection,
 or playback fails, the runtime leaves the original FMOD event active.
 
+Replacement clips are external PCM played through a Unity `AudioSource`, but
+they remain voice content from the user's point of view. Their effective gain
+is therefore the pack gain multiplied by the game's current **Master** and
+**Voiceover** volume values. The runtime also follows changes made to either
+slider while a replacement line is playing. Menu lines use Voiceover rather
+than SFX volume even though the native menu trigger enters through `SFXPlayer`.
+If the runtime cannot bind these exact game volume controls, it does not
+suppress new native FMOD voice events.
+
 The authoring identity is the logical slot. A voice pack authored from one
 hero (for example, WAV files still named `MakIdle1.wav`) can be assigned to a
 different hero. During deployment the manager keeps the variants and rewrites

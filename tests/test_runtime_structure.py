@@ -227,7 +227,7 @@ class RuntimeStructureTests(unittest.TestCase):
             STANDING_STATE,
         )
 
-    def test_runtime_version_is_1_3_3(self) -> None:
+    def test_runtime_version_is_1_5_1(self) -> None:
         plugin = (
             ROOT / "src" / "BazaarSkinManager.Runtime" / "Plugin.cs"
         ).read_text(encoding="utf-8")
@@ -235,8 +235,8 @@ class RuntimeStructureTests(unittest.TestCase):
             ROOT / "src" / "BazaarSkinManager.Runtime" / "AssemblyInfo.cs"
         ).read_text(encoding="utf-8")
 
-        self.assertIn('PluginVersion = "1.5.0"', plugin)
-        self.assertIn('AssemblyVersion("1.5.0.0")', assembly)
+        self.assertIn('PluginVersion = "1.5.1"', plugin)
+        self.assertIn('AssemblyVersion("1.5.1.0")', assembly)
 
     def test_runtime_self_test_exercises_local_portrait_route(self) -> None:
         diagnostics = (
@@ -310,6 +310,16 @@ class RuntimeStructureTests(unittest.TestCase):
         self.assertIn("PLAYBACK_STATE.PLAYING", replacement)
         self.assertIn('"Menu.CharacterSelect"', replacement)
         self.assertIn('"Menu.EquipMusic"', replacement)
+        self.assertIn('RequireType("PlayerPreferences")', replacement)
+        self.assertIn('RequireType("SoundManager")', replacement)
+        self.assertIn('candidate.Name == "SetVolume"', replacement)
+        self.assertIn('"VolumeMaster"', replacement)
+        self.assertIn('"VolumeVoiceover"', replacement)
+        self.assertIn("nameof(RefreshExternalVoiceVolume)", replacement)
+        self.assertIn("packGain *", replacement)
+        self.assertIn("Mathf.Clamp01(master)", replacement)
+        self.assertIn("Mathf.Clamp01(voiceover)", replacement)
+        self.assertNotIn("_source.volume = pack.Audio.Gain;", replacement)
 
         self.assertIn("SHA-256 mismatch.", audio_pack)
         self.assertIn("PcmWaveDecoder.CreateClip", audio_pack)
