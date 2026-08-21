@@ -24,6 +24,7 @@ from mod_studio_core import (  # noqa: E402
     _original_visual_deployment,
     _verified_original_bundle,
     compose_image_preview,
+    export_original_visual_reference,
     materialized_pack_id,
     remove_color_screen,
     sha256_file,
@@ -171,6 +172,51 @@ class ModStudioTests(unittest.TestCase):
             with Image.open(output) as loaded:
                 self.assertEqual(loaded.size, (512, 512))
             exporter.assert_called_once()
+
+    def test_standing_reference_fits_native_full_body_art_into_authoring_canvas(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            source_bundle = root / "native.bundle"
+            source_bundle.write_bytes(b"native store art")
+            output = root / "standing.png"
+            game = SimpleNamespace(game_dir=root / "game", build_id="test-build")
+
+            def export_reference(_source, destination, **_kwargs):
+                Image.new("RGBA", (50, 100), (80, 140, 220, 255)).save(
+                    destination
+                )
+
+            with (
+                mock.patch(
+                    "mod_studio_core.preferred_game_install", return_value=game
+                ),
+                mock.patch(
+                    "mod_studio_core._verified_original_bundle",
+                    return_value=source_bundle,
+                ),
+                mock.patch(
+                    "mod_studio_core.export_texture_bundle",
+                    side_effect=export_reference,
+                ) as exporter,
+            ):
+                result = export_original_visual_reference(
+                    {"hero": "Hero8", "skin": "Skin_DRA_01/A"},
+                    "standing_overlay",
+                    output=output,
+                )
+
+            self.assertEqual(result, output)
+            with Image.open(output) as reference:
+                self.assertEqual(reference.size, (1086, 1448))
+                self.assertEqual(
+                    reference.getchannel("A").getbbox(),
+                    (187, 12, 899, 1436),
+                )
+            exporter.assert_called_once()
+            self.assertEqual(
+                exporter.call_args.kwargs["asset_name"],
+                "Skin_DRA_01a_StoreImage_TUI",
+            )
 
     def test_preview_is_fixed_size_centered_and_not_cropped(self):
         source = Image.new("RGBA", (100, 200), (220, 80, 40, 255))

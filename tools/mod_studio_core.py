@@ -343,8 +343,6 @@ def export_original_visual_reference(
 
     adapter = _adapter_for_target(target)
     game = preferred_game_install(game_dir)
-    deployment = _original_visual_deployment(adapter, slot)
-    source = _verified_original_bundle(game.game_dir, deployment)
     destination = output or (
         manager_root()
         / "original-slot-previews"
@@ -352,6 +350,72 @@ def export_original_visual_reference(
         / (game.build_id or "unknown-build")
         / f"{slot}.png"
     )
+    if slot == "standing_overlay":
+        # The native standing asset is Spine animation rather than a bitmap.
+        # Its setup pose is not a useful visual reference because the actual
+        # character pose is established by animation timelines.  Every hero's
+        # native store artwork is a coherent full-body pose, so place that art
+        # into the standing slot's exact authoring envelope.  This gives the
+        # editor a stable scale, centre line and bottom-edge reference without
+        # pretending a setup pose is what the game renders.
+        deployment = _original_visual_deployment(adapter, "store_image")
+        source = _verified_original_bundle(game.game_dir, deployment)
+        if (
+            destination.is_file()
+            and destination.stat().st_mtime_ns >= source.stat().st_mtime_ns
+        ):
+            return destination
+        recipe = adapter.payload.get("authoring_recipe") or {}
+        output_recipe = (recipe.get("outputs") or {}).get(slot) or {}
+        size = tuple(int(value) for value in output_recipe.get("size") or ())
+        target_bounds = tuple(
+            int(value) for value in output_recipe.get("target_alpha_bounds") or ()
+        )
+        anchor = tuple(
+            float(value) for value in output_recipe.get("anchor") or (0.5, 1.0)
+        )
+        if len(size) != 2 or len(target_bounds) != 4 or len(anchor) != 2:
+            raise ValueError(
+                f"Slot {slot} has no complete authoring placement contract."
+            )
+        expected = deployment.get("target_size")
+        with tempfile.TemporaryDirectory(prefix="bazaar-standing-reference-") as temp:
+            extracted = Path(temp) / "store-image.png"
+            export_texture_bundle(
+                source,
+                extracted,
+                asset_name=str(deployment["asset_name"]),
+                unity_version=str(deployment["unity_version"]),
+                target_size=(
+                    tuple(int(value) for value in expected) if expected else None
+                ),
+            )
+            with Image.open(extracted) as loaded:
+                original = loaded.convert("RGBA")
+        bounds = original.getchannel("A").getbbox()
+        if bounds is None:
+            raise RuntimeError("Original full-body reference is fully transparent.")
+        cropped = original.crop(bounds)
+        left, top, right, bottom = target_bounds
+        scale = min(
+            (right - left) / cropped.width,
+            (bottom - top) / cropped.height,
+        )
+        fitted_size = (
+            max(1, round(cropped.width * scale)),
+            max(1, round(cropped.height * scale)),
+        )
+        fitted = cropped.resize(fitted_size, Image.Resampling.LANCZOS)
+        x = round(left + ((right - left) - fitted.width) * anchor[0])
+        y = round(top + ((bottom - top) - fitted.height) * anchor[1])
+        reference = Image.new("RGBA", size, (0, 0, 0, 0))
+        reference.alpha_composite(fitted, (x, y))
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        reference.save(destination)
+        return destination
+
+    deployment = _original_visual_deployment(adapter, slot)
+    source = _verified_original_bundle(game.game_dir, deployment)
     if destination.is_file() and destination.stat().st_mtime_ns >= source.stat().st_mtime_ns:
         return destination
     expected = deployment.get("target_size")

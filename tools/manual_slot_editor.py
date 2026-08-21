@@ -612,9 +612,12 @@ class ManualSlotEditor:
             text="当前调整（可拖动）",
             foreground=COLORS["muted"],
         ).grid(row=0, column=0, sticky="w", pady=(0, 5))
+        self.original_reference_title_var = tk.StringVar(
+            value="游戏原版参考（同画布 / 同比例）"
+        )
         ttk.Label(
             previews,
-            text="游戏原版参考（同画布 / 同比例）",
+            textvariable=self.original_reference_title_var,
             foreground=COLORS["muted"],
         ).grid(row=0, column=1, sticky="w", padx=(8, 0), pady=(0, 5))
 
@@ -1007,6 +1010,11 @@ class ManualSlotEditor:
             state.mode = "direct"
         self.mode_var.set(state.mode)
         self.slot_title_var.set(f"{self.slot_names[slot]} · {slot}")
+        self.original_reference_title_var.set(
+            "游戏原版全身参考（同画布 / 位置比例）"
+            if slot == STANDING_SLOT
+            else "游戏原版参考（同画布 / 同比例）"
+        )
         size = self.slot_sizes[slot]
         self.size_var.set(f"输出 {size[0]}×{size[1]}")
         self.layered_radio.configure(

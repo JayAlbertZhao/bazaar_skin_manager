@@ -373,7 +373,7 @@ class SpineManagerTests(unittest.TestCase):
         self.assertTrue(messages[-1].startswith("测试阶段完成（"))
         configure_logging()
         self.assertTrue(LOG_PATH.is_file())
-        self.assertEqual(APP_VERSION, "1.5.1")
+        self.assertEqual(APP_VERSION, "1.5.2")
 
     def test_background_exception_is_bound_before_tk_callback(self) -> None:
         source = (TOOLS / "bazaar_spine_manager_ui.py").read_text(encoding="utf-8")
