@@ -22,11 +22,57 @@ from bazaar_skin_manager_ui_v12 import (
     SkinManagerV12,
     export_pack_with_library_assets,
     import_embedded_library_assets,
+    resolved_target_deployment_status,
 )
 from skin_library_core import AssetLibrary
 
 
 class FirstClassAssetLibraryTests(unittest.TestCase):
+    def test_known_target_is_deployable_when_catalog_status_is_stale(self) -> None:
+        target = {
+            "hero": "Vanessa",
+            "skin": "Skin_VAN_01/A",
+            "deployment_status": "game_update_required",
+            "adapter_id": "vanessa-default",
+        }
+        self.assertEqual(
+            resolved_target_deployment_status(target),
+            "compatible_unverified",
+        )
+
+    @mock.patch("bazaar_skin_manager_ui_v12.adapter_registry")
+    def test_bundled_adapter_repairs_catalog_entry_without_adapter_id(
+        self,
+        registry_factory: mock.Mock,
+    ) -> None:
+        registry_factory.return_value.find.return_value = object()
+        target = {
+            "hero": "Vanessa",
+            "skin": "Skin_VAN_01/A",
+            "deployment_status": "detected_unmapped",
+        }
+        self.assertEqual(
+            resolved_target_deployment_status(target),
+            "compatible_unverified",
+        )
+
+    @mock.patch("bazaar_skin_manager_ui_v12.adapter_registry")
+    def test_truly_unknown_target_remains_blocked(
+        self,
+        registry_factory: mock.Mock,
+    ) -> None:
+        registry_factory.return_value.find.return_value = None
+        self.assertEqual(
+            resolved_target_deployment_status(
+                {
+                    "hero": "Unknown",
+                    "skin": "Skin_UNKNOWN_01/A",
+                    "deployment_status": "detected_unmapped",
+                }
+            ),
+            "detected_unmapped",
+        )
+
     @staticmethod
     def _write_wav(path: Path) -> None:
         with wave.open(str(path), "wb") as stream:

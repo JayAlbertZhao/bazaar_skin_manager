@@ -42,6 +42,7 @@ from mod_studio_core import (
     SUPPORTED_IMAGE_EXTENSIONS,
     WORKSPACES_ROOT,
     StudioWorkspace,
+    adapter_registry,
     compose_image_preview,
     discovered_catalog,
     materialized_pack_id,
@@ -94,6 +95,31 @@ COLORS = {
     "danger": "#ef7b7b",
     "empty": "#242d3a",
 }
+
+def resolved_target_deployment_status(target: dict | None) -> str:
+    """Resolve deployability from the bundled adapter, not stale catalog state.
+
+    Older catalog snapshots used the deployment status as a hard gate. That
+    made a known adapter appear unavailable after a game update (and produced
+    the misleading "no verified adapter" dialog). The bundled adapter is the
+    capability boundary; the deployment pipeline performs the exact bundle and
+    Texture2D checks against the installed game before it writes anything.
+    """
+    if not target:
+        return "missing"
+    status = str(target.get("deployment_status") or "")
+    if status == "supported":
+        return status
+    if target.get("adapter_id"):
+        return "compatible_unverified"
+    try:
+        adapter = adapter_registry().find(
+            str(target.get("hero") or ""),
+            str(target.get("skin") or ""),
+        )
+    except Exception:
+        adapter = None
+    return "compatible_unverified" if adapter is not None else "detected_unmapped"
 
 TYPE_NAMES = {
     "character_source": "人物原图",
@@ -848,10 +874,11 @@ class SkinManagerV12:
         target_data = self._mapping_target_data(row)
         self._set_preview(row["pack_preview"], self._pack_cover(self.workspaces.get(pack_path)), (92, 92), f"map-pack-{id(row)}")
         target = target_data[1] if target_data else None
+        deployment_status = resolved_target_deployment_status(target)
         self._set_preview(row["target_preview"], self._target_cover(target), (92, 92), f"map-target-{id(row)}")
         if not pack_path or not target_data:
             text, color = "映射未完成", COLORS["muted"]
-        elif target and target.get("deployment_status") != "supported":
+        elif deployment_status == "detected_unmapped":
             text, color = "未适配", COLORS["danger"]
         elif not row["enabled"].get():
             text, color = "未启用", COLORS["muted"]
@@ -861,6 +888,8 @@ class SkinManagerV12:
             installed_pack = self.installed_mappings.get(target_data[0]) if target_data else None
             if installed_pack and installed_pack == pack_id:
                 text, color = "已部署", COLORS["accent"]
+            elif deployment_status == "compatible_unverified":
+                text, color = "兼容部署", COLORS["warning"]
             else:
                 text, color = "待应用", COLORS["warning"]
         row["status"].configure(text=text, foreground=color)
@@ -2010,6 +2039,7 @@ class SkinManagerV12:
         self._sync_mapping_models()
         target_map = {key: target for key, _label, target in self._target_records()}
         assignments: list[tuple[StudioWorkspace, dict]] = []
+        compatibility_targets: list[str] = []
         invalid: list[str] = []
         seen_targets: set[str] = set()
         for model in self.mapping_models:
@@ -2026,12 +2056,17 @@ class SkinManagerV12:
             seen_targets.add(key)
             target = target_map.get(key)
             workspace = self.workspaces.get(path)
-            if not target or target.get("deployment_status") != "supported":
-                invalid.append(f"{key} 尚无已验证适配器。")
+            deployment_status = resolved_target_deployment_status(target)
+            if deployment_status == "missing":
+                invalid.append(f"{key} 已不在当前游戏资产目录中；请刷新后重新选择目标。")
+            elif deployment_status == "detected_unmapped":
+                invalid.append(f"{key} 尚无可用适配器。")
             elif not workspace:
                 invalid.append(f"皮肤包路径不可用：{path}")
             else:
                 assignments.append((workspace, target))
+                if deployment_status == "compatible_unverified":
+                    compatibility_targets.append(key)
         if invalid:
             messagebox.showerror("部署方案不可用", "\n".join(invalid), parent=self.root)
             return
@@ -2050,10 +2085,18 @@ class SkinManagerV12:
                 "\n\n未检测到完整的 BepInEx。皮肤管理器将自动安装并校验官方 "
                 f"BepInEx {loader['bootstrap_version']}；不需要 BazaarPlusPlus。"
             )
+        compatibility_note = ""
+        if compatibility_targets:
+            compatibility_note = (
+                "\n\n以下目标将使用兼容模式："
+                + "、".join(compatibility_targets)
+                + "。部署前会按当前游戏文件校验实际资源结构；校验不通过时不会写入游戏。"
+            )
         if not messagebox.askyesno(
             "部署更改",
             f"将部署 {len(assignments)} 条皮肤映射。继续前请关闭 The Bazaar。"
-            + loader_note,
+            + loader_note
+            + compatibility_note,
             parent=self.root,
         ):
             return
