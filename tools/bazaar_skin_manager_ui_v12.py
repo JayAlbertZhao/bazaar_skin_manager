@@ -108,10 +108,8 @@ def resolved_target_deployment_status(target: dict | None) -> str:
     if not target:
         return "missing"
     status = str(target.get("deployment_status") or "")
-    if status == "supported":
-        return status
     if target.get("adapter_id"):
-        return "compatible_unverified"
+        return "supported" if status == "supported" else "compatible_unverified"
     try:
         adapter = adapter_registry().find(
             str(target.get("hero") or ""),
@@ -119,7 +117,9 @@ def resolved_target_deployment_status(target: dict | None) -> str:
         )
     except Exception:
         adapter = None
-    return "compatible_unverified" if adapter is not None else "detected_unmapped"
+    if adapter is None:
+        return "detected_unmapped"
+    return "supported" if status == "supported" else "compatible_unverified"
 
 TYPE_NAMES = {
     "character_source": "人物原图",
@@ -649,9 +649,21 @@ class SkinManagerV12:
                 records.append((key, label, target | {"deployment_status": skin.get("deployment_status"), "adapter_id": skin.get("adapter_id")}))
         return records
 
+    def _selectable_target_records(self) -> list[tuple[str, str, dict]]:
+        """Return only targets backed by an adapter bundled with this build."""
+        return [
+            record
+            for record in self._target_records()
+            if resolved_target_deployment_status(record[2])
+            in {"supported", "compatible_unverified"}
+        ]
+
     def _target_groups(self) -> list[dict]:
-        """Group dynamic catalog skins by hero for the deployment editor."""
-        flat_records = {key: (label, target) for key, label, target in self._target_records()}
+        """Group selectable, adapter-backed skins by hero for deployment."""
+        flat_records = {
+            key: (label, target)
+            for key, label, target in self._selectable_target_records()
+        }
         groups: list[dict] = []
         for hero in self.catalog.get("heroes") or []:
             hero_id = str(hero.get("id") or "")
@@ -659,17 +671,24 @@ class SkinManagerV12:
             targets: list[tuple[str, str, dict]] = []
             for skin in hero.get("skins") or []:
                 key = f"{hero_id}|{skin['id']}"
-                _flat_label, target = flat_records[key]
+                record = flat_records.get(key)
+                if record is None:
+                    continue
+                _flat_label, target = record
                 is_default = str(skin["id"]).endswith("01/A")
                 skin_name = "默认皮肤" if is_default else str(
                     skin.get("display_name") or skin["id"]
                 )
-                support = {
-                    "supported": "",
-                    "compatible_unverified": " · 自动兼容",
-                }.get(skin.get("deployment_status"), " · 通用运行")
+                deployment_status = resolved_target_deployment_status(target)
+                support = (
+                    " · 兼容模式"
+                    if deployment_status == "compatible_unverified"
+                    else ""
+                )
                 targets.append((key, f"{skin_name}{support}", target))
             targets.sort(key=lambda item: (not item[0].endswith("01/A"), item[1].casefold()))
+            if not targets:
+                continue
             groups.append(
                 {
                     "hero_id": hero_id,
@@ -1542,7 +1561,10 @@ class SkinManagerV12:
             self._show_error("动画导入失败", ValueError("请先选择 Spine ZIP，或 JSON、ATLAS 和纹理文件。"))
             return
         target_value = self.spine_target.get()
-        target_map = {label: target for _key, label, target in self._target_records()}
+        target_map = {
+            label: target
+            for _key, label, target in self._selectable_target_records()
+        }
         try:
             record = self.asset_library.import_spine(
                 self.spine_files,
@@ -2037,7 +2059,10 @@ class SkinManagerV12:
         if self.busy:
             return
         self._sync_mapping_models()
-        target_map = {key: target for key, _label, target in self._target_records()}
+        target_map = {
+            key: target
+            for key, _label, target in self._selectable_target_records()
+        }
         assignments: list[tuple[StudioWorkspace, dict]] = []
         compatibility_targets: list[str] = []
         invalid: list[str] = []
@@ -2296,7 +2321,10 @@ class SkinManagerV12:
         self.global_status.configure(text=text, foreground=color)
 
     def _refresh_everything(self) -> None:
-        target_labels = ["未指定（导入后再配置）"] + [label for _key, label, _target in self._target_records()]
+        target_labels = ["未指定（导入后再配置）"] + [
+            label
+            for _key, label, _target in self._selectable_target_records()
+        ]
         if hasattr(self, "spine_target_box"):
             self.spine_target_box.configure(values=tuple(target_labels))
         self._refresh_global_status()

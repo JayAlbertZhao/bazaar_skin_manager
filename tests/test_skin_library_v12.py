@@ -73,6 +73,23 @@ class FirstClassAssetLibraryTests(unittest.TestCase):
             "detected_unmapped",
         )
 
+    @mock.patch("bazaar_skin_manager_ui_v12.adapter_registry")
+    def test_catalog_supported_flag_without_bundled_adapter_is_not_selectable(
+        self,
+        registry_factory: mock.Mock,
+    ) -> None:
+        registry_factory.return_value.find.return_value = None
+        self.assertEqual(
+            resolved_target_deployment_status(
+                {
+                    "hero": "Unknown",
+                    "skin": "Skin_UNKNOWN_01/A",
+                    "deployment_status": "supported",
+                }
+            ),
+            "detected_unmapped",
+        )
+
     @staticmethod
     def _write_wav(path: Path) -> None:
         with wave.open(str(path), "wb") as stream:
@@ -459,6 +476,7 @@ class ManagerV12SurfaceTests(unittest.TestCase):
                             "id": "Skin_DOO_01/A",
                             "display_name": "默认",
                             "deployment_status": "supported",
+                            "adapter_id": "dooley-default",
                         },
                     ],
                 },
@@ -470,15 +488,57 @@ class ManagerV12SurfaceTests(unittest.TestCase):
                             "id": "Skin_DRA_01/A",
                             "display_name": "默认皮肤",
                             "deployment_status": "supported",
+                            "adapter_id": "dragons-default",
+                        }
+                    ],
+                },
+                {
+                    "id": "UnknownHero",
+                    "display_name": "Unknown Hero",
+                    "skins": [
+                        {
+                            "id": "Skin_UNK_01/A",
+                            "display_name": "默认皮肤",
+                            "deployment_status": "detected_unmapped",
                         }
                     ],
                 },
             ]
         }
-        groups = manager._target_groups()
+        with mock.patch(
+            "bazaar_skin_manager_ui_v12.adapter_registry"
+        ) as registry_factory:
+            registry_factory.return_value.find.return_value = None
+            groups = manager._target_groups()
         self.assertEqual([group["hero_id"] for group in groups], ["Dooley", "Hero8"])
         self.assertEqual(groups[0]["targets"][0][0], "Dooley|Skin_DOO_01/A")
+        self.assertEqual(len(groups[0]["targets"]), 1)
         self.assertEqual(groups[1]["targets"][0][0], "Hero8|Skin_DRA_01/A")
+
+    def test_adapter_backed_compatibility_target_remains_selectable(self) -> None:
+        manager = SkinManagerV12.__new__(SkinManagerV12)
+        manager.catalog = {
+            "heroes": [
+                {
+                    "id": "Vanessa",
+                    "display_name": "Vanessa",
+                    "skins": [
+                        {
+                            "id": "Skin_VAN_01/A",
+                            "display_name": "默认皮肤",
+                            "deployment_status": "game_update_required",
+                            "adapter_id": "vanessa-default",
+                        }
+                    ],
+                }
+            ]
+        }
+
+        groups = manager._target_groups()
+
+        self.assertEqual(len(groups), 1)
+        self.assertEqual(groups[0]["targets"][0][0], "Vanessa|Skin_VAN_01/A")
+        self.assertIn("兼容模式", groups[0]["targets"][0][1])
 
     def test_edit_pack_opens_same_workspace_in_creation_page(self) -> None:
         manager = SkinManagerV12.__new__(SkinManagerV12)
