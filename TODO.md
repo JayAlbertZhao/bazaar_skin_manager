@@ -1,5 +1,13 @@
 # TODO
 
+## v1.5.7
+
+- [x] 从 BepInEx 与 Player 日志定位最新版原生换装菜单无法打开的异常调用链。
+- [x] 精确隔离仍调用已移除 `CosmeticItem.EquipableItem` getter 的 BazaarPlusPlus
+  随机皮肤池补丁，保留其余第三方功能与游戏原生换装逻辑。
+- [x] 用编译后的运行时执行 Harmony 回归测试，确认只移除目标补丁并保留同 owner
+  的无关补丁。
+
 ## v1.5.6
 
 - [x] Defer the verified installer until the frozen manager UI process exits, so

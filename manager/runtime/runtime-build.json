@@ -1,8 +1,8 @@
 ﻿{
     "schema_version":  1,
     "component":  "runtime-adapter",
-    "version":  "1.5.6",
+    "version":  "1.5.7",
     "executable":  "BazaarSkinManager.Runtime.dll",
-    "sha256":  "13676d781ee54745f8c33249050697812200956fbf1464379f9494083da1a0a0",
-    "bytes":  144896
+    "sha256":  "c3863107613f69f8b70c12dc03a0670191ce5e0deb4813aa890798bfb5c7ddcb",
+    "bytes":  146432
 }

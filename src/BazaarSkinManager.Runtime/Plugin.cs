@@ -7,12 +7,15 @@ using UnityEngine;
 
 namespace BazaarSkinManager.TheBazaar
 {
+    [BepInDependency(
+        "BazaarPlusPlus",
+        BepInDependency.DependencyFlags.SoftDependency)]
     [BepInPlugin(PluginGuid, PluginName, PluginVersion)]
     public sealed class Plugin : BaseUnityPlugin
     {
         public const string PluginGuid = "bazaar-skin-manager.the-bazaar.runtime";
         public const string PluginName = "The Bazaar Skin Manager Runtime";
-        public const string PluginVersion = "1.5.6";
+        public const string PluginVersion = "1.5.7";
 
         internal static RuntimePack ActivePack;
         internal static List<RuntimePack> ActivePacks = new List<RuntimePack>();
@@ -57,6 +60,19 @@ namespace BazaarSkinManager.TheBazaar
                     compatibilityFailure);
             }
 
+            _harmony = new Harmony(PluginGuid);
+            TryFeature("native wardrobe compatibility", delegate
+            {
+                int removed = ThirdPartyCompatibility.ProtectNativeWardrobe(_harmony);
+                if (removed > 0)
+                {
+                    Logger.LogWarning(
+                        "Disabled " + removed + " incompatible BazaarPlusPlus " +
+                        "random-skin-pool patch(es); the game's native wardrobe " +
+                        "remains available and other BazaarPlusPlus features stay loaded.");
+                }
+            });
+
             string root = string.IsNullOrWhiteSpace(modsRoot.Value)
                 ? RuntimePack.DefaultModsRoot()
                 : Environment.ExpandEnvironmentVariables(modsRoot.Value);
@@ -69,7 +85,6 @@ namespace BazaarSkinManager.TheBazaar
                 return;
             }
 
-            _harmony = new Harmony(PluginGuid);
             TryFeature("visual hooks", delegate { _harmony.PatchAll(); });
             TryFeature(
                 "skin-loader coverage",

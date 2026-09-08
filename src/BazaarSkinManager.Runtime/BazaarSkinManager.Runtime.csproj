@@ -81,6 +81,7 @@
     <Compile Include="SkinLoaderCoverage.cs" />
     <Compile Include="SkinPatches.cs" />
     <Compile Include="StandingOverlay.cs" />
+    <Compile Include="ThirdPartyCompatibility.cs" />
     <Compile Include="UiReplacementScanner.cs" />
     <Compile Include="VisualOwnership.cs" />
   </ItemGroup>

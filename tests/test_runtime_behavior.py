@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import shutil
 import subprocess
 import tempfile
 import textwrap
@@ -14,9 +15,154 @@ RUNTIME = ROOT / "dist" / "runtime" / "BazaarSkinManager.Runtime.dll"
 if not RUNTIME.is_file():
     RUNTIME = ROOT / "manager" / "runtime" / "BazaarSkinManager.Runtime.dll"
 CSC = Path(r"C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe")
+BEPINEX_CORE = Path(
+    r"D:\SteamLibrary\steamapps\common\The Bazaar\BepInEx\core"
+)
+HARMONY = BEPINEX_CORE / "0Harmony.dll"
 
 
 class RuntimeBehaviorTests(unittest.TestCase):
+    def test_native_wardrobe_shield_removes_only_broken_bpp_patches(
+        self,
+    ) -> None:
+        self.assertTrue(RUNTIME.is_file(), "run build.ps1 before the test suite")
+        self.assertTrue(HARMONY.is_file())
+        source = textwrap.dedent(
+            r"""
+            using System;
+            using System.Linq;
+            using System.Reflection;
+            using HarmonyLib;
+
+            namespace TheBazaar
+            {
+                public class EquipableItem {}
+
+                public class CosmeticItem
+                {
+                    private EquipableItem _equipableItem;
+                }
+
+                public class CosmeticsListManager
+                {
+                    public void FetchCosmetics() {}
+                }
+            }
+
+            namespace BazaarPlusPlus.Patches.Lobby.RandomHeroSkinPool
+            {
+                [HarmonyPatch(
+                    typeof(TheBazaar.CosmeticsListManager),
+                    "FetchCosmetics")]
+                public static class BrokenPatch
+                {
+                    public static void Prefix() {}
+                }
+            }
+
+            namespace BazaarPlusPlus.Patches.Unrelated
+            {
+                [HarmonyPatch(
+                    typeof(TheBazaar.CosmeticsListManager),
+                    "FetchCosmetics")]
+                public static class PreservedPatch
+                {
+                    public static void Postfix() {}
+                }
+            }
+
+            public static class Program
+            {
+                public static int Main(string[] args)
+                {
+                    try
+                    {
+                    MethodInfo target = typeof(TheBazaar.CosmeticsListManager)
+                        .GetMethod("FetchCosmetics");
+                    Harmony bpp = new Harmony("BazaarPlusPlus");
+                    bpp.CreateClassProcessor(
+                        typeof(BazaarPlusPlus.Patches.Lobby
+                            .RandomHeroSkinPool.BrokenPatch)).Patch();
+                    bpp.CreateClassProcessor(
+                        typeof(BazaarPlusPlus.Patches.Unrelated
+                            .PreservedPatch)).Patch();
+
+                    Assembly runtime = Assembly.LoadFrom(args[0]);
+                    Type shield = runtime.GetType(
+                        "BazaarSkinManager.TheBazaar.ThirdPartyCompatibility",
+                        true);
+                    MethodInfo protect = shield.GetMethod(
+                        "ProtectNativeWardrobe",
+                        BindingFlags.NonPublic | BindingFlags.Static);
+                    int removed = (int)protect.Invoke(
+                        null,
+                        new object[] { new Harmony("test.wardrobe.shield") });
+
+                    Patches remaining = Harmony.GetPatchInfo(target);
+                    bool brokenGone = !remaining.Prefixes.Any(
+                        patch => patch.PatchMethod.DeclaringType ==
+                            typeof(BazaarPlusPlus.Patches.Lobby
+                                .RandomHeroSkinPool.BrokenPatch));
+                    bool unrelatedKept = remaining.Postfixes.Any(
+                        patch => patch.PatchMethod.DeclaringType ==
+                            typeof(BazaarPlusPlus.Patches.Unrelated
+                                .PreservedPatch));
+                    return removed == 1 && brokenGone && unrelatedKept ? 0 : 17;
+                    }
+                    catch (Exception error)
+                    {
+                        Console.WriteLine(error.GetType().FullName);
+                        Console.WriteLine(error.Message);
+                        if (error.InnerException != null)
+                        {
+                            Console.WriteLine(error.InnerException.GetType().FullName);
+                            Console.WriteLine(error.InnerException.Message);
+                        }
+                        return 18;
+                    }
+                }
+            }
+            """
+        )
+        with tempfile.TemporaryDirectory() as temp:
+            temp_path = Path(temp)
+            source_path = temp_path / "WardrobeShieldHarness.cs"
+            executable = temp_path / "WardrobeShieldHarness.exe"
+            source_path.write_text(source, encoding="utf-8")
+            for dependency in BEPINEX_CORE.glob("*.dll"):
+                shutil.copy2(dependency, temp_path / dependency.name)
+            local_harmony = temp_path / HARMONY.name
+            compile_result = subprocess.run(
+                [
+                    str(CSC),
+                    "/nologo",
+                    f"/reference:{local_harmony}",
+                    f"/out:{executable}",
+                    str(source_path),
+                ],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+            )
+            self.assertEqual(
+                compile_result.returncode,
+                0,
+                compile_result.stdout + compile_result.stderr,
+            )
+            run_result = subprocess.run(
+                [str(executable), str(RUNTIME)],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+            )
+            self.assertEqual(
+                run_result.returncode,
+                0,
+                run_result.stdout + run_result.stderr,
+            )
+
     def test_value_type_mutation_is_returned_from_compiled_runtime(self) -> None:
         self.assertTrue(RUNTIME.is_file(), "run build.ps1 before the test suite")
         self.assertTrue(CSC.is_file())

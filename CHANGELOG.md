@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.5.7
+
+- 兼容游戏将 `CosmeticItem.EquipableItem` 属性改为私有字段后的原生换装界面：
+  启动时只移除 BazaarPlusPlus 随机皮肤池中仍调用旧 getter 的 Harmony 补丁，
+  避免 `FetchCosmetics` 抛出 `MissingMethodException` 导致菜单无法打开。
+- 兼容层按补丁 owner 与命名空间双重限定；BazaarPlusPlus 其余功能、游戏原生逻辑
+  和未出现该 API 变化的版本均不受影响，且 Skin Manager 不新增 BazaarPlusPlus 前置依赖。
+
 ## 1.5.6
 
 - Fixed the built-in updater racing its own frozen executable: the installer is

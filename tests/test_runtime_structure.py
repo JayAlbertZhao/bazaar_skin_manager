@@ -235,8 +235,21 @@ class RuntimeStructureTests(unittest.TestCase):
             ROOT / "src" / "BazaarSkinManager.Runtime" / "AssemblyInfo.cs"
         ).read_text(encoding="utf-8")
 
-        self.assertIn('PluginVersion = "1.5.6"', plugin)
-        self.assertIn('AssemblyVersion("1.5.6.0")', assembly)
+        self.assertIn('PluginVersion = "1.5.7"', plugin)
+        self.assertIn('AssemblyVersion("1.5.7.0")', assembly)
+
+    def test_removed_bpp_getter_cannot_break_native_wardrobe(self) -> None:
+        runtime_source = ROOT / "src" / "BazaarSkinManager.Runtime"
+        compatibility = (runtime_source / "ThirdPartyCompatibility.cs").read_text(
+            encoding="utf-8"
+        )
+        plugin = (runtime_source / "Plugin.cs").read_text(encoding="utf-8")
+        self.assertIn('PropertyGetter(cosmeticItem, "EquipableItem")', compatibility)
+        self.assertIn('Field(cosmeticItem, "_equipableItem")', compatibility)
+        self.assertIn('"BazaarPlusPlus.Patches.Lobby.RandomHeroSkinPool"', compatibility)
+        self.assertIn("harmony.Unpatch(original, method)", compatibility)
+        self.assertIn("BepInDependency.DependencyFlags.SoftDependency", plugin)
+        self.assertIn("ThirdPartyCompatibility.ProtectNativeWardrobe", plugin)
 
     def test_runtime_self_test_exercises_local_portrait_route(self) -> None:
         diagnostics = (
