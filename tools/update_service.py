@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 import subprocess
 import urllib.parse
@@ -199,18 +200,101 @@ def download_release_installer(
     }
 
 
-def launch_verified_installer(path: Path) -> subprocess.Popen:
-    """Launch the already-verified per-user installer for an in-place update."""
+def _installer_arguments(installer: Path) -> list[str]:
+    return [
+        str(installer),
+        "/SP-",
+        "/SILENT",
+        "/NORESTART",
+        "/CLOSEAPPLICATIONS",
+        # The frozen one-file manager has a hidden bootloader process as well as
+        # the UI process. This is only a final safeguard after the deferred
+        # launcher has waited for the UI process to exit; the installer contains
+        # no game files, so Restart Manager cannot target TheBazaar.exe.
+        "/FORCECLOSEAPPLICATIONS",
+    ]
+
+
+def _powershell_literal(value: str) -> str:
+    return "'" + value.replace("'", "''") + "'"
+
+
+def launch_verified_installer(
+    path: Path,
+    *,
+    wait_for_pid: int | None = None,
+    wait_for_parent_pid: int | None = None,
+) -> subprocess.Popen:
+    """Launch an installer now, or defer it until the manager process exits.
+
+    The deferred Windows path prevents Inno Setup from racing the PyInstaller
+    bootloader while the installed executable is still mapped and locked.
+    """
     installer = Path(path).resolve()
     if not installer.is_file() or installer.suffix.casefold() != ".exe":
         raise FileNotFoundError(f"verified installer is unavailable: {installer}")
+    arguments = _installer_arguments(installer)
+    if wait_for_pid is not None:
+        wait_for_pid = int(wait_for_pid)
+        if wait_for_pid <= 0:
+            raise ValueError("wait_for_pid must be a positive process id")
+    if wait_for_parent_pid is not None:
+        wait_for_parent_pid = int(wait_for_parent_pid)
+        if wait_for_parent_pid <= 0:
+            raise ValueError("wait_for_parent_pid must be a positive process id")
+    if wait_for_pid is not None and os.name == "nt":
+        system_root = Path(os.environ.get("SystemRoot", r"C:\Windows"))
+        powershell = (
+            system_root
+            / "System32"
+            / "WindowsPowerShell"
+            / "v1.0"
+            / "powershell.exe"
+        )
+        if not powershell.is_file():
+            powershell = Path("powershell.exe")
+        ps_arguments = ",".join(
+            _powershell_literal(argument) for argument in arguments[1:]
+        )
+        wait_commands = [
+            f"Wait-Process -Id {wait_for_pid} -ErrorAction SilentlyContinue;"
+        ]
+        if wait_for_parent_pid not in (None, wait_for_pid):
+            wait_commands.append(
+                f"Wait-Process -Id {wait_for_parent_pid} -ErrorAction SilentlyContinue;"
+            )
+        command = (
+            "$ErrorActionPreference='SilentlyContinue';"
+            + "".join(wait_commands)
+            # Even after both one-file processes exit, let Windows finish
+            # releasing image mappings before Setup starts copying.
+            + "Start-Sleep -Milliseconds 300;"
+            f"Start-Process -FilePath {_powershell_literal(str(installer))} "
+            f"-ArgumentList @({ps_arguments})"
+        )
+        creationflags = (
+            getattr(subprocess, "DETACHED_PROCESS", 0)
+            | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+            | getattr(subprocess, "CREATE_NO_WINDOW", 0)
+        )
+        return subprocess.Popen(
+            [
+                str(powershell),
+                "-NoLogo",
+                "-NoProfile",
+                "-NonInteractive",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-Command",
+                command,
+            ],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            close_fds=True,
+            creationflags=creationflags,
+        )
     return subprocess.Popen(
-        [
-            str(installer),
-            "/SP-",
-            "/SILENT",
-            "/NORESTART",
-            "/CLOSEAPPLICATIONS",
-        ],
+        arguments,
         close_fds=True,
     )

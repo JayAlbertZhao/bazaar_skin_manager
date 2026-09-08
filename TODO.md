@@ -1,5 +1,14 @@
 # TODO
 
+## v1.5.6
+
+- [x] Defer the verified installer until the frozen manager UI process exits, so
+  Inno Setup never races the executable lock held by the running updater.
+- [x] Keep the update fallback scoped to manager files; never terminate the
+  running Bazaar game while upgrading the utility.
+- [ ] Manually accept the v1.5.6 update from v1.5.5 and verify the complete
+  prompt, download, checksum, shutdown, upgrade, and relaunch interaction.
+
 ## v1.5.5
 
 - [x] 适配 Steam build `25135007` 的八英雄默认皮肤、英雄选择图标、小图标和语音合同。

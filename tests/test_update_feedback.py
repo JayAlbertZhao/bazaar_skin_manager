@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import io
 import json
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -110,6 +111,39 @@ class UpdateServiceTests(unittest.TestCase):
                     release, Path(temp), opener=opener
                 )
 
+    def test_direct_installer_launch_allows_forced_manager_shutdown(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            installer = Path(temp) / "update.exe"
+            installer.write_bytes(b"MZ")
+            with mock.patch.object(update_service.subprocess, "Popen") as popen:
+                update_service.launch_verified_installer(installer)
+            arguments = popen.call_args.args[0]
+            self.assertEqual(arguments[0], str(installer.resolve()))
+            self.assertIn("/FORCECLOSEAPPLICATIONS", arguments)
+
+    def test_windows_update_waits_for_manager_exit_before_starting_setup(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            installer = Path(temp) / "manager's update.exe"
+            installer.write_bytes(b"MZ")
+            with (
+                mock.patch.object(update_service.os, "name", "nt"),
+                mock.patch.object(Path, "is_file", return_value=True),
+                mock.patch.object(update_service.subprocess, "Popen") as popen,
+            ):
+                update_service.launch_verified_installer(
+                    installer,
+                    wait_for_pid=4321,
+                    wait_for_parent_pid=1234,
+                )
+            command_line = popen.call_args.args[0]
+            command = command_line[-1]
+            self.assertIn("Wait-Process -Id 4321", command)
+            self.assertIn("Wait-Process -Id 1234", command)
+            self.assertIn("Start-Sleep -Milliseconds 300", command)
+            self.assertIn("manager''s update.exe", command)
+            self.assertIn("/FORCECLOSEAPPLICATIONS", command)
+            self.assertEqual(popen.call_args.kwargs["stdin"], subprocess.DEVNULL)
+
 
 class SupportReportTests(unittest.TestCase):
     def test_ui_checks_each_launch_and_only_copies_feedback(self) -> None:
@@ -119,6 +153,13 @@ class SupportReportTests(unittest.TestCase):
         self.assertNotIn("_copy_and_open_feedback", ui)
         self.assertNotIn("github_issue_url", ui)
         self.assertIn("复制脱敏诊断", ui)
+
+    def test_ui_defers_setup_until_frozen_manager_processes_exit(self) -> None:
+        ui = (TOOLS / "bazaar_skin_manager_ui_v12.py").read_text(encoding="utf-8")
+        self.assertIn("wait_for_pid=os.getpid()", ui)
+        self.assertIn("wait_for_parent_pid=", ui)
+        self.assertIn("self.root.after_idle(self.root.destroy)", ui)
+        self.assertNotIn("self.root.after(400, self.root.destroy)", ui)
 
     def test_report_redacts_local_identity_and_credentials(self) -> None:
         with tempfile.TemporaryDirectory() as temp:

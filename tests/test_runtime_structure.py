@@ -235,8 +235,8 @@ class RuntimeStructureTests(unittest.TestCase):
             ROOT / "src" / "BazaarSkinManager.Runtime" / "AssemblyInfo.cs"
         ).read_text(encoding="utf-8")
 
-        self.assertIn('PluginVersion = "1.5.5"', plugin)
-        self.assertIn('AssemblyVersion("1.5.5.0")', assembly)
+        self.assertIn('PluginVersion = "1.5.6"', plugin)
+        self.assertIn('AssemblyVersion("1.5.6.0")', assembly)
 
     def test_runtime_self_test_exercises_local_portrait_route(self) -> None:
         diagnostics = (

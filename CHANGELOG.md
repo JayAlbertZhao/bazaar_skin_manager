@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.5.6
+
+- Fixed the built-in updater racing its own frozen executable: the installer is
+  now launched by a detached helper only after the manager UI process exits.
+- Added a short bootloader-release grace period and a manager-only forced-close
+  fallback so in-place upgrades no longer stop at Inno Setup's "Select action"
+  prompt. The Bazaar game process is outside the installer's managed files and
+  is not closed.
+
 ## 1.5.5
 
 - 适配 The Bazaar Steam build `25135007`（客户端 `1.0.12246-prod-windows-x64-063db1e9`）：八个默认英雄的皮肤 Bundle、英雄选择图标与小图标合同均已按新文件验证并补充 SHA-256 证据。

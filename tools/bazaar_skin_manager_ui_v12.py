@@ -13,6 +13,7 @@ import json
 import os
 import shutil
 import struct
+import sys
 import tempfile
 import threading
 import traceback
@@ -1801,7 +1802,13 @@ class SkinManagerV12:
 
     def _launch_downloaded_update(self, result: dict) -> None:
         try:
-            launch_verified_installer(Path(result["path"]))
+            launch_verified_installer(
+                Path(result["path"]),
+                wait_for_pid=os.getpid(),
+                wait_for_parent_pid=(
+                    os.getppid() if getattr(sys, "frozen", False) else None
+                ),
+            )
         except Exception as error:
             self._background_error(error, traceback.format_exc())
             return
@@ -1809,7 +1816,9 @@ class SkinManagerV12:
             text=f"v{result['version']} 安装程序已启动；正在关闭当前版本…",
             foreground=COLORS["accent"],
         )
-        self.root.after(400, self.root.destroy)
+        # The detached launcher waits for this process to finish before starting
+        # Setup. Do not keep the one-file bootloader (and its EXE lock) alive.
+        self.root.after_idle(self.root.destroy)
 
     def _diagnostic_report(self) -> str:
         game = {
