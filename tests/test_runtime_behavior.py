@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import hashlib
 import json
-import shutil
 import subprocess
 import tempfile
 import textwrap
 import unittest
+import zipfile
 from pathlib import Path
 
 
@@ -15,10 +15,22 @@ RUNTIME = ROOT / "dist" / "runtime" / "BazaarSkinManager.Runtime.dll"
 if not RUNTIME.is_file():
     RUNTIME = ROOT / "manager" / "runtime" / "BazaarSkinManager.Runtime.dll"
 CSC = Path(r"C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe")
-BEPINEX_CORE = Path(
-    r"D:\SteamLibrary\steamapps\common\The Bazaar\BepInEx\core"
+BEPINEX_ARCHIVE = (
+    ROOT / "third_party" / "BepInEx" / "BepInEx_win_x64_5.4.23.5.zip"
 )
-HARMONY = BEPINEX_CORE / "0Harmony.dll"
+
+
+def copy_harmony_runtime(destination: Path) -> Path:
+    with zipfile.ZipFile(BEPINEX_ARCHIVE) as archive:
+        for member in archive.infolist():
+            relative = Path(member.filename)
+            if (
+                len(relative.parts) == 3
+                and relative.parts[:2] == ("BepInEx", "core")
+                and relative.suffix.casefold() == ".dll"
+            ):
+                (destination / relative.name).write_bytes(archive.read(member))
+    return destination / "0Harmony.dll"
 
 
 class RuntimeBehaviorTests(unittest.TestCase):
@@ -26,7 +38,7 @@ class RuntimeBehaviorTests(unittest.TestCase):
         self,
     ) -> None:
         self.assertTrue(RUNTIME.is_file(), "run build.ps1 before the test suite")
-        self.assertTrue(HARMONY.is_file())
+        self.assertTrue(BEPINEX_ARCHIVE.is_file())
         source = textwrap.dedent(
             r"""
             using System;
@@ -129,9 +141,7 @@ class RuntimeBehaviorTests(unittest.TestCase):
             source_path = temp_path / "WardrobeShieldHarness.cs"
             executable = temp_path / "WardrobeShieldHarness.exe"
             source_path.write_text(source, encoding="utf-8")
-            for dependency in BEPINEX_CORE.glob("*.dll"):
-                shutil.copy2(dependency, temp_path / dependency.name)
-            local_harmony = temp_path / HARMONY.name
+            local_harmony = copy_harmony_runtime(temp_path)
             compile_result = subprocess.run(
                 [
                     str(CSC),
