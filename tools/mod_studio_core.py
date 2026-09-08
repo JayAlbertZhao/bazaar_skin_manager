@@ -41,6 +41,7 @@ from bazaar_skin_manager import (
     launch_game,
     manager_root,
     mods_root,
+    native_patch_target_candidates,
     preferred_game_install,
     sha256_file,
     uninstall,
@@ -211,10 +212,14 @@ def _visual_template_map(target: dict) -> dict[str, dict]:
     }
 
 
-def _shared_native_asset_key(deployment: dict | None) -> tuple[str, str] | None:
+def _shared_native_asset_key(
+    deployment: dict | None,
+) -> tuple[tuple[str, ...], str] | None:
     if not deployment or deployment.get("mode") != "preload_unity_texture2d":
         return None
-    target = str(deployment.get("target") or "").replace("\\", "/").casefold()
+    target = tuple(
+        value.casefold() for value in native_patch_target_candidates(deployment)
+    )
     asset_name = str(deployment.get("asset_name") or "").casefold()
     return (target, asset_name) if target and asset_name else None
 
@@ -230,7 +235,7 @@ def _coalesce_shared_native_images(replacements: list[dict]) -> list[dict]:
     deployment describe the hardware truth instead of producing a conflict.
     """
 
-    canonical_files: dict[tuple[str, str], str] = {}
+    canonical_files: dict[tuple[tuple[str, ...], str], str] = {}
     result: list[dict] = []
     for source in replacements:
         replacement = deepcopy(source)
@@ -268,27 +273,32 @@ def _verified_original_bundle(
     is eligible here.
     """
 
-    relative = str(deployment.get("target") or "").replace("/", os.sep)
-    if not relative:
+    relatives = native_patch_target_candidates(deployment)
+    if not relatives:
         raise ValueError("Original visual deployment has no bundle target.")
-    live = (game_dir / relative).resolve()
+    live_candidates = [
+        (game_dir / relative.replace("/", os.sep)).resolve()
+        for relative in relatives
+    ]
     record = existing_install_record() or {}
-    for patch in record.get("native_patches") or []:
-        try:
-            recorded_target = Path(str(patch.get("target") or "")).resolve()
-        except (OSError, ValueError):
-            continue
-        if recorded_target != live:
-            continue
-        backup = Path(str(patch.get("backup") or ""))
-        original_sha256 = str(patch.get("original_sha256") or "").casefold()
-        if (
-            backup.is_file()
-            and original_sha256
-            and sha256_file(backup).casefold() == original_sha256
-        ):
-            return backup
+    for live in live_candidates:
+        for patch in record.get("native_patches") or []:
+            try:
+                recorded_target = Path(str(patch.get("target") or "")).resolve()
+            except (OSError, ValueError):
+                continue
+            if recorded_target != live:
+                continue
+            backup = Path(str(patch.get("backup") or ""))
+            original_sha256 = str(patch.get("original_sha256") or "").casefold()
+            if (
+                backup.is_file()
+                and original_sha256
+                and sha256_file(backup).casefold() == original_sha256
+            ):
+                return backup
 
+    live = next((path for path in live_candidates if path.is_file()), live_candidates[0])
     if not live.is_file():
         raise FileNotFoundError(live)
     # When no verified backup exists, let the exporter prove the live bundle's

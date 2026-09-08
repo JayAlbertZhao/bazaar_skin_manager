@@ -321,7 +321,7 @@ class AssetGeneratorCoreTests(unittest.TestCase):
                         "adapters": [
                             {
                                 "id": "dooley-default",
-                                "adapter_version": 13,
+                                "adapter_version": 14,
                                 "hero": "Dooley",
                                 "skin": "Skin_DOO_01/A",
                             }
@@ -334,7 +334,7 @@ class AssetGeneratorCoreTests(unittest.TestCase):
                 "dooley-default", install_root=root
             )
             self.assertEqual(capability["manager_version"], "1.1.2")
-            self.assertEqual(capability["adapter"]["adapter_version"], 13)
+            self.assertEqual(capability["adapter"]["adapter_version"], 14)
 
     def test_installed_manager_capability_rejects_legacy_sidecar(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
@@ -363,7 +363,7 @@ class AssetGeneratorCoreTests(unittest.TestCase):
                 ),
                 encoding="utf-8",
             )
-            with self.assertRaisesRegex(RuntimeError, "v13"):
+            with self.assertRaisesRegex(RuntimeError, "v14"):
                 generator.require_installed_manager_adapter(
                     "dooley-default", install_root=root
                 )

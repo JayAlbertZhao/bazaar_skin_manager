@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "game": "The Bazaar",
-  "steam_build": "24720155",
+  "steam_build": "25135007",
   "heroes": [
     {
       "id": "Mak",
@@ -121,86 +121,148 @@
       "id": "portrait_gameplay",
       "name": "游戏内头像",
       "description": "棋盘和商人界面使用的头像；建议使用透明 PNG。",
-      "accept": [".png", ".jpg", ".jpeg", ".webp"]
+      "accept": [
+        ".png",
+        ".jpg",
+        ".jpeg",
+        ".webp"
+      ]
     },
     {
       "id": "portrait_background",
       "name": "游戏内头像背景",
       "description": "棋盘底端头像框内、人物图层后方使用的背景。",
-      "accept": [".png", ".jpg", ".jpeg", ".webp"]
+      "accept": [
+        ".png",
+        ".jpg",
+        ".jpeg",
+        ".webp"
+      ]
     },
     {
       "id": "standing_overlay",
       "name": "角色立绘",
       "description": "菜单和转场使用的透明全身立绘。",
-      "accept": [".png", ".webp"]
+      "accept": [
+        ".png",
+        ".webp"
+      ]
     },
     {
       "id": "hero_select",
       "name": "英雄选择图标",
       "description": "英雄选择界面使用的带框图像。",
-      "accept": [".png", ".webp"]
+      "accept": [
+        ".png",
+        ".webp"
+      ]
     },
     {
       "id": "hero_icon_small",
       "name": "小型英雄图标",
       "description": "游戏界面使用的小型简化英雄图标。",
-      "accept": [".png", ".webp"]
+      "accept": [
+        ".png",
+        ".webp"
+      ]
     },
     {
       "id": "portrait_small",
       "name": "小型头像",
       "description": "较小界面区域使用的紧凑头像。",
-      "accept": [".png", ".jpg", ".jpeg", ".webp"]
+      "accept": [
+        ".png",
+        ".jpg",
+        ".jpeg",
+        ".webp"
+      ]
     },
     {
       "id": "store_image",
       "name": "商店图像",
       "description": "皮肤商店使用的展示图。",
-      "accept": [".png", ".jpg", ".jpeg", ".webp"]
+      "accept": [
+        ".png",
+        ".jpg",
+        ".jpeg",
+        ".webp"
+      ]
     },
     {
       "id": "collection_list",
       "name": "收藏列表",
       "description": "收藏列表中的预览图。",
-      "accept": [".png", ".jpg", ".jpeg", ".webp"]
+      "accept": [
+        ".png",
+        ".jpg",
+        ".jpeg",
+        ".webp"
+      ]
     },
     {
       "id": "collection_details",
       "name": "收藏详情",
       "description": "收藏详情页的展示图。",
-      "accept": [".png", ".jpg", ".jpeg", ".webp"]
+      "accept": [
+        ".png",
+        ".jpg",
+        ".jpeg",
+        ".webp"
+      ]
     },
     {
       "id": "marketplace_list",
       "name": "市场列表",
       "description": "市场列表中的缩略图。",
-      "accept": [".png", ".jpg", ".jpeg", ".webp"]
+      "accept": [
+        ".png",
+        ".jpg",
+        ".jpeg",
+        ".webp"
+      ]
     },
     {
       "id": "marketplace_details",
       "name": "市场详情",
       "description": "市场详情页的展示图。",
-      "accept": [".png", ".jpg", ".jpeg", ".webp"]
+      "accept": [
+        ".png",
+        ".jpg",
+        ".jpeg",
+        ".webp"
+      ]
     },
     {
       "id": "daily_weekly",
       "name": "每日 / 每周模式",
       "description": "每日和每周模式使用的展示图。",
-      "accept": [".png", ".jpg", ".jpeg", ".webp"]
+      "accept": [
+        ".png",
+        ".jpg",
+        ".jpeg",
+        ".webp"
+      ]
     }
   ],
   "animation_formats": [
     {
       "id": "spine_source",
       "name": "Spine 源文件组",
-      "extensions": [".skel", ".json", ".atlas", ".png"],
+      "extensions": [
+        ".skel",
+        ".json",
+        ".atlas",
+        ".png"
+      ],
       "runtime_ready": false
     },
     {
       "id": "unity_asset_bundle",
       "name": "Unity AssetBundle 预制体",
-      "extensions": [".bundle", ".assetbundle"],
+      "extensions": [
+        ".bundle",
+        ".assetbundle"
+      ],
       "runtime_ready": false
     }
   ]

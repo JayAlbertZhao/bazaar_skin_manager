@@ -96,6 +96,27 @@ def write_game(root: Path) -> Path:
 
 
 class ManagerTests(unittest.TestCase):
+    def test_native_patch_target_prefers_first_existing_candidate(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            game_dir = Path(temp)
+            old = game_dir / "aa" / "old.bundle"
+            new = game_dir / "aa" / "new.bundle"
+            old.parent.mkdir(parents=True)
+            old.write_bytes(b"old")
+            deployment = {
+                "target": "aa/old.bundle",
+                "target_candidates": ["aa/new.bundle", "aa/old.bundle"],
+            }
+            game = manager.GameInstall(game_dir, None, "fixture", True)
+
+            self.assertEqual(manager.native_patch_target(game, deployment), old)
+            new.write_bytes(b"new")
+            self.assertEqual(manager.native_patch_target(game, deployment), new)
+            self.assertEqual(
+                manager.native_patch_target_candidates(deployment),
+                ("aa/new.bundle", "aa/old.bundle"),
+            )
+
     def test_bepinex_bootstrap_rejects_archive_path_traversal(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             archive_path = Path(temp) / "unsafe.zip"

@@ -3459,6 +3459,15 @@ def main() -> int:
             root.withdraw()
             root.update_idletasks()
         except Exception:
+            diagnostic = os.environ.get("BAZAAR_SKIN_MANAGER_SELF_TEST_ERROR")
+            if diagnostic:
+                try:
+                    Path(diagnostic).write_text(
+                        traceback.format_exc(),
+                        encoding="utf-8",
+                    )
+                except OSError:
+                    pass
             return 3
         finally:
             if root is not None:

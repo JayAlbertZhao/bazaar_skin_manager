@@ -74,10 +74,10 @@ class AdapterRegistryTests(unittest.TestCase):
             vanessa.payload["authoring_recipe"]["foreground"]["cast_shadow_lasso"]
         )
 
-    def test_build_24720155_and_the_dragons_default_are_declared(self):
+    def test_build_25135007_and_the_dragons_default_are_declared(self):
         registry = AdapterRegistry.load(ROOT / "manager" / "adapters")
         for record in registry.records:
-            self.assertIn("24720155", record.supported_builds)
+            self.assertIn("25135007", record.supported_builds)
 
         dragons = registry.find("Hero8", "Skin_DRA_01/A")
         self.assertIsNotNone(dragons)
@@ -99,6 +99,30 @@ class AdapterRegistryTests(unittest.TestCase):
             "Skin_DRA_01a_StoreImage_TUI",
         )
 
+    def test_build_25135007_small_icon_bundle_renames_keep_old_fallbacks(self):
+        registry = AdapterRegistry.load(ROOT / "manager" / "adapters")
+        expected_codes = {
+            "Dooley": "doo",
+            "Jules": "jul",
+            "Mak": "mak",
+            "Pygmalien": "pyg",
+            "Stelle": "ste",
+            "Vanessa": "van",
+        }
+        for hero, code in expected_codes.items():
+            record = next(item for item in registry.records if item.hero == hero)
+            deployment = next(
+                item["deployment"]
+                for item in record.payload["visual_replacements"]
+                if item["slot"] == "hero_icon_small"
+            )
+            candidates = deployment["target_candidates"]
+            self.assertEqual(
+                Path(candidates[0]).name,
+                f"defaultlocalgroup_assets_icon_flatrough_{code}_tui.bundle",
+            )
+            self.assertEqual(candidates[1], deployment["target"])
+
     def test_all_eight_heroes_have_exact_voice_route_metadata(self):
         registry = AdapterRegistry.load(ROOT / "manager" / "adapters")
         base_catalog = json.loads(
@@ -108,7 +132,7 @@ class AdapterRegistryTests(unittest.TestCase):
             base_catalog,
             registry,
             game_dir=None,
-            build_id="24720155",
+            build_id="25135007",
         )
         self.assertTrue(all(hero["audio_supported"] for hero in enriched["heroes"]))
         route_catalog = json.loads(

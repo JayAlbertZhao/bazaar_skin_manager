@@ -22,7 +22,7 @@ from typing import Iterable
 
 
 APP_ID = "1617400"
-MANAGER_VERSION = "1.5.4"
+MANAGER_VERSION = "1.5.5"
 PROJECT_ROOT = Path(
     getattr(sys, "_MEIPASS", Path(__file__).resolve().parents[1])
 )
@@ -627,8 +627,8 @@ def validate_pack(pack_dir: Path) -> list[str]:
     }
 
     pack_prefix = pack_dir.resolve()
-    native_targets: dict[str, tuple[str, tuple[str, ...]]] = {}
-    native_assets: dict[tuple[str, str], str] = {}
+    native_targets: dict[tuple[str, ...], tuple[str, tuple[str, ...]]] = {}
+    native_assets: dict[tuple[tuple[str, ...], str], str] = {}
     for replacement in manifest.get("visual_replacements", []):
         slot = replacement.get("slot")
         verified = verified_visuals.get(slot)
@@ -687,20 +687,28 @@ def validate_pack(pack_dir: Path) -> list[str]:
             if deployment.get("mode") != PRELOAD_TEXTURE_MODE:
                 errors.append(f"unsupported deployment mode for {label}")
                 continue
-            deployment_target = str(deployment.get("target") or "").replace(
-                "\\", "/"
-            )
-            target_parts = Path(deployment_target).parts
-            if (
-                not deployment_target
-                or Path(deployment_target).is_absolute()
-                or ".." in target_parts
-                or ":" in deployment_target
+            deployment_targets = native_patch_target_candidates(deployment)
+            declared_candidates = deployment.get("target_candidates")
+            if declared_candidates is not None and (
+                not isinstance(declared_candidates, list)
+                or not declared_candidates
             ):
                 errors.append(
-                    f"unsafe native patch target for {label}: {deployment_target}"
+                    f"native patch target_candidates is invalid for {label}"
                 )
-            target_key = deployment_target.casefold()
+            for deployment_target in deployment_targets:
+                target_parts = Path(deployment_target).parts
+                if (
+                    Path(deployment_target).is_absolute()
+                    or ".." in target_parts
+                    or ":" in deployment_target
+                ):
+                    errors.append(
+                        f"unsafe native patch target for {label}: {deployment_target}"
+                    )
+            if not deployment_targets:
+                errors.append(f"native patch target is missing for {label}")
+            target_key = tuple(value.casefold() for value in deployment_targets)
             if not deployment.get("asset_name"):
                 errors.append(f"native patch asset_name is required for {label}")
             if not deployment.get("unity_version"):
@@ -726,7 +734,7 @@ def validate_pack(pack_dir: Path) -> list[str]:
                     "native patch supported_original_sha256 is invalid for "
                     f"{label}"
                 )
-            elif deployment_target:
+            elif deployment_targets:
                 signature = (
                     str(deployment.get("unity_version")),
                     tuple(sorted(value.casefold() for value in supported)),
@@ -738,7 +746,7 @@ def validate_pack(pack_dir: Path) -> list[str]:
                 ):
                     errors.append(
                         "inconsistent native patch target contract: "
-                        f"{deployment_target}"
+                        f"{deployment_targets[0]}"
                     )
                 native_targets[target_key] = signature
 
@@ -984,17 +992,46 @@ def native_patch_specs(pack: Path) -> list[dict]:
     return specs
 
 
+def native_patch_target_candidates(deployment: dict) -> tuple[str, ...]:
+    """Return ordered bundle paths for one deployment contract.
+
+    Addressables may rename a bundle while retaining the exact Texture2D
+    contract. Adapters keep the historical ``target`` for old packs and can
+    add ``target_candidates`` in newest-first order. Resolution uses files
+    that actually exist, so the same adapter supports both layouts.
+    """
+
+    raw = deployment.get("target_candidates")
+    values = list(raw) if isinstance(raw, list) else []
+    primary = str(deployment.get("target") or "").strip()
+    if primary:
+        values.append(primary)
+    result: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        normalized = str(value or "").replace("\\", "/").strip()
+        key = normalized.casefold()
+        if normalized and key not in seen:
+            seen.add(key)
+            result.append(normalized)
+    return tuple(result)
+
+
 def native_patch_target(game: GameInstall, deployment: dict) -> Path:
-    relative = str(deployment["target"]).replace("/", os.sep)
-    target = (game.game_dir / relative).resolve()
     game_root = game.game_dir.resolve()
-    try:
-        target.relative_to(game_root)
-    except ValueError as error:
-        raise RuntimeError(
-            f"Native patch target escapes the game directory: {relative}"
-        ) from error
-    return target
+    resolved: list[Path] = []
+    for relative in native_patch_target_candidates(deployment):
+        target = (game.game_dir / relative.replace("/", os.sep)).resolve()
+        try:
+            target.relative_to(game_root)
+        except ValueError as error:
+            raise RuntimeError(
+                f"Native patch target escapes the game directory: {relative}"
+            ) from error
+        resolved.append(target)
+    if not resolved:
+        raise RuntimeError("Native patch deployment has no bundle target.")
+    return next((target for target in resolved if target.is_file()), resolved[0])
 
 
 def addressables_catalog_path(game: GameInstall) -> Path:

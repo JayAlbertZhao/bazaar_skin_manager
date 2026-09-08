@@ -1,12 +1,13 @@
 {
   "schema_version": 1,
   "id": "mak-default",
-  "adapter_version": 3,
+  "adapter_version": 4,
   "default_authoring": true,
   "supported_builds": [
     "24001960",
     "24570932",
-    "24720155"
+    "24720155",
+    "25135007"
   ],
   "target": {
     "game": "the-bazaar",
@@ -41,7 +42,9 @@
           2048
         ],
         "supported_original_sha256": [
-          "29c0bb812b91c453aee56620f09a64cf49c57458210975f230becb8e95f3cd55", "6038715302da406eb79d038074ba7731890cb03d91bbb29113fe4c52a4ca32a7"
+          "29c0bb812b91c453aee56620f09a64cf49c57458210975f230becb8e95f3cd55",
+          "6038715302da406eb79d038074ba7731890cb03d91bbb29113fe4c52a4ca32a7",
+          "b1ea449e7efbe338303778ff347399536e4bd3ae5fb48c29caa89d12a32f9989"
         ]
       },
       "match_names": [
@@ -60,7 +63,9 @@
           512
         ],
         "supported_original_sha256": [
-          "29c0bb812b91c453aee56620f09a64cf49c57458210975f230becb8e95f3cd55", "6038715302da406eb79d038074ba7731890cb03d91bbb29113fe4c52a4ca32a7"
+          "29c0bb812b91c453aee56620f09a64cf49c57458210975f230becb8e95f3cd55",
+          "6038715302da406eb79d038074ba7731890cb03d91bbb29113fe4c52a4ca32a7",
+          "b1ea449e7efbe338303778ff347399536e4bd3ae5fb48c29caa89d12a32f9989"
         ]
       },
       "match_names": [
@@ -88,7 +93,9 @@
           2048
         ],
         "supported_original_sha256": [
-          "29c0bb812b91c453aee56620f09a64cf49c57458210975f230becb8e95f3cd55", "6038715302da406eb79d038074ba7731890cb03d91bbb29113fe4c52a4ca32a7"
+          "29c0bb812b91c453aee56620f09a64cf49c57458210975f230becb8e95f3cd55",
+          "6038715302da406eb79d038074ba7731890cb03d91bbb29113fe4c52a4ca32a7",
+          "b1ea449e7efbe338303778ff347399536e4bd3ae5fb48c29caa89d12a32f9989"
         ]
       },
       "match_names": [
@@ -107,7 +114,9 @@
           2048
         ],
         "supported_original_sha256": [
-          "29c0bb812b91c453aee56620f09a64cf49c57458210975f230becb8e95f3cd55", "6038715302da406eb79d038074ba7731890cb03d91bbb29113fe4c52a4ca32a7"
+          "29c0bb812b91c453aee56620f09a64cf49c57458210975f230becb8e95f3cd55",
+          "6038715302da406eb79d038074ba7731890cb03d91bbb29113fe4c52a4ca32a7",
+          "b1ea449e7efbe338303778ff347399536e4bd3ae5fb48c29caa89d12a32f9989"
         ]
       },
       "match_names": [
@@ -126,7 +135,9 @@
           512
         ],
         "supported_original_sha256": [
-          "29c0bb812b91c453aee56620f09a64cf49c57458210975f230becb8e95f3cd55", "6038715302da406eb79d038074ba7731890cb03d91bbb29113fe4c52a4ca32a7"
+          "29c0bb812b91c453aee56620f09a64cf49c57458210975f230becb8e95f3cd55",
+          "6038715302da406eb79d038074ba7731890cb03d91bbb29113fe4c52a4ca32a7",
+          "b1ea449e7efbe338303778ff347399536e4bd3ae5fb48c29caa89d12a32f9989"
         ]
       },
       "match_names": [
@@ -163,7 +174,8 @@
           512
         ],
         "supported_original_sha256": [
-          "d9fd4171ac4ff05c8587af620b3c52cf9b6cdd1d8043541031bd225793355b52"
+          "d9fd4171ac4ff05c8587af620b3c52cf9b6cdd1d8043541031bd225793355b52",
+          "62b9812fdaff9cc0dc00dce956e1f1968411ef647c4695001e00e6746b81007d"
         ]
       },
       "direct_only": true,
@@ -181,7 +193,12 @@
           256
         ],
         "supported_original_sha256": [
-          "792a71ccee0b9cd5739b4216e95a6ce173db317dc4faaea2c372172ccccb1bb9"
+          "792a71ccee0b9cd5739b4216e95a6ce173db317dc4faaea2c372172ccccb1bb9",
+          "87e71e3223e93760f3c9ddcc07ea2e21774b2c8b8f0bf92b38a745b562fba1e8"
+        ],
+        "target_candidates": [
+          "TheBazaar_Data/StreamingAssets/aa/StandaloneWindows64/defaultlocalgroup_assets_icon_flatrough_mak_tui.bundle",
+          "TheBazaar_Data/StreamingAssets/aa/StandaloneWindows64/defaultlocalgroup_assets_assets_thebazaar_art_ui_icons_heros_rough_icon_flatrough_mak_tui.png.bundle"
         ]
       },
       "match_names": [
@@ -201,7 +218,10 @@
       },
       "outputs": {
         "hero_select": {
-          "size": [512, 512]
+          "size": [
+            512,
+            512
+          ]
         }
       }
     }
@@ -211,8 +231,13 @@
     "enabled": true,
     "target": {
       "game": "The Bazaar",
-      "steam_build": "24720155",
-      "supported_builds": ["24001960", "24570932", "24720155"],
+      "steam_build": "25135007",
+      "supported_builds": [
+        "24001960",
+        "24570932",
+        "24720155",
+        "25135007"
+      ],
       "hero": "Mak"
     },
     "fallback": "original",

@@ -27,6 +27,34 @@ Manager patch can be retired without first publishing the new hashes. This
 accepts partial cosmetic degradation in order to keep the game and utility
 usable, while retaining backups and warnings for later review.
 
+## Build 25135007 (2026-09-08)
+
+### Update evidence
+
+- The installed client reports `1.0.12246-prod-windows-x64-063db1e9` and Unity
+  `6000.3.11f1`; the Steam appmanifest build is `25135007`.
+- `TheBazaar.exe` is unchanged. `TheBazaarRuntime.dll` and `catalog.hash` now
+  have SHA-256 `557247c86666de69879ec52383eac834ffbce4c5b147c0d5845af520f49e2231`
+  and `09397d6de6a2bdf2195615579b32e6a666dc8dcf6ae8575947f3a51a0eb86c3d`.
+- Six small-icon Addressables bundles were renamed from long source-derived
+  paths to `defaultlocalgroup_assets_icon_flatrough_*_tui.bundle`. The Dragons
+  path is unchanged, and Karnok still has no small-icon native patch route.
+- All expected Texture2D names and dimensions remain present. Offline
+  patch/save/reload verification covered 24 unique bundles and 33 Texture2D
+  writes without modifying the live game directory.
+- The hero FMOD bank remains byte-identical at SHA-256
+  `7d5ce9bcc10dabb8eb8a0db9b51bcde1c2b39c7b9468016ed8fc21555454f5af`.
+
+### Live runtime evidence
+
+The already-running v1.5.0 runtime entered best-effort compatibility mode,
+loaded six packs and passed its 1024x1024 portrait self-test. Player and
+BepInEx logs confirm exact external voice routes, local-player portrait
+replacement and opponent portrait retention still execute on the new client.
+No Skin Manager runtime exception was observed. Validation was intentionally
+read-only because the game was in use; native redeployment remains deferred
+until the process has exited.
+
 ## Build 24720155 (2026-08-14)
 
 ### Update evidence

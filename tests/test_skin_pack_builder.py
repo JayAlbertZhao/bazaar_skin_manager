@@ -690,7 +690,7 @@ class SkinPackBuilderTests(unittest.TestCase):
                     "standing_overlay",
                 },
             )
-            self.assertEqual(manifest["adapter"], {"id": "dooley-default", "version": 13})
+            self.assertEqual(manifest["adapter"], {"id": "dooley-default", "version": 14})
             self.assertEqual(
                 manifest["authoring"]["generator"]["id"],
                 "deterministic-raster-v1",

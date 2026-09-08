@@ -1,11 +1,12 @@
 {
   "schema_version": 1,
   "id": "dooley-default",
-  "adapter_version": 13,
+  "adapter_version": 14,
   "supported_builds": [
     "24001960",
     "24570932",
-    "24720155"
+    "24720155",
+    "25135007"
   ],
   "target": {
     "game": "the-bazaar",
@@ -50,7 +51,9 @@
           2048
         ],
         "supported_original_sha256": [
-          "d6ed77d564f6918487e5a1863d79106e37ce93eede1fedf72875d0b64ed5a843", "bbd784478e9c380cf98d81da8bb6d5c5baa3f6cda4727c26020ee694c35b1f85"
+          "d6ed77d564f6918487e5a1863d79106e37ce93eede1fedf72875d0b64ed5a843",
+          "bbd784478e9c380cf98d81da8bb6d5c5baa3f6cda4727c26020ee694c35b1f85",
+          "19c6ee901de46046838658384881b6e354a37c2c25a2d29bbda6e951d113fadc"
         ]
       }
     },
@@ -69,7 +72,9 @@
           2048
         ],
         "supported_original_sha256": [
-          "d6ed77d564f6918487e5a1863d79106e37ce93eede1fedf72875d0b64ed5a843", "bbd784478e9c380cf98d81da8bb6d5c5baa3f6cda4727c26020ee694c35b1f85"
+          "d6ed77d564f6918487e5a1863d79106e37ce93eede1fedf72875d0b64ed5a843",
+          "bbd784478e9c380cf98d81da8bb6d5c5baa3f6cda4727c26020ee694c35b1f85",
+          "19c6ee901de46046838658384881b6e354a37c2c25a2d29bbda6e951d113fadc"
         ]
       }
     },
@@ -88,7 +93,9 @@
           2048
         ],
         "supported_original_sha256": [
-          "d6ed77d564f6918487e5a1863d79106e37ce93eede1fedf72875d0b64ed5a843", "bbd784478e9c380cf98d81da8bb6d5c5baa3f6cda4727c26020ee694c35b1f85"
+          "d6ed77d564f6918487e5a1863d79106e37ce93eede1fedf72875d0b64ed5a843",
+          "bbd784478e9c380cf98d81da8bb6d5c5baa3f6cda4727c26020ee694c35b1f85",
+          "19c6ee901de46046838658384881b6e354a37c2c25a2d29bbda6e951d113fadc"
         ]
       }
     },
@@ -107,7 +114,9 @@
           512
         ],
         "supported_original_sha256": [
-          "d6ed77d564f6918487e5a1863d79106e37ce93eede1fedf72875d0b64ed5a843", "bbd784478e9c380cf98d81da8bb6d5c5baa3f6cda4727c26020ee694c35b1f85"
+          "d6ed77d564f6918487e5a1863d79106e37ce93eede1fedf72875d0b64ed5a843",
+          "bbd784478e9c380cf98d81da8bb6d5c5baa3f6cda4727c26020ee694c35b1f85",
+          "19c6ee901de46046838658384881b6e354a37c2c25a2d29bbda6e951d113fadc"
         ]
       }
     },
@@ -135,7 +144,9 @@
           512
         ],
         "supported_original_sha256": [
-          "d6ed77d564f6918487e5a1863d79106e37ce93eede1fedf72875d0b64ed5a843", "bbd784478e9c380cf98d81da8bb6d5c5baa3f6cda4727c26020ee694c35b1f85"
+          "d6ed77d564f6918487e5a1863d79106e37ce93eede1fedf72875d0b64ed5a843",
+          "bbd784478e9c380cf98d81da8bb6d5c5baa3f6cda4727c26020ee694c35b1f85",
+          "19c6ee901de46046838658384881b6e354a37c2c25a2d29bbda6e951d113fadc"
         ]
       }
     },
@@ -154,7 +165,9 @@
           256
         ],
         "supported_original_sha256": [
-          "0be504cabb2b01487dbeae8a24faf6c0c302e32f0cea6ea30dea5092d846b739", "b213b483da36657d08a3b63cef667caea526bb1536c32a6959f94c77031462f5"
+          "0be504cabb2b01487dbeae8a24faf6c0c302e32f0cea6ea30dea5092d846b739",
+          "b213b483da36657d08a3b63cef667caea526bb1536c32a6959f94c77031462f5",
+          "749c1d6fe6b0843afc5fc3cc40a5aac720d5224c1da445e82f7da8a04d0bb5e6"
         ]
       }
     },
@@ -175,7 +188,12 @@
           256
         ],
         "supported_original_sha256": [
-          "543d0fb67fda5d258d45fd4ab978b6104db614541ebe581472f29c61178ef1e8"
+          "543d0fb67fda5d258d45fd4ab978b6104db614541ebe581472f29c61178ef1e8",
+          "9df636dff9de708dc49c9f54304fe905118abca92fa4e90fffef9a7a554fc50a"
+        ],
+        "target_candidates": [
+          "TheBazaar_Data/StreamingAssets/aa/StandaloneWindows64/defaultlocalgroup_assets_icon_flatrough_doo_tui.bundle",
+          "TheBazaar_Data/StreamingAssets/aa/StandaloneWindows64/defaultlocalgroup_assets_assets_thebazaar_art_ui_icons_heros_rough_icon_flatrough_doo_tui.png.bundle"
         ]
       }
     },
@@ -254,37 +272,281 @@
       },
       "transparent_lassos": {
         "method": "authored-coordinate-lasso",
-        "coordinate_space": [1182, 1330],
+        "coordinate_space": [
+          1182,
+          1330
+        ],
         "polygons": [
           [
-            [1027, 641], [1052, 638], [1050, 653],
-            [1041, 668], [1026, 673], [1014, 666]
+            [
+              1027,
+              641
+            ],
+            [
+              1052,
+              638
+            ],
+            [
+              1050,
+              653
+            ],
+            [
+              1041,
+              668
+            ],
+            [
+              1026,
+              673
+            ],
+            [
+              1014,
+              666
+            ]
           ]
         ]
       },
       "cast_shadow_lasso": {
         "method": "authored-coordinate-lasso",
-        "coordinate_space": [1182, 1330],
+        "coordinate_space": [
+          1182,
+          1330
+        ],
         "polygons": [
           [
-            [895, 390], [940, 395], [940, 360], [950, 330],
-            [975, 300], [1025, 290], [1025, 320], [1035, 310],
-            [1045, 350], [1060, 375], [1050, 400], [1070, 410],
-            [1055, 445], [1045, 480], [1028, 465], [1010, 470],
-            [990, 458], [970, 448], [945, 435], [920, 428],
-            [895, 415]
+            [
+              895,
+              390
+            ],
+            [
+              940,
+              395
+            ],
+            [
+              940,
+              360
+            ],
+            [
+              950,
+              330
+            ],
+            [
+              975,
+              300
+            ],
+            [
+              1025,
+              290
+            ],
+            [
+              1025,
+              320
+            ],
+            [
+              1035,
+              310
+            ],
+            [
+              1045,
+              350
+            ],
+            [
+              1060,
+              375
+            ],
+            [
+              1050,
+              400
+            ],
+            [
+              1070,
+              410
+            ],
+            [
+              1055,
+              445
+            ],
+            [
+              1045,
+              480
+            ],
+            [
+              1028,
+              465
+            ],
+            [
+              1010,
+              470
+            ],
+            [
+              990,
+              458
+            ],
+            [
+              970,
+              448
+            ],
+            [
+              945,
+              435
+            ],
+            [
+              920,
+              428
+            ],
+            [
+              895,
+              415
+            ]
           ],
           [
-            [1015, 430], [1050, 440], [1080, 475], [1100, 520],
-            [1110, 570], [1110, 620], [1095, 670], [1070, 700],
-            [1055, 705], [1050, 760], [1045, 850], [1038, 950],
-            [1020, 1010], [1000, 1070], [980, 1130], [970, 1205],
-            [930, 1210], [890, 1190], [850, 1150], [840, 1100],
-            [870, 1085], [925, 1075], [955, 1055], [980, 1015],
-            [1000, 960], [1013, 900], [1020, 840], [1025, 770],
-            [1033, 710], [1045, 685], [1063, 675], [1077, 650],
-            [1085, 615], [1085, 575], [1075, 535], [1060, 492],
-            [1038, 465]
+            [
+              1015,
+              430
+            ],
+            [
+              1050,
+              440
+            ],
+            [
+              1080,
+              475
+            ],
+            [
+              1100,
+              520
+            ],
+            [
+              1110,
+              570
+            ],
+            [
+              1110,
+              620
+            ],
+            [
+              1095,
+              670
+            ],
+            [
+              1070,
+              700
+            ],
+            [
+              1055,
+              705
+            ],
+            [
+              1050,
+              760
+            ],
+            [
+              1045,
+              850
+            ],
+            [
+              1038,
+              950
+            ],
+            [
+              1020,
+              1010
+            ],
+            [
+              1000,
+              1070
+            ],
+            [
+              980,
+              1130
+            ],
+            [
+              970,
+              1205
+            ],
+            [
+              930,
+              1210
+            ],
+            [
+              890,
+              1190
+            ],
+            [
+              850,
+              1150
+            ],
+            [
+              840,
+              1100
+            ],
+            [
+              870,
+              1085
+            ],
+            [
+              925,
+              1075
+            ],
+            [
+              955,
+              1055
+            ],
+            [
+              980,
+              1015
+            ],
+            [
+              1000,
+              960
+            ],
+            [
+              1013,
+              900
+            ],
+            [
+              1020,
+              840
+            ],
+            [
+              1025,
+              770
+            ],
+            [
+              1033,
+              710
+            ],
+            [
+              1045,
+              685
+            ],
+            [
+              1063,
+              675
+            ],
+            [
+              1077,
+              650
+            ],
+            [
+              1085,
+              615
+            ],
+            [
+              1085,
+              575
+            ],
+            [
+              1075,
+              535
+            ],
+            [
+              1060,
+              492
+            ],
+            [
+              1038,
+              465
+            ]
           ]
         ]
       }
@@ -300,8 +562,16 @@
             "fit": "alpha_contain",
             "clip_mask": {
               "type": "open_top_inner_frame",
-              "reference_size": [1024, 1024],
-              "inner_bounds": [59, 0, 965, 942],
+              "reference_size": [
+                1024,
+                1024
+              ],
+              "inner_bounds": [
+                59,
+                0,
+                965,
+                942
+              ],
               "bottom_corner_radius": 18
             }
           }
@@ -570,7 +840,12 @@
         "template": {
           "directory": "badge-templates/hero-select-gold"
         },
-        "character_crop": [0.0, 0.0, 1.0, 1.0],
+        "character_crop": [
+          0.0,
+          0.0,
+          1.0,
+          1.0
+        ],
         "target_alpha_bounds": [
           80,
           5,

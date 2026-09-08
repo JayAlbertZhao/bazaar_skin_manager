@@ -1,5 +1,5 @@
 param(
-    [string]$Version = "1.5.4"
+    [string]$Version = "1.5.5"
 )
 
 $ErrorActionPreference = "Stop"
@@ -155,14 +155,26 @@ $exe = Join-Path $output "TheBazaarModManager.exe"
 if (-not (Test-Path -LiteralPath $exe)) {
     throw "Manager executable was not produced: $exe"
 }
-$selfTest = Start-Process `
-    -FilePath $exe `
-    -ArgumentList "--self-test-release-runtime" `
-    -Wait `
-    -PassThru `
-    -WindowStyle Hidden
+$selfTestError = Join-Path $work "release-runtime-self-test.txt"
+$previousSelfTestError = $env:BAZAAR_SKIN_MANAGER_SELF_TEST_ERROR
+try {
+    $env:BAZAAR_SKIN_MANAGER_SELF_TEST_ERROR = $selfTestError
+    $selfTest = Start-Process `
+        -FilePath $exe `
+        -ArgumentList "--self-test-release-runtime" `
+        -Wait `
+        -PassThru `
+        -WindowStyle Hidden
+} finally {
+    $env:BAZAAR_SKIN_MANAGER_SELF_TEST_ERROR = $previousSelfTestError
+}
 if ($selfTest.ExitCode -ne 0) {
-    throw "Frozen release runtime self-test failed with exit code $($selfTest.ExitCode)"
+    $details = if (Test-Path -LiteralPath $selfTestError) {
+        Get-Content -LiteralPath $selfTestError -Raw
+    } else {
+        "No traceback was produced."
+    }
+    throw "Frozen release runtime self-test failed with exit code $($selfTest.ExitCode):`n$details"
 }
 $bepInExSelfTest = Start-Process `
     -FilePath $exe `
