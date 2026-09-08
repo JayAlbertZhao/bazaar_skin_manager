@@ -109,9 +109,9 @@ class ManagerTests(unittest.TestCase):
             }
             game = manager.GameInstall(game_dir, None, "fixture", True)
 
-            self.assertEqual(manager.native_patch_target(game, deployment), old)
+            self.assertEqual(manager.native_patch_target(game, deployment), old.resolve())
             new.write_bytes(b"new")
-            self.assertEqual(manager.native_patch_target(game, deployment), new)
+            self.assertEqual(manager.native_patch_target(game, deployment), new.resolve())
             self.assertEqual(
                 manager.native_patch_target_candidates(deployment),
                 ("aa/new.bundle", "aa/old.bundle"),
